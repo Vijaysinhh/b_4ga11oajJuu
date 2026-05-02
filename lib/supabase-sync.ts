@@ -35,6 +35,12 @@ function isRowLevelSecurityError(error: any) {
   );
 }
 
+function isTableMissingError(error: any) {
+  return /Could not find the table .* in the schema cache|relation .* does not exist|table .* does not exist|missing relation|PGRST205/i.test(
+    formatSupabaseError(error),
+  );
+}
+
 /* ------------------------------------------------------- */
 /* ---------------- USER (CRITICAL FIX) ------------------- */
 /* ------------------------------------------------------- */
@@ -129,12 +135,28 @@ export async function savePriceTierToSupabase(userId: string, tier: any) {
   const { error } = await supabase.from("price_tiers").upsert({
     id: tier.id,
     item_id: tier.itemId,
-    quantity: tier.quantity,
     unit_id: tier.unitId,
+    quantity: tier.quantity,
     price: tier.price,
   });
 
-  if (error) throw error;
+  if (error) {
+    if (isRowLevelSecurityError(error)) {
+      console.warn(
+        "[v0] Skipping price tier sync due to row-level security policy:",
+        formatSupabaseError(error),
+      );
+      return null;
+    }
+    if (isTableMissingError(error)) {
+      console.warn(
+        "[v0] Skipping price tier sync because price_tiers table is missing:",
+        formatSupabaseError(error),
+      );
+      return null;
+    }
+    throw error;
+  }
 }
 
 export async function saveSaleToSupabase(userId: string, sale: any) {
@@ -146,7 +168,23 @@ export async function saveSaleToSupabase(userId: string, sale: any) {
     total_cost: sale.totalCost,
   });
 
-  if (error) throw error;
+  if (error) {
+    if (isRowLevelSecurityError(error)) {
+      console.warn(
+        "[v0] Skipping sale sync due to row-level security policy:",
+        formatSupabaseError(error),
+      );
+      return null;
+    }
+    if (isTableMissingError(error)) {
+      console.warn(
+        "[v0] Skipping sale sync because sales table is missing:",
+        formatSupabaseError(error),
+      );
+      return null;
+    }
+    throw error;
+  }
 }
 
 /* ------------------------------------------------------- */
