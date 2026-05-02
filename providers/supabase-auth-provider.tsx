@@ -62,14 +62,17 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
           setMiddlewareAuthCookie(currentSession);
           
           if (currentSession?.user) {
+            const email = currentSession.user.email || undefined;
+            const shopName = currentSession.user.user_metadata?.shopName || 'My Shop';
+
             setUser({
               id: currentSession.user.id,
-              email: currentSession.user.email || '',
+              email: email || '',
               username: currentSession.user.user_metadata?.username || 'User',
-              shopName: currentSession.user.user_metadata?.shopName || 'My Shop',
+              shopName,
             });
 
-            await syncUserData(currentSession.user.id).catch((error) => {
+            syncUserData(currentSession.user.id, { email, shopName }).catch((error) => {
               console.warn('[v0] Failed to synchronize user data after session restore:', error);
             });
           }
@@ -82,14 +85,17 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
             setMiddlewareAuthCookie(newSession);
             
             if (newSession?.user) {
+              const email = newSession.user.email || undefined;
+              const shopName = newSession.user.user_metadata?.shopName || 'My Shop';
+
               setUser({
                 id: newSession.user.id,
-                email: newSession.user.email || '',
+                email: email || '',
                 username: newSession.user.user_metadata?.username || 'User',
-                shopName: newSession.user.user_metadata?.shopName || 'My Shop',
+                shopName,
               });
 
-              syncUserData(newSession.user.id).catch((error) => {
+              syncUserData(newSession.user.id, { email, shopName }).catch((error) => {
                 console.warn('[v0] Failed to synchronize user data after auth state change:', error);
               });
             } else {
@@ -142,16 +148,19 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
       }
 
       if (data.session?.user) {
+        const authEmail = data.session.user.email || undefined;
+        const shopName = data.session.user.user_metadata?.shopName || 'My Shop';
+
         setMiddlewareAuthCookie(data.session);
         setSession(data.session);
         setUser({
           id: data.session.user.id,
-          email: data.session.user.email || '',
-          username: data.session.user.user_metadata?.username || email.split('@')[0],
-          shopName: data.session.user.user_metadata?.shopName || 'My Shop',
+          email: authEmail || '',
+          username: data.session.user.user_metadata?.username || authEmail?.split('@')[0] || 'User',
+          shopName,
         });
 
-        await syncUserData(data.session.user.id).catch((error) => {
+        syncUserData(data.session.user.id, { email: authEmail, shopName }).catch((error) => {
           console.warn('[v0] Failed to synchronize user data after login:', error);
         });
 

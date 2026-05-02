@@ -62,6 +62,51 @@ async function safeFetchFromSupabase(table: string, userId: string, selectExpr =
   }
 }
 
+export async function saveAuthenticatedUserToSupabase(userId: string, userInfo: { email?: string; shopName?: string } = {}) {
+  try {
+    const payload: any = {
+      id: userId,
+      email: userInfo.email || `unknown+${userId}@dukan.local`,
+    };
+
+    if (userInfo.shopName) {
+      payload.shop_name = userInfo.shopName;
+    }
+
+    const { data, error } = await supabase.from('users').upsert(payload).select().single();
+    if (error) {
+      const errorText = formatSupabaseError(error);
+      const missingUserTable = isSupabaseTableMissingError(error);
+      const passwordHashMissing = /column .*password_hash.* does not exist/i.test(errorText);
+
+      if (missingUserTable) {
+        console.warn('[v0] Supabase users table missing. Skipping user row sync.', errorText);
+        return null;
+      }
+
+      if (passwordHashMissing) {
+        const fallbackPayload = {
+          ...payload,
+          password_hash: '',
+        };
+        const retry = await supabase.from('users').upsert(fallbackPayload).select().single();
+        if (retry.error) {
+          console.warn('[v0] Failed to sync authenticated user with fallback password_hash:', formatSupabaseError(retry.error));
+          return null;
+        }
+        return retry.data;
+      }
+
+      console.warn('[v0] Failed to sync authenticated user:', errorText);
+      return null;
+    }
+    return data;
+  } catch (error) {
+    console.warn('[v0] Unexpected error syncing authenticated user to Supabase:', formatSupabaseError(error));
+    return null;
+  }
+}
+
 // Fixed demo user ID - all devices with demo account share this ID
 export const DEMO_USER_ID = 'demo-bharat-shop-001';
 
@@ -132,22 +177,38 @@ export async function saveSaleToSupabase(userId: string, sale: any) {
  */
 export async function saveCategoryToSupabase(userId: string, category: any) {
   try {
-    const { data, error } = await supabase
-      .from('categories')
-      .upsert({
-        id: category.id,
-        user_id: userId,
-        name: category.name,
-        description: category.description || '',
-        updated_at: new Date().toISOString(),
-      })
-      .select()
-      .single();
+    const upsertPayload: any = {
+      id: category.id,
+      user_id: userId,
+      name: category.name,
+      description: category.description || '',
+      updated_at: new Date().toISOString(),
+    };
 
-    if (error) throw error;
+    const { data, error } = await supabase.from('categories').upsert(upsertPayload).select().single();
+    if (error) {
+      const errorText = formatSupabaseError(error);
+      if (/column .*updated_at.* does not exist/i.test(errorText)) {
+        const { data: fallbackData, error: fallbackError } = await supabase
+          .from('categories')
+          .upsert({
+            id: category.id,
+            user_id: userId,
+            name: category.name,
+            description: category.description || '',
+          })
+          .select()
+          .single();
+
+        if (fallbackError) throw fallbackError;
+        return fallbackData;
+      }
+      throw error;
+    }
+
     return data;
   } catch (error) {
-    console.error('[v0] Error saving category to Supabase:', error);
+    console.error('[v0] Error saving category to Supabase:', formatSupabaseError(error));
     throw error;
   }
 }
@@ -157,23 +218,38 @@ export async function saveCategoryToSupabase(userId: string, category: any) {
  */
 export async function saveUnitToSupabase(userId: string, unit: any) {
   try {
-    const { data, error } = await supabase
-      .from('units')
-      .upsert({
-        id: unit.id,
-        user_id: userId,
-        name: unit.name,
-        short_form: unit.shortForm,
-        description: unit.description || '',
-        updated_at: new Date().toISOString(),
-      })
-      .select()
-      .single();
+    const upsertPayload: any = {
+      id: unit.id,
+      user_id: userId,
+      name: unit.name,
+      short_form: unit.shortForm,
+      updated_at: new Date().toISOString(),
+    };
 
-    if (error) throw error;
+    const { data, error } = await supabase.from('units').upsert(upsertPayload).select().single();
+    if (error) {
+      const errorText = formatSupabaseError(error);
+      if (/column .*updated_at.* does not exist/i.test(errorText)) {
+        const { data: fallbackData, error: fallbackError } = await supabase
+          .from('units')
+          .upsert({
+            id: unit.id,
+            user_id: userId,
+            name: unit.name,
+            short_form: unit.shortForm,
+          })
+          .select()
+          .single();
+
+        if (fallbackError) throw fallbackError;
+        return fallbackData;
+      }
+      throw error;
+    }
+
     return data;
   } catch (error) {
-    console.error('[v0] Error saving unit to Supabase:', error);
+    console.error('[v0] Error saving unit to Supabase:', formatSupabaseError(error));
     throw error;
   }
 }
@@ -187,12 +263,10 @@ export async function savePriceTierToSupabase(userId: string, priceTier: any) {
       .from('price_tiers')
       .upsert({
         id: priceTier.id,
-        user_id: userId,
         item_id: priceTier.itemId,
         quantity: priceTier.quantity,
         unit_id: priceTier.unitId,
         price: priceTier.price,
-        buy_price: priceTier.buyPrice || null,
         updated_at: new Date().toISOString(),
       })
       .select()
@@ -201,7 +275,7 @@ export async function savePriceTierToSupabase(userId: string, priceTier: any) {
     if (error) throw error;
     return data;
   } catch (error) {
-    console.error('[v0] Error saving price tier to Supabase:', error);
+    console.error('[v0] Error saving price tier to Supabase:', formatSupabaseError(error));
     throw error;
   }
 }
@@ -270,6 +344,32 @@ export async function fetchItemsFromSupabase(userId: string) {
   return safeFetchFromSupabase('items', userId);
 }
 
+export async function fetchPriceTiersFromSupabase(userId: string) {
+  try {
+    const userItems = await fetchItemsFromSupabase(userId);
+    const itemIds = (userItems || []).map((item: any) => item.id).filter((id: any) => id !== undefined && id !== null);
+
+    if (itemIds.length === 0) {
+      return [];
+    }
+
+    const { data, error } = await supabase.from('price_tiers').select('*').in('item_id', itemIds);
+    if (error) {
+      const errorText = formatSupabaseError(error);
+      if (isSupabaseTableMissingError(error)) {
+        console.warn(`[v0] Supabase table missing: price_tiers. Skipping price tier sync. ${errorText}`);
+        return [];
+      }
+      throw new Error(errorText);
+    }
+
+    return data || [];
+  } catch (error) {
+    console.error('[v0] Error fetching price tiers from Supabase:', formatSupabaseError(error));
+    return [];
+  }
+}
+
 /**
  * Fetch sales from Supabase for a user
  */
@@ -281,8 +381,9 @@ export async function fetchSalesFromSupabase(userId: string) {
  * Sync all local data to Supabase
  * This is called on login to ensure cloud is up-to-date
  */
-export async function syncToSupabase(userId: string) {
+export async function syncToSupabase(userId: string, userInfo: { email?: string; shopName?: string } = {}) {
   try {
+    await saveAuthenticatedUserToSupabase(userId, userInfo);
     // Import db dynamically to avoid circular dependencies
     const { db } = await import('./db');
     
@@ -559,7 +660,7 @@ export async function fetchAllUserData(userId: string) {
     fetchItemsFromSupabase(userId),
     safeFetchFromSupabase('categories', userId),
     safeFetchFromSupabase('units', userId),
-    safeFetchFromSupabase('price_tiers', userId),
+    fetchPriceTiersFromSupabase(userId),
     safeFetchFromSupabase('batches', userId),
     safeFetchFromSupabase('alerts', userId),
     fetchSalesFromSupabase(userId),
@@ -647,13 +748,14 @@ export async function mergeCloudDataToLocal(userId: string) {
   }
 }
 
-export async function syncUserData(userId: string) {
+export async function syncUserData(userId: string, userInfo: { email?: string; shopName?: string } = {}) {
   if (!userId) {
     throw new Error('User ID is required to synchronize data');
   }
 
   try {
     await mergeCloudDataToLocal(userId);
+    await saveAuthenticatedUserToSupabase(userId, userInfo);
     await syncToSupabase(userId);
   } catch (error) {
     console.warn('[v0] Full user sync error:', error);

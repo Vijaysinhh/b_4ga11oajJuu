@@ -95,7 +95,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         
         // Sync this device's data with Supabase cloud
         // This ensures all devices see the same data
-        await syncToSupabase(DEMO_USER_ID).catch(err => {
+        await syncToSupabase(DEMO_USER_ID, {
+          email: 'demo@dukan.local',
+          shopName: 'Bharat Kirana Store',
+        }).catch(err => {
           console.warn('[v0] Supabase sync warning:', err);
           // Don't fail login if sync fails - allow offline usage
         });
