@@ -205,7 +205,7 @@ export function SalesTransaction() {
                       </div>
                       <button
                         onClick={() => handleRemoveItem(index)}
-                        className="text-red-600 hover:text-red-800 ml-2 flex-shrink-0"
+                        className="text-red-600 hover:text-red-800 ml-2 shrink-0"
                         title="Remove item"
                       >
                         <Trash2 className="w-4 h-4" />
