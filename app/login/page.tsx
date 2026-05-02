@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSupabaseAuth } from '@/providers/supabase-auth-provider';
 import { Button } from '@/components/ui/button';
@@ -12,14 +12,15 @@ export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const { login, isAuthenticated } = useSupabaseAuth();
+  const { login, isAuthenticated, loading: authLoading } = useSupabaseAuth();
   const router = useRouter();
 
   // If already logged in, redirect to dashboard
-  if (isAuthenticated) {
-    router.push('/dashboard');
-    return null;
-  }
+  useEffect(() => {
+    if (!authLoading && isAuthenticated) {
+      router.replace('/dashboard');
+    }
+  }, [authLoading, isAuthenticated, router]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -28,7 +29,7 @@ export default function LoginPage() {
     try {
       await login(email, password);
       toast.success('Login successful!');
-      router.push('/dashboard');
+      router.replace('/dashboard');
     } catch (error: any) {
       console.error('[v0] Login error:', error);
       toast.error(error?.message || 'Invalid email or password');
@@ -36,6 +37,10 @@ export default function LoginPage() {
       setLoading(false);
     }
   };
+
+  if (!authLoading && isAuthenticated) {
+    return null;
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">

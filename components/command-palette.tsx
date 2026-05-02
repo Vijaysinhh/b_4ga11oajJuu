@@ -24,7 +24,7 @@ import {
   Box,
   Bell,
 } from 'lucide-react';
-import { useAuth } from '@/providers/auth-provider';
+import { useSupabaseAuth } from '@/providers/supabase-auth-provider';
 
 const commands = [
   {
@@ -46,7 +46,7 @@ const commands = [
 export function CommandPalette() {
   const [open, setOpen] = useState(false);
   const router = useRouter();
-  const { logout } = useAuth();
+  const { logout, isAuthenticated } = useSupabaseAuth();
 
   // Open command palette with Ctrl+K or Cmd+K
   useEffect(() => {
@@ -78,6 +78,10 @@ export function CommandPalette() {
       router.push('/login');
     }
   };
+
+  if (!isAuthenticated) {
+    return null;
+  }
 
   return (
     <CommandDialog open={open} onOpenChange={setOpen}>

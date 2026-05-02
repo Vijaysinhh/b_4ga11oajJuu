@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { supabase } from '@/lib/supabase-sync';
-import type { Session, User as SupabaseUser } from '@supabase/supabase-js';
+import type { Session } from '@supabase/supabase-js';
 
 interface User {
   id: string;
@@ -21,6 +21,24 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+const MIDDLEWARE_AUTH_COOKIE = 'authToken';
+
+function setMiddlewareAuthCookie(session: Session | null) {
+  if (typeof document === 'undefined') {
+    return;
+  }
+
+  if (!session) {
+    document.cookie = `${MIDDLEWARE_AUTH_COOKIE}=; path=/; max-age=0; SameSite=Lax`;
+    return;
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  const maxAge = session.expires_at ? Math.max(session.expires_at - now, 0) : session.expires_in || 86400;
+  const secure = window.location.protocol === 'https:' ? '; Secure' : '';
+
+  document.cookie = `${MIDDLEWARE_AUTH_COOKIE}=1; path=/; max-age=${maxAge}; SameSite=Lax${secure}`;
+}
 
 export function SupabaseAuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -30,7 +48,9 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
   // Initialize auth state from Supabase
   useEffect(() => {
     let mounted = true;
+    let initialized = false;
     let unsubscribe: (() => void) | null = null;
+    let timeout: ReturnType<typeof setTimeout>;
 
     const initializeAuth = async () => {
       try {
@@ -39,6 +59,7 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
         
         if (mounted) {
           setSession(currentSession);
+          setMiddlewareAuthCookie(currentSession);
           
           if (currentSession?.user) {
             setUser({
@@ -54,6 +75,7 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
         const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, newSession) => {
           if (mounted) {
             setSession(newSession);
+            setMiddlewareAuthCookie(newSession);
             
             if (newSession?.user) {
               setUser({
@@ -72,14 +94,16 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
       } catch (error) {
         console.error('[v0] Auth initialization error:', error);
       } finally {
+        initialized = true;
+        clearTimeout(timeout);
         if (mounted) {
           setLoading(false);
         }
       }
     };
 
-    const timeout = setTimeout(() => {
-      if (mounted && loading) {
+    timeout = setTimeout(() => {
+      if (mounted && !initialized) {
         console.warn('[v0] Auth initialization timeout');
         setLoading(false);
       }
@@ -110,6 +134,7 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
       }
 
       if (data.session?.user) {
+        setMiddlewareAuthCookie(data.session);
         setSession(data.session);
         setUser({
           id: data.session.user.id,
@@ -123,6 +148,7 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
       console.error('[v0] Login error:', error);
       setUser(null);
       setSession(null);
+      setMiddlewareAuthCookie(null);
       throw error;
     } finally {
       setLoading(false);
@@ -140,9 +166,11 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
 
       setUser(null);
       setSession(null);
+      setMiddlewareAuthCookie(null);
       console.log('[v0] Logout successful');
     } catch (error) {
       console.error('[v0] Logout error:', error);
+      setMiddlewareAuthCookie(null);
       throw error;
     } finally {
       setLoading(false);

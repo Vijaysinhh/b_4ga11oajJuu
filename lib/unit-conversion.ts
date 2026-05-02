@@ -5,15 +5,15 @@
 // Volume: all convert to milliliters (ml)
 // Pieces: no conversion (1 piece = 1 piece)
 const UNIT_CONVERSIONS: Record<string, Record<string, number>> = {
-  // Weight conversions to grams (g)
-  'g': { 'g': 1, 'kg': 1000 },
-  'kg': { 'g': 0.001, 'kg': 1 },
-  'mg': { 'g': 0.001, 'mg': 1 },
+  // Weight conversions
+  'g': { 'g': 1, 'kg': 0.001, 'mg': 1000 },
+  'kg': { 'g': 1000, 'kg': 1, 'mg': 1000000 },
+  'mg': { 'g': 0.001, 'kg': 0.000001, 'mg': 1 },
   
-  // Volume conversions to milliliters (ml)
-  'ml': { 'ml': 1, 'l': 1000, 'lt': 1000 },
-  'l': { 'ml': 0.001, 'l': 1, 'lt': 1 },
-  'lt': { 'ml': 0.001, 'l': 1, 'lt': 1 },
+  // Volume conversions
+  'ml': { 'ml': 1, 'l': 0.001, 'lt': 0.001 },
+  'l': { 'ml': 1000, 'l': 1, 'lt': 1 },
+  'lt': { 'ml': 1000, 'l': 1, 'lt': 1 },
   
   // Piece-based (no conversion)
   'pcs': { 'pcs': 1, 'piece': 1, 'pce': 1 },
@@ -82,4 +82,3 @@ export function calculatePriceTierCost(
   
   return costOfPriceTier;
 }
-
