@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
-import { supabase } from '@/lib/supabase-sync';
+import { supabase, syncUserData } from '@/lib/supabase-sync';
 import type { Session } from '@supabase/supabase-js';
 
 interface User {
@@ -68,6 +68,10 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
               username: currentSession.user.user_metadata?.username || 'User',
               shopName: currentSession.user.user_metadata?.shopName || 'My Shop',
             });
+
+            await syncUserData(currentSession.user.id).catch((error) => {
+              console.warn('[v0] Failed to synchronize user data after session restore:', error);
+            });
           }
         }
 
@@ -83,6 +87,10 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
                 email: newSession.user.email || '',
                 username: newSession.user.user_metadata?.username || 'User',
                 shopName: newSession.user.user_metadata?.shopName || 'My Shop',
+              });
+
+              syncUserData(newSession.user.id).catch((error) => {
+                console.warn('[v0] Failed to synchronize user data after auth state change:', error);
               });
             } else {
               setUser(null);
@@ -142,6 +150,11 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
           username: data.session.user.user_metadata?.username || email.split('@')[0],
           shopName: data.session.user.user_metadata?.shopName || 'My Shop',
         });
+
+        await syncUserData(data.session.user.id).catch((error) => {
+          console.warn('[v0] Failed to synchronize user data after login:', error);
+        });
+
         console.log('[v0] Login successful:', email);
       }
     } catch (error) {
