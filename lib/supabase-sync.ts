@@ -132,12 +132,10 @@ export async function savePriceTierToSupabase(userId: string, priceTier: any) {
       .from('price_tiers')
       .upsert({
         id: priceTier.id,
-        user_id: userId,
         item_id: priceTier.itemId,
         quantity: priceTier.quantity,
         unit_id: priceTier.unitId,
         price: priceTier.price,
-        buy_price: priceTier.buyPrice || null,
         updated_at: new Date().toISOString(),
       })
       .select()
