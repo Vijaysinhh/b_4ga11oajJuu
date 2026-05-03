@@ -1,10 +1,6 @@
 -- Seed default units for the first user
 -- This script will be run after user registration to populate common units
 
-INSERT INTO users (id, email, shop_name)
-VALUES ('00000000-0000-0000-0000-000000000001', 'demo@dukan.local', 'Demo Shop')
-ON CONFLICT DO NOTHING;
-
 INSERT INTO units (user_id, name, short_form) VALUES
   ('00000000-0000-0000-0000-000000000001', 'Kilogram', 'kg'),
   ('00000000-0000-0000-0000-000000000001', 'Gram', 'g'),

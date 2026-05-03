@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useSales } from '@/hooks/use-db';
+import { useLanguage } from '@/providers/language-provider';
 import { SalesItemSearch } from './sales-item-search';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -9,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Trash2, Check } from 'lucide-react';
 import { toast } from 'sonner';
+import type { SaleItem } from '@/lib/db';
 
 interface LineItem {
   itemId: number;
@@ -17,33 +19,14 @@ interface LineItem {
   unitId: number;
   unitShortForm: string;
   priceTierId?: number;
-  priceTierQuantity?: number;
-  priceTierUnitId?: number;
-  priceTierUnitShortForm?: string;
-  priceTierPrice?: number;
-  packageCount?: number;
-  stockQuantity?: number;
-  stockUnitId?: number;
-  stockUnitShortForm?: string;
   pricePerUnit: number;
   totalPrice: number;
   costPerUnit: number;
   totalCost: number;
 }
 
-function formatQuantity(value: number) {
-  return Number.isInteger(value) ? value.toString() : value.toFixed(3).replace(/\.?0+$/, '');
-}
-
-function getSaleLabel(item: LineItem) {
-  if (item.priceTierId && item.packageCount && item.priceTierQuantity && item.priceTierUnitShortForm) {
-    return `${formatQuantity(item.packageCount)} x ${formatQuantity(item.priceTierQuantity)}${item.priceTierUnitShortForm}`;
-  }
-
-  return `${formatQuantity(item.quantity)}${item.unitShortForm}`;
-}
-
 export function SalesTransaction() {
+  const { t } = useLanguage();
   const { createSale, updateStockAfterSale } = useSales();
 
   const [items, setItems] = useState<LineItem[]>([]);
@@ -57,7 +40,7 @@ export function SalesTransaction() {
     totalProfit: items.reduce((sum, item) => sum + ((item.totalPrice || 0) - (item.totalCost || 0)), 0),
   };
 
-  const profitMarginPercent = totals.subtotal > 0 ? (totals.totalProfit / totals.subtotal) * 100 : 0;
+  const profitMarginPercent = totals.subtotal > 0 ? ((totals.totalProfit / totals.subtotal) * 100) : 0;
 
   const handleItemAdded = (item: LineItem) => {
     setItems([...items, item]);
@@ -77,21 +60,14 @@ export function SalesTransaction() {
     setIsProcessing(true);
 
     try {
-      const saleItems: any[] = items.map((item) => ({
+      // Create sale items array for the sale
+      const saleItems: any[] = items.map(item => ({
         itemId: item.itemId,
         itemName: item.itemName,
         quantity: item.quantity,
         unitId: item.unitId,
         unitShortForm: item.unitShortForm,
         priceTierId: item.priceTierId,
-        priceTierQuantity: item.priceTierQuantity,
-        priceTierUnitId: item.priceTierUnitId,
-        priceTierUnitShortForm: item.priceTierUnitShortForm,
-        priceTierPrice: item.priceTierPrice,
-        packageCount: item.packageCount,
-        stockQuantity: item.stockQuantity,
-        stockUnitId: item.stockUnitId,
-        stockUnitShortForm: item.stockUnitShortForm,
         pricePerUnit: item.pricePerUnit,
         totalPrice: item.totalPrice,
         costPerUnit: item.costPerUnit,
@@ -99,8 +75,9 @@ export function SalesTransaction() {
         profit: item.totalPrice - item.totalCost,
       }));
 
+      // Create sale record
       const today = new Date().toISOString().split('T')[0];
-      await createSale({
+      const saleId = await createSale({
         date: today,
         timestamp: Date.now(),
         items: saleItems,
@@ -112,9 +89,12 @@ export function SalesTransaction() {
         paymentMethod,
       });
 
+      // Update stock after sale
       await updateStockAfterSale(saleItems);
 
       toast.success('Sale completed successfully!');
+
+      // Reset form
       setItems([]);
       setPaymentMethod('cash');
       setShowConfirmDialog(false);
@@ -128,6 +108,7 @@ export function SalesTransaction() {
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      {/* Left: Item Search */}
       <div className="lg:col-span-1">
         <Card>
           <CardHeader>
@@ -139,7 +120,9 @@ export function SalesTransaction() {
         </Card>
       </div>
 
+      {/* Right: Sale Summary */}
       <div className="lg:col-span-2 space-y-3">
+        {/* Items List */}
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Sale Items ({items.length})</CardTitle>
@@ -151,73 +134,51 @@ export function SalesTransaction() {
               </div>
             ) : (
               <div className="space-y-2">
-                {items.map((item, index) => {
-                  const profit = item.totalPrice - item.totalCost;
-                  const marginPct = item.totalPrice > 0 ? ((profit / item.totalPrice) * 100).toFixed(1) : '0';
-
-                  return (
-                    <div
-                      key={index}
-                      className="flex items-start justify-between bg-gray-50 p-3 rounded border hover:bg-gray-100 transition"
-                    >
-                      <div className="flex-1 min-w-0">
-                        <div className="font-semibold text-sm">
-                          {item.itemName} x {getSaleLabel(item)}
+                {items.map((item, index) => (
+                  <div
+                    key={index}
+                    className="flex items-start justify-between bg-gray-50 p-3 rounded border hover:bg-gray-100 transition"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="font-semibold text-sm">
+                        {item.itemName} × {item.quantity}{item.unitShortForm}
+                      </div>
+                      {/* Price and Cost Breakdown */}
+                      <div className="text-xs text-gray-600 mt-1 space-y-1">
+                        <div>
+                          Selling: {item.quantity} × ₹{item.pricePerUnit.toFixed(2)} = <span className="font-semibold text-blue-600">₹{item.totalPrice.toFixed(2)}</span>
                         </div>
-                        <div className="text-xs text-gray-600 mt-1 space-y-1">
-                          {item.priceTierId && item.packageCount && item.priceTierPrice ? (
-                            <>
-                              <div>
-                                Selling: {formatQuantity(item.packageCount)} x Rs {item.priceTierPrice.toFixed(2)} ={' '}
-                                <span className="font-semibold text-blue-600">Rs {item.totalPrice.toFixed(2)}</span>
-                              </div>
-                              <div>
-                                Cost: {formatQuantity(item.packageCount)} x Rs {(item.totalCost / item.packageCount).toFixed(2)} ={' '}
-                                <span className="font-semibold text-red-600">Rs {item.totalCost.toFixed(2)}</span>
-                              </div>
-                            </>
-                          ) : (
-                            <>
-                              <div>
-                                Selling: {formatQuantity(item.quantity)}{item.unitShortForm} x Rs {item.pricePerUnit.toFixed(2)} ={' '}
-                                <span className="font-semibold text-blue-600">Rs {item.totalPrice.toFixed(2)}</span>
-                              </div>
-                              <div>
-                                Cost: {formatQuantity(item.quantity)}{item.unitShortForm} x Rs {item.costPerUnit.toFixed(2)} ={' '}
-                                <span className="font-semibold text-red-600">Rs {item.totalCost.toFixed(2)}</span>
-                              </div>
-                            </>
-                          )}
-                          {item.stockQuantity !== undefined && item.stockUnitShortForm && (
-                            <div>
-                              Stock deducted:{' '}
-                              <span className="font-semibold">
-                                {formatQuantity(item.stockQuantity)}{item.stockUnitShortForm}
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                        <div className="text-xs font-semibold mt-1">
-                          <span className={profit > 0 ? 'text-green-700' : 'text-red-700'}>
-                            Profit: Rs {profit.toFixed(2)} ({marginPct}%)
-                          </span>
+                        <div>
+                          Cost: {item.quantity} × ₹{item.costPerUnit.toFixed(2)} = <span className="font-semibold text-red-600">₹{item.totalCost.toFixed(2)}</span>
                         </div>
                       </div>
-                      <button
-                        onClick={() => handleRemoveItem(index)}
-                        className="text-red-600 hover:text-red-800 ml-2 shrink-0"
-                        title="Remove item"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      {/* Profit calculation */}
+                      <div className="text-xs font-semibold mt-1">
+                        {(() => {
+                          const profit = item.totalPrice - item.totalCost;
+                          const marginPct = item.totalPrice > 0 ? ((profit / item.totalPrice) * 100).toFixed(1) : '0';
+                          return (
+                            <span className={profit > 0 ? 'text-green-700' : 'text-red-700'}>
+                              Profit: ₹{profit.toFixed(2)} ({marginPct}%)
+                            </span>
+                          );
+                        })()}
+                      </div>
                     </div>
-                  );
-                })}
+                    <button
+                      onClick={() => handleRemoveItem(index)}
+                      className="text-red-600 hover:text-red-800 ml-2 flex-shrink-0"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
               </div>
             )}
           </CardContent>
         </Card>
 
+        {/* Totals */}
         {items.length > 0 && (
           <>
             <Card className="bg-green-50 border-green-200">
@@ -225,16 +186,16 @@ export function SalesTransaction() {
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between">
                     <span>Total Revenue:</span>
-                    <span className="font-bold">Rs {totals.subtotal.toFixed(2)}</span>
+                    <span className="font-bold">₹{totals.subtotal.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span>Total Cost:</span>
-                    <span className="font-bold">Rs {totals.totalCost.toFixed(2)}</span>
+                    <span className="font-bold">₹{totals.totalCost.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between border-t pt-2 text-base">
                     <span>Total Profit:</span>
                     <span className={`font-bold ${totals.totalProfit >= 0 ? 'text-green-700' : 'text-red-700'}`}>
-                      Rs {totals.totalProfit.toFixed(2)}
+                      ₹{totals.totalProfit.toFixed(2)}
                     </span>
                   </div>
                   {totals.subtotal > 0 && (
@@ -247,20 +208,22 @@ export function SalesTransaction() {
               </CardContent>
             </Card>
 
+            {/* Cost Calculation Info */}
             <Card className="bg-blue-50 border-blue-200">
               <CardContent className="pt-4">
                 <div className="text-xs text-blue-900 space-y-1">
-                  <div className="font-semibold mb-2">How tier sales work:</div>
-                  <div>- Price tiers are sold as packs, e.g. 2 x 50g.</div>
-                  <div>- Stock is deducted after converting the tier back to the item unit.</div>
-                  <div>- Example: 2 x 50g from a kg item deducts 0.1kg.</div>
-                  <div>- Profit = Selling Price - Cost.</div>
+                  <div className="font-semibold mb-2">How Cost is Calculated:</div>
+                  <div>• For each price tier, we convert to base unit (e.g., grams for weight)</div>
+                  <div>• Cost = Quantity × (Buy Price ÷ Base Item Qty)</div>
+                  <div>• Example: 50g of 1kg @ ₹90 = 50 × (90 ÷ 1000) = ₹4.50</div>
+                  <div>• Profit = Selling Price - Cost</div>
                 </div>
               </CardContent>
             </Card>
           </>
         )}
 
+        {/* Payment & Complete */}
         {items.length > 0 && (
           <Card>
             <CardContent className="pt-4 space-y-3">
@@ -293,11 +256,12 @@ export function SalesTransaction() {
         )}
       </div>
 
+      {/* Confirm Dialog */}
       <AlertDialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Complete Sale?</AlertDialogTitle>
-            <AlertDialogDescription asChild>
+            <AlertDialogDescription>
               <div className="space-y-2 mt-3">
                 <div className="flex justify-between text-sm">
                   <span>Items:</span>
@@ -305,11 +269,11 @@ export function SalesTransaction() {
                 </div>
                 <div className="flex justify-between text-sm">
                   <span>Total Revenue:</span>
-                  <span className="font-bold">Rs {totals.subtotal.toFixed(2)}</span>
+                  <span className="font-bold">₹{totals.subtotal.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span>Profit:</span>
-                  <span className="font-bold text-green-600">Rs {totals.totalProfit.toFixed(2)}</span>
+                  <span className="font-bold text-green-600">₹{totals.totalProfit.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span>Margin:</span>
