@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
 import { useLanguage } from '@/providers/language-provider';
-import { useAuth } from '@/providers/auth-provider';
+import { useSupabaseAuth } from '@/providers/supabase-auth-provider';
 import { cn } from '@/lib/utils';
 import { 
   Package, 
@@ -26,7 +26,7 @@ import { Button } from '@/components/ui/button';
 
 export function Navigation() {
   const { t } = useLanguage();
-  const { user, logout, isAuthenticated } = useAuth();
+  const { user, logout, isAuthenticated } = useSupabaseAuth();
   const pathname = usePathname();
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);

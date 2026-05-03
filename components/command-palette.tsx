@@ -24,7 +24,7 @@ import {
   Box,
   Bell,
 } from 'lucide-react';
-import { useAuth } from '@/providers/auth-provider';
+import { useSupabaseAuth } from '@/providers/supabase-auth-provider';
 
 const commands = [
   {
