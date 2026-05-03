@@ -3,7 +3,13 @@
 // DO NOT MODIFY THIS FILE DIRECTLY.
 // EDIT THE USER CONFIG IN ./next.user-config.mjs INSTEAD.
 
-import userConfigImport from './next.user-config.mjs'
+let userConfigImport = {}
+try {
+  const import1 = await import('./next.user-config.mjs')
+  userConfigImport = import1.default || import1
+} catch (e) {
+  // next.user-config.mjs is optional
+}
 import { fileURLToPath } from 'url'
 import path from 'path'
 
