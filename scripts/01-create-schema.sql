@@ -1,118 +1,63 @@
 -- Create Users table
-CREATE TABLE IF NOT EXISTS users (
-  id TEXT PRIMARY KEY,
+CREATE TABLE users (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   email TEXT UNIQUE NOT NULL,
-  username TEXT,
+  password_hash TEXT NOT NULL,
   shop_name TEXT,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Create Categories table
-CREATE TABLE IF NOT EXISTS categories (
+CREATE TABLE categories (
   id SERIAL PRIMARY KEY,
-  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
-  name_marathi TEXT DEFAULT '',
-  color TEXT DEFAULT '#1f2937',
-  description TEXT DEFAULT '',
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+  description TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Create Units table
-CREATE TABLE IF NOT EXISTS units (
+-- Create Units table (kg, g, liter, ml, pcs, etc)
+CREATE TABLE units (
   id SERIAL PRIMARY KEY,
-  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
-  name_marathi TEXT DEFAULT '',
   short_form TEXT NOT NULL,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Create Items table
-CREATE TABLE IF NOT EXISTS items (
+CREATE TABLE items (
   id SERIAL PRIMARY KEY,
-  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
-  name_marathi TEXT DEFAULT '',
+  description TEXT,
   category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
-  unit_id INTEGER NOT NULL REFERENCES units(id),
-  quantity NUMERIC(14,4) NOT NULL DEFAULT 0,
-  buy_price NUMERIC(14,4) NOT NULL DEFAULT 0,
-  sell_price NUMERIC(14,4) NOT NULL DEFAULT 0,
-  low_stock_limit NUMERIC(14,4) NOT NULL DEFAULT 0,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+  base_unit_id INTEGER NOT NULL REFERENCES units(id),
+  quantity DECIMAL(10,2) NOT NULL DEFAULT 0,
+  low_stock_limit DECIMAL(10,2) NOT NULL DEFAULT 0,
+  wholesale_cost DECIMAL(10,2) NOT NULL,
+  wholesale_quantity DECIMAL(10,2) NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Create Price Tiers table (multi-level pricing)
-CREATE TABLE IF NOT EXISTS price_tiers (
+CREATE TABLE price_tiers (
   id SERIAL PRIMARY KEY,
-  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
-  quantity NUMERIC(14,4) NOT NULL,
+  quantity DECIMAL(10,2) NOT NULL,
   unit_id INTEGER NOT NULL REFERENCES units(id),
-  price NUMERIC(14,4) NOT NULL,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+  price DECIMAL(10,2) NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Create Batches table
-CREATE TABLE IF NOT EXISTS batches (
-  id SERIAL PRIMARY KEY,
-  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
-  batch_number TEXT,
-  quantity NUMERIC(14,4) NOT NULL DEFAULT 0,
-  purchase_date TIMESTAMP WITH TIME ZONE NOT NULL,
-  expiry_date TIMESTAMP WITH TIME ZONE,
-  cost_per_unit NUMERIC(14,4) NOT NULL DEFAULT 0,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
-
--- Create Alerts table
-CREATE TABLE IF NOT EXISTS alerts (
-  id SERIAL PRIMARY KEY,
-  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
-  alert_type TEXT NOT NULL,
-  message TEXT NOT NULL,
-  is_resolved BOOLEAN NOT NULL DEFAULT FALSE,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
-
--- Create Sales table
-CREATE TABLE IF NOT EXISTS sales (
-  id SERIAL PRIMARY KEY,
-  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  date DATE NOT NULL,
-  timestamp BIGINT NOT NULL,
-  items JSONB NOT NULL DEFAULT '[]'::jsonb,
-  total_quantity_items INTEGER NOT NULL DEFAULT 0,
-  subtotal NUMERIC(14,4) NOT NULL DEFAULT 0,
-  total_cost NUMERIC(14,4) NOT NULL DEFAULT 0,
-  total_profit NUMERIC(14,4) NOT NULL DEFAULT 0,
-  profit_margin_percent NUMERIC(14,4) NOT NULL DEFAULT 0,
-  payment_method TEXT NOT NULL DEFAULT 'cash',
-  notes TEXT,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
-
--- Create indexes for faster queries
-CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
-CREATE INDEX IF NOT EXISTS idx_items_user_id ON items(user_id);
-CREATE INDEX IF NOT EXISTS idx_items_category_id ON items(category_id);
-CREATE INDEX IF NOT EXISTS idx_items_unit_id ON items(unit_id);
-CREATE INDEX IF NOT EXISTS idx_price_tiers_item_id ON price_tiers(item_id);
-CREATE INDEX IF NOT EXISTS idx_categories_user_id ON categories(user_id);
-CREATE INDEX IF NOT EXISTS idx_units_user_id ON units(user_id);
-CREATE INDEX IF NOT EXISTS idx_batches_user_id ON batches(user_id);
-CREATE INDEX IF NOT EXISTS idx_alerts_user_id ON alerts(user_id);
-CREATE INDEX IF NOT EXISTS idx_sales_user_id ON sales(user_id);
+-- Create index for faster queries
+CREATE INDEX idx_items_user_id ON items(user_id);
+CREATE INDEX idx_items_category_id ON items(category_id);
+CREATE INDEX idx_price_tiers_item_id ON price_tiers(item_id);
+CREATE INDEX idx_categories_user_id ON categories(user_id);
+CREATE INDEX idx_units_user_id ON units(user_id);
 
 

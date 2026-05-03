@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, type Item, type Category, type Unit, type PriceTier, type Sale, type SaleItem, type StockHistory, type Batch, type Alert } from '@/lib/db';
-import { convertUnits } from '@/lib/unit-converter';
 
 // Categories Hook
 export function useCategories() {
@@ -285,10 +284,7 @@ export function useSales() {
     for (const saleItem of saleItems) {
       const item = await db.items.get(saleItem.itemId);
       if (item) {
-        const stockQuantity =
-          saleItem.stockQuantity ??
-          convertUnits(saleItem.quantity, saleItem.unitShortForm, saleItem.stockUnitShortForm || saleItem.unitShortForm);
-        const newQuantity = item.quantity - stockQuantity;
+        const newQuantity = item.quantity - saleItem.quantity;
         await db.items.update(saleItem.itemId, { quantity: newQuantity });
       }
     }
