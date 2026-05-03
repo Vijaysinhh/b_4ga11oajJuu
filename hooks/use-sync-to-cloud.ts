@@ -17,8 +17,10 @@ export function useSyncToCloud() {
     
     try {
       const result = await saveItemToSupabase(userId, item);
-      console.log('[v0] Item synced to Supabase:', result.id);
-      return result;
+      if (result?.id) {
+        console.log('[v0] Item synced to Supabase:', result.id);
+      }
+      return result || item;
     } catch (error) {
       console.warn('[v0] Failed to sync item to cloud:', error);
       return item; // Fallback to local item
@@ -30,8 +32,10 @@ export function useSyncToCloud() {
     
     try {
       const result = await saveSaleToSupabase(userId, sale);
-      console.log('[v0] Sale synced to Supabase:', result.id);
-      return result;
+      if (result?.id) {
+        console.log('[v0] Sale synced to Supabase:', result.id);
+      }
+      return result || sale;
     } catch (error) {
       console.warn('[v0] Failed to sync sale to cloud:', error);
       return sale;
