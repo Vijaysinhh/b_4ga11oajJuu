@@ -46,7 +46,7 @@ const commands = [
 export function CommandPalette() {
   const [open, setOpen] = useState(false);
   const router = useRouter();
-  const { logout } = useAuth();
+  const { logout } = useSupabaseAuth();
 
   // Open command palette with Ctrl+K or Cmd+K
   useEffect(() => {
