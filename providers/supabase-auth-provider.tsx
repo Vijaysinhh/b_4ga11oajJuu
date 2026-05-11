@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import {
   clearSupabaseAuthStorage,
   DEMO_USER_ID,
@@ -119,12 +119,22 @@ function getUserFacingAuthError(error: unknown) {
   return error instanceof Error ? error.message : 'Invalid email or password';
 }
 
+function getUserFromSession(session: Session): User {
+  const email = session.user.email || '';
+
+  return {
+    id: session.user.id,
+    email,
+    username: session.user.user_metadata?.username || email.split('@')[0] || 'User',
+    shopName: session.user.user_metadata?.shopName || 'My Shop',
+  };
+}
+
 export function SupabaseAuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Initialize auth state from Supabase
   useEffect(() => {
     let mounted = true;
     let initialized = false;
@@ -149,53 +159,51 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
           return;
         }
 
-        // Get current session
-        const { data: { session: currentSession } } = await supabase.auth.getSession();
-        
+        const {
+          data: { session: currentSession },
+        } = await supabase.auth.getSession();
+
         if (mounted) {
           setSession(currentSession);
           setMiddlewareAuthCookie(currentSession);
-          
+
           if (currentSession?.user) {
-            const email = currentSession.user.email || undefined;
-            const shopName = currentSession.user.user_metadata?.shopName || 'My Shop';
+            const restoredUser = getUserFromSession(currentSession);
+            setUser(restoredUser);
 
-            setUser({
-              id: currentSession.user.id,
-              email: email || '',
-              username: currentSession.user.user_metadata?.username || 'User',
-              shopName,
-            });
-
-            syncUserData(currentSession.user.id, { email, shopName }).catch((error) => {
+            syncUserData(restoredUser.id, {
+              email: restoredUser.email,
+              shopName: restoredUser.shopName,
+            }).catch((error) => {
               console.warn('[v0] Failed to synchronize user data after session restore:', error);
             });
+          } else {
+            setUser(localUser);
           }
         }
 
-        // Subscribe to auth changes
-        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, newSession) => {
-          if (mounted) {
-            setSession(newSession);
-            setMiddlewareAuthCookie(newSession);
-            
-            if (newSession?.user) {
-              const email = newSession.user.email || undefined;
-              const shopName = newSession.user.user_metadata?.shopName || 'My Shop';
+        const {
+          data: { subscription },
+        } = supabase.auth.onAuthStateChange((_event, newSession) => {
+          if (!mounted) {
+            return;
+          }
 
-              setUser({
-                id: newSession.user.id,
-                email: email || '',
-                username: newSession.user.user_metadata?.username || 'User',
-                shopName,
-              });
+          setSession(newSession);
+          setMiddlewareAuthCookie(newSession);
 
-              syncUserData(newSession.user.id, { email, shopName }).catch((error) => {
-                console.warn('[v0] Failed to synchronize user data after auth state change:', error);
-              });
-            } else {
-              setUser(null);
-            }
+          if (newSession?.user) {
+            const nextUser = getUserFromSession(newSession);
+            setUser(nextUser);
+
+            syncUserData(nextUser.id, {
+              email: nextUser.email,
+              shopName: nextUser.shopName,
+            }).catch((error) => {
+              console.warn('[v0] Failed to synchronize user data after auth state change:', error);
+            });
+          } else {
+            setUser(readLocalUser());
           }
         });
 
@@ -245,10 +253,12 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
         unsubscribe();
       }
     };
-  }, [supabase]);
+  }, []);
 
   const login = useCallback(async (email: string, password: string) => {
     try {
+      setLoading(true);
+
       if (!isSupabaseConfigured) {
         if (isLocalFallbackLogin(email, password)) {
           setSession(null);
@@ -256,11 +266,11 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
           return;
         }
 
-        throw new Error('Supabase is not configured. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY or NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY.');
+        throw new Error(
+          'Supabase is not configured. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY or NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY.',
+        );
       }
 
-      setLoading(true);
-      
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
@@ -278,24 +288,18 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
 
       if (data.session?.user) {
         supabase.auth.startAutoRefresh();
-
-        const authEmail = data.session.user.email || undefined;
-        const shopName = data.session.user.user_metadata?.shopName || 'My Shop';
-
         setMiddlewareAuthCookie(data.session);
         setSession(data.session);
-        setUser({
-          id: data.session.user.id,
-          email: authEmail || '',
-          username: data.session.user.user_metadata?.username || authEmail?.split('@')[0] || 'User',
-          shopName,
-        });
 
-        syncUserData(data.session.user.id, { email: authEmail, shopName }).catch((error) => {
+        const nextUser = getUserFromSession(data.session);
+        setUser(nextUser);
+
+        syncUserData(nextUser.id, {
+          email: nextUser.email,
+          shopName: nextUser.shopName,
+        }).catch((error) => {
           console.warn('[v0] Failed to synchronize user data after login:', error);
         });
-
-        console.log('[v0] Login successful:', email);
       }
     } catch (error) {
       if (isSupabaseNetworkError(error) && isLocalFallbackLogin(email, password)) {
@@ -315,7 +319,7 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
     } finally {
       setLoading(false);
     }
-  }, [supabase]);
+  }, []);
 
   const logout = useCallback(async () => {
     try {
@@ -328,13 +332,10 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
 
       if (session) {
         const { error } = await supabase.auth.signOut();
-
         if (error && !isSupabaseNetworkError(error)) {
           throw error;
         }
       }
-
-      console.log('[v0] Logout successful');
     } catch (error) {
       console.error('[v0] Logout error:', error);
       setUser(null);
@@ -344,7 +345,7 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
     } finally {
       setLoading(false);
     }
-  }, [session, supabase]);
+  }, [session]);
 
   return (
     <AuthContext.Provider

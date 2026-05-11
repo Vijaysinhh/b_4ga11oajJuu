@@ -60,19 +60,11 @@ export interface SaleItem {
   saleId: number;
   itemId: number;
   itemName: string;
-  quantity: number; // Sold quantity in the sale unit shown to the customer
-  unitId: number; // Sale unit, e.g. g when selling a 50g tier from a kg item
+  quantity: number;
+  unitId: number;
   unitShortForm: string;
   priceTierId?: number; // Which price tier was used
-  priceTierQuantity?: number; // Quantity represented by one selected tier/package
-  priceTierUnitId?: number;
-  priceTierUnitShortForm?: string;
-  priceTierPrice?: number; // Selling price for one selected tier/package
-  packageCount?: number; // Number of selected tier/packages sold
-  stockQuantity?: number; // Quantity to deduct from inventory, converted to item base unit
-  stockUnitId?: number;
-  stockUnitShortForm?: string;
-  pricePerUnit: number; // Actual selling price per sale unit
+  pricePerUnit: number; // Actual selling price used
   totalPrice: number; // quantity * pricePerUnit
   costPerUnit: number; // For profit calculation
   totalCost: number; // quantity * costPerUnit

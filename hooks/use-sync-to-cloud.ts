@@ -1,19 +1,20 @@
 'use client';
 
 import { useSupabaseAuth } from '@/providers/supabase-auth-provider';
-import { saveItemToSupabase, saveSaleToSupabase, fetchItemsFromSupabase, fetchSalesFromSupabase, syncUserData } from '@/lib/supabase-sync';
+import {
+  fetchItemsFromSupabase,
+  fetchSalesFromSupabase,
+  saveItemToSupabase,
+  saveSaleToSupabase,
+  syncUserData,
+} from '@/lib/supabase-sync';
 
-/**
- * Hook to sync Dexie data with Supabase for multi-device support
- * When user is authenticated, all items and sales are also saved to Supabase
- * This allows data to sync across devices for the same account
- */
 export function useSyncToCloud() {
   const { session } = useSupabaseAuth();
   const userId = session?.user.id;
 
   const syncItemToCloud = async (item: any) => {
-    if (!userId) return item; // Don't sync if not logged in
+    if (!userId) return item;
 
     try {
       const result = await saveItemToSupabase(userId, item);
@@ -21,7 +22,7 @@ export function useSyncToCloud() {
       return result || item;
     } catch (error) {
       console.warn('[v0] Failed to sync item to cloud:', error);
-      return item; // Fallback to local item
+      return item;
     }
   };
 
@@ -66,6 +67,7 @@ export function useSyncToCloud() {
 
   const refreshCloudData = async () => {
     if (!userId) return;
+
     try {
       await syncUserData(userId);
       console.log('[v0] Refreshed cloud data for user:', userId);

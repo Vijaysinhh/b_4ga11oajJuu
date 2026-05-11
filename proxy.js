@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server';
 
 export function proxy(request) {
+  return handleAuthRedirect(request, '[Proxy]');
+}
+
+export function handleAuthRedirect(request, label = '[Proxy]') {
   const pathname = request.nextUrl.pathname;
 
   const publicRoutes = ['/login', '/api/auth'];
@@ -26,7 +30,7 @@ export function proxy(request) {
   const authToken = request.cookies.get('authToken')?.value;
 
   if (!authToken) {
-    console.log(`[Proxy] Unauthenticated access to ${pathname}, redirecting to login`);
+    console.log(`${label} Unauthenticated access to ${pathname}, redirecting to login`);
     return NextResponse.redirect(new URL('/login', request.url));
   }
 
