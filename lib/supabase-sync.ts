@@ -7,11 +7,102 @@ const supabaseAnonKey =
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
   process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
   "";
+const SUPABASE_REQUEST_TIMEOUT_MS = 4000;
+export const SUPABASE_UNAVAILABLE_MESSAGE =
+  "Unable to reach Supabase. Check the project URL, project status, or network/DNS access.";
+
+export const DEMO_USER_ID = "00000000-0000-0000-0000-000000000001";
+export const isSupabaseConfigured = Boolean(
+  supabaseUrl &&
+    supabaseAnonKey &&
+    !supabaseUrl.includes("placeholder") &&
+    !supabaseAnonKey.includes("placeholder"),
+);
+
+function createSupabaseUnavailableResponse() {
+  return new Response(
+    JSON.stringify({
+      error: SUPABASE_UNAVAILABLE_MESSAGE,
+      error_description: SUPABASE_UNAVAILABLE_MESSAGE,
+      message: SUPABASE_UNAVAILABLE_MESSAGE,
+    }),
+    {
+      status: 503,
+      statusText: "Service Unavailable",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    },
+  );
+}
+
+const supabaseFetch: typeof fetch = async (input, init) => {
+  const controller = new AbortController();
+  const timeout = setTimeout(
+    () => controller.abort(),
+    SUPABASE_REQUEST_TIMEOUT_MS,
+  );
+  const originalSignal = init?.signal;
+  const abortFromOriginalSignal = () => controller.abort();
+
+  if (originalSignal) {
+    if (originalSignal.aborted) {
+      controller.abort();
+    } else {
+      originalSignal.addEventListener("abort", abortFromOriginalSignal, {
+        once: true,
+      });
+    }
+  }
+
+  try {
+    return await fetch(input, {
+      ...init,
+      signal: controller.signal,
+    });
+  } catch (error) {
+    return createSupabaseUnavailableResponse();
+  } finally {
+    clearTimeout(timeout);
+    originalSignal?.removeEventListener("abort", abortFromOriginalSignal);
+  }
+};
 
 export const supabase = createClient(
   supabaseUrl || "https://placeholder.supabase.co",
   supabaseAnonKey || "placeholder-anon-key",
+  {
+    global: {
+      fetch: supabaseFetch,
+    },
+    auth: {
+      detectSessionInUrl: true,
+      persistSession: true,
+      autoRefreshToken: true,
+    },
+  },
 );
+
+export function clearSupabaseAuthStorage() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  Object.keys(window.localStorage)
+    .filter((key) => key.startsWith("sb-") && key.endsWith("-auth-token"))
+    .forEach((key) => window.localStorage.removeItem(key));
+}
+
+export function isSupabaseNetworkError(error: unknown) {
+  const text =
+    error instanceof Error
+      ? `${error.name}: ${error.message}`
+      : formatSupabaseError(error);
+
+  return /unable to reach supabase|failed to fetch|fetch failed|networkerror|timed out|abort|authretryablefetcherror|service unavailable|503/i.test(
+    text,
+  );
+}
 
 /* ------------------------------------------------------- */
 /* -------------------- HELPERS --------------------------- */
@@ -129,6 +220,8 @@ export async function saveItemToSupabase(userId: string, item: any) {
     }
     throw error;
   }
+
+  return item;
 }
 
 export async function savePriceTierToSupabase(userId: string, tier: any) {
@@ -185,6 +278,8 @@ export async function saveSaleToSupabase(userId: string, sale: any) {
     }
     throw error;
   }
+
+  return sale;
 }
 
 /* ------------------------------------------------------- */

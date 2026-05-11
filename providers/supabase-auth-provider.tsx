@@ -1,7 +1,15 @@
 'use client';
 
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
-import { supabase, syncUserData } from '@/lib/supabase-sync';
+import {
+  clearSupabaseAuthStorage,
+  DEMO_USER_ID,
+  isSupabaseConfigured,
+  isSupabaseNetworkError,
+  SUPABASE_UNAVAILABLE_MESSAGE,
+  supabase,
+  syncUserData,
+} from '@/lib/supabase-sync';
 import type { Session } from '@supabase/supabase-js';
 
 interface User {
@@ -22,6 +30,15 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const MIDDLEWARE_AUTH_COOKIE = 'authToken';
+const LOCAL_AUTH_STORAGE_KEY = 'user';
+const LOCAL_AUTH_EMAIL = 'bharatjadhav1971@gmail.com';
+const LOCAL_AUTH_PASSWORD = 'Bharat@71';
+const LOCAL_AUTH_USER: User = {
+  id: DEMO_USER_ID,
+  email: LOCAL_AUTH_EMAIL,
+  username: 'Bharat',
+  shopName: 'Bharat Kirana Store',
+};
 
 function setMiddlewareAuthCookie(session: Session | null) {
   if (typeof document === 'undefined') {
@@ -40,6 +57,68 @@ function setMiddlewareAuthCookie(session: Session | null) {
   document.cookie = `${MIDDLEWARE_AUTH_COOKIE}=1; path=/; max-age=${maxAge}; SameSite=Lax${secure}`;
 }
 
+function setLocalAuthCookie() {
+  if (typeof document === 'undefined') {
+    return;
+  }
+
+  const secure = window.location.protocol === 'https:' ? '; Secure' : '';
+  document.cookie = `${MIDDLEWARE_AUTH_COOKIE}=local; path=/; max-age=86400; SameSite=Lax${secure}`;
+}
+
+function clearAuthState() {
+  clearSupabaseAuthStorage();
+  localStorage.removeItem(LOCAL_AUTH_STORAGE_KEY);
+  setMiddlewareAuthCookie(null);
+  supabase.auth.stopAutoRefresh();
+}
+
+function readLocalUser() {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  try {
+    const storedUser = localStorage.getItem(LOCAL_AUTH_STORAGE_KEY);
+    if (!storedUser) {
+      return null;
+    }
+
+    const parsedUser = JSON.parse(storedUser) as Partial<User>;
+    if (!parsedUser.id || !parsedUser.username) {
+      return null;
+    }
+
+    return {
+      ...LOCAL_AUTH_USER,
+      ...parsedUser,
+      email: parsedUser.email || LOCAL_AUTH_EMAIL,
+      shopName: parsedUser.shopName || LOCAL_AUTH_USER.shopName,
+    };
+  } catch {
+    localStorage.removeItem(LOCAL_AUTH_STORAGE_KEY);
+    return null;
+  }
+}
+
+function saveLocalUser() {
+  localStorage.setItem(LOCAL_AUTH_STORAGE_KEY, JSON.stringify(LOCAL_AUTH_USER));
+  setLocalAuthCookie();
+  return LOCAL_AUTH_USER;
+}
+
+function isLocalFallbackLogin(email: string, password: string) {
+  return email.trim().toLowerCase() === LOCAL_AUTH_EMAIL && password === LOCAL_AUTH_PASSWORD;
+}
+
+function getUserFacingAuthError(error: unknown) {
+  if (isSupabaseNetworkError(error)) {
+    return SUPABASE_UNAVAILABLE_MESSAGE;
+  }
+
+  return error instanceof Error ? error.message : 'Invalid email or password';
+}
+
 export function SupabaseAuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
@@ -54,6 +133,22 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
 
     const initializeAuth = async () => {
       try {
+        const localUser = readLocalUser();
+
+        if (!isSupabaseConfigured) {
+          console.warn('[v0] Supabase is not configured. Set NEXT_PUBLIC_SUPABASE_URL and a public anon/publishable key.');
+          if (mounted) {
+            setSession(null);
+            setUser(localUser);
+            if (localUser) {
+              setLocalAuthCookie();
+            } else {
+              setMiddlewareAuthCookie(null);
+            }
+          }
+          return;
+        }
+
         // Get current session
         const { data: { session: currentSession } } = await supabase.auth.getSession();
         
@@ -106,7 +201,22 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
 
         unsubscribe = subscription?.unsubscribe;
       } catch (error) {
-        console.error('[v0] Auth initialization error:', error);
+        if (isSupabaseNetworkError(error)) {
+          console.warn(`[v0] ${SUPABASE_UNAVAILABLE_MESSAGE}`);
+          const localUser = readLocalUser();
+          if (localUser) {
+            setLocalAuthCookie();
+          } else {
+            setMiddlewareAuthCookie(null);
+          }
+        } else {
+          console.error('[v0] Auth initialization error:', error);
+        }
+
+        if (mounted) {
+          setSession(null);
+          setUser(readLocalUser());
+        }
       } finally {
         initialized = true;
         clearTimeout(timeout);
@@ -118,7 +228,10 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
 
     timeout = setTimeout(() => {
       if (mounted && !initialized) {
-        console.warn('[v0] Auth initialization timeout');
+        console.warn('[v0] Auth initialization timeout. Supabase did not respond in time.');
+        clearAuthState();
+        setSession(null);
+        setUser(null);
         setLoading(false);
       }
     }, 5000);
@@ -136,6 +249,16 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
 
   const login = useCallback(async (email: string, password: string) => {
     try {
+      if (!isSupabaseConfigured) {
+        if (isLocalFallbackLogin(email, password)) {
+          setSession(null);
+          setUser(saveLocalUser());
+          return;
+        }
+
+        throw new Error('Supabase is not configured. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY or NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY.');
+      }
+
       setLoading(true);
       
       const { data, error } = await supabase.auth.signInWithPassword({
@@ -144,10 +267,18 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
       });
 
       if (error) {
+        if (isSupabaseNetworkError(error) && isLocalFallbackLogin(email, password)) {
+          setSession(null);
+          setUser(saveLocalUser());
+          return;
+        }
+
         throw error;
       }
 
       if (data.session?.user) {
+        supabase.auth.startAutoRefresh();
+
         const authEmail = data.session.user.email || undefined;
         const shopName = data.session.user.user_metadata?.shopName || 'My Shop';
 
@@ -167,11 +298,20 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
         console.log('[v0] Login successful:', email);
       }
     } catch (error) {
-      console.error('[v0] Login error:', error);
+      if (isSupabaseNetworkError(error) && isLocalFallbackLogin(email, password)) {
+        setSession(null);
+        setUser(saveLocalUser());
+        return;
+      }
+
+      if (!isSupabaseNetworkError(error)) {
+        console.error('[v0] Login error:', error);
+      }
+
       setUser(null);
       setSession(null);
       setMiddlewareAuthCookie(null);
-      throw error;
+      throw new Error(getUserFacingAuthError(error));
     } finally {
       setLoading(false);
     }
@@ -180,24 +320,31 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
   const logout = useCallback(async () => {
     try {
       setLoading(true);
-      const { error } = await supabase.auth.signOut();
-      
-      if (error) {
-        throw error;
-      }
 
+      localStorage.removeItem(LOCAL_AUTH_STORAGE_KEY);
       setUser(null);
       setSession(null);
       setMiddlewareAuthCookie(null);
+
+      if (session) {
+        const { error } = await supabase.auth.signOut();
+
+        if (error && !isSupabaseNetworkError(error)) {
+          throw error;
+        }
+      }
+
       console.log('[v0] Logout successful');
     } catch (error) {
       console.error('[v0] Logout error:', error);
+      setUser(null);
+      setSession(null);
       setMiddlewareAuthCookie(null);
       throw error;
     } finally {
       setLoading(false);
     }
-  }, [supabase]);
+  }, [session, supabase]);
 
   return (
     <AuthContext.Provider
@@ -207,7 +354,7 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
         loading,
         login,
         logout,
-        isAuthenticated: !!user && !!session,
+        isAuthenticated: !!user,
       }}
     >
       {children}
