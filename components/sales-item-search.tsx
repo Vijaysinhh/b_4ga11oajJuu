@@ -1,14 +1,14 @@
-'use client';
+"use client";
 
-import { useState, useMemo } from 'react';
-import { useItems, useUnits, usePriceTiers } from '@/hooks/use-db';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Card } from '@/components/ui/card';
-import { Search, Plus, X } from 'lucide-react';
-import { HelpTooltip } from '@/components/help-tooltip';
-import { calculatePriceTierCost } from '@/lib/unit-conversion';
-import type { Item, PriceTier } from '@/lib/db';
+import { useState, useMemo } from "react";
+import { useItems, useUnits, usePriceTiers } from "@/hooks/use-db";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Card } from "@/components/ui/card";
+import { Search, Plus, X } from "lucide-react";
+import { HelpTooltip } from "@/components/help-tooltip";
+import { calculatePriceTierCost } from "@/lib/unit-conversion";
+import type { Item, PriceTier } from "@/lib/db";
 
 interface SaleLineItem {
   itemId: number;
@@ -28,44 +28,47 @@ interface SalesItemSearchProps {
   addedItems: SaleLineItem[];
 }
 
-export function SalesItemSearch({ onItemAdded, addedItems }: SalesItemSearchProps) {
+export function SalesItemSearch({
+  onItemAdded,
+  addedItems,
+}: SalesItemSearchProps) {
   const { items } = useItems();
   const { units } = useUnits();
   const { priceTiers } = usePriceTiers();
 
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState("");
   const [selectedItem, setSelectedItem] = useState<Item | null>(null);
-  const [quantity, setQuantity] = useState('');
-  const [selectedPriceTier, setSelectedPriceTier] = useState<PriceTier | null>(null);
+  const [quantity, setQuantity] = useState("");
+  const [selectedPriceTier, setSelectedPriceTier] = useState<PriceTier | null>(
+    null,
+  );
 
   // Filter items based on search term
   const filteredItems = useMemo(() => {
     if (!searchTerm.trim()) return [];
     const term = searchTerm.toLowerCase();
     return items
-      .filter(item =>
-        item.name.toLowerCase().includes(term)
-      )
+      .filter((item) => item.name.toLowerCase().includes(term))
       .slice(0, 10); // Limit to 10 results
   }, [searchTerm, items]);
 
   // Get price tiers for selected item
   const itemPriceTiers = useMemo(() => {
     if (!selectedItem) return [];
-    return priceTiers.filter(tier => tier.itemId === selectedItem.id);
+    return priceTiers.filter((tier) => tier.itemId === selectedItem.id);
   }, [selectedItem, priceTiers]);
 
   const handleItemSelect = (item: Item) => {
     setSelectedItem(item);
-    setSearchTerm('');
-    setQuantity('');
+    setSearchTerm("");
+    setQuantity("");
     setSelectedPriceTier(null);
   };
 
   const handleAddToCart = () => {
     if (!selectedItem || !quantity || parseFloat(quantity) <= 0) return;
 
-    const itemUnit = units.find(u => u.id === selectedItem.unitId);
+    const itemUnit = units.find((u) => u.id === selectedItem.unitId);
     const qty = parseFloat(quantity);
 
     // Use selected price tier if available, otherwise use default sell price
@@ -74,24 +77,29 @@ export function SalesItemSearch({ onItemAdded, addedItems }: SalesItemSearchProp
 
     // Calculate cost properly for price tiers with unit conversion
     let costPerUnit = selectedItem.buyPrice;
-    
+
     if (selectedPriceTier) {
       // Get the unit of the price tier
-      const priceTierUnit = units.find(u => u.id === selectedPriceTier.unitId);
-      
+      const priceTierUnit = units.find(
+        (u) => u.id === selectedPriceTier.unitId,
+      );
+
       // Calculate proportional cost using proper unit conversion
       // This handles cases where price tier unit differs from base item unit
       // E.g., 1kg @ ₹100 -> 50g @ ₹5 (with proper kg->g conversion)
       const calculatedCost = calculatePriceTierCost(
-        selectedItem.buyPrice,           // Base item buy price
-        selectedPriceTier.quantity,      // Price tier quantity (e.g., 50)
-        priceTierUnit?.shortForm || '',  // Price tier unit (e.g., 'g')
-        selectedItem.quantity,           // Base item quantity (e.g., 1000)
-        itemUnit?.shortForm || ''        // Base item unit (e.g., 'kg')
+        selectedItem.buyPrice, // Base item buy price per unit
+        selectedPriceTier.quantity, // Price tier quantity (e.g., 50)
+        priceTierUnit?.shortForm || "", // Price tier unit (e.g., 'g')
+        1, // Base item quantity is one unit of the item's unit
+        itemUnit?.shortForm || "", // Base item unit (e.g., 'kg')
       );
-      
+
       // Ensure costPerUnit is always a number
-      costPerUnit = typeof calculatedCost === 'number' && !isNaN(calculatedCost) ? calculatedCost : selectedItem.buyPrice;
+      costPerUnit =
+        typeof calculatedCost === "number" && !isNaN(calculatedCost)
+          ? calculatedCost
+          : selectedItem.buyPrice;
     }
 
     const saleItem: SaleLineItem = {
@@ -99,7 +107,7 @@ export function SalesItemSearch({ onItemAdded, addedItems }: SalesItemSearchProp
       itemName: selectedItem.name,
       quantity: qty,
       unitId: selectedItem.unitId,
-      unitShortForm: itemUnit?.shortForm || 'unit',
+      unitShortForm: itemUnit?.shortForm || "unit",
       priceTierId,
       pricePerUnit,
       totalPrice: qty * pricePerUnit,
@@ -111,7 +119,7 @@ export function SalesItemSearch({ onItemAdded, addedItems }: SalesItemSearchProp
 
     // Reset form
     setSelectedItem(null);
-    setQuantity('');
+    setQuantity("");
     setSelectedPriceTier(null);
   };
 
@@ -141,7 +149,8 @@ export function SalesItemSearch({ onItemAdded, addedItems }: SalesItemSearchProp
             >
               <div className="font-semibold text-sm">{item.name}</div>
               <div className="text-xs text-gray-600">
-                Stock: {item.quantity}{units.find(u => u.id === item.unitId)?.shortForm}
+                Stock: {item.quantity}
+                {units.find((u) => u.id === item.unitId)?.shortForm}
               </div>
             </button>
           ))}
@@ -155,7 +164,8 @@ export function SalesItemSearch({ onItemAdded, addedItems }: SalesItemSearchProp
             <div>
               <div className="font-bold text-sm">{selectedItem.name}</div>
               <div className="text-xs text-gray-600">
-                Stock: {selectedItem.quantity}{units.find(u => u.id === selectedItem.unitId)?.shortForm}
+                Stock: {selectedItem.quantity}
+                {units.find((u) => u.id === selectedItem.unitId)?.shortForm}
               </div>
             </div>
             <button
@@ -169,7 +179,9 @@ export function SalesItemSearch({ onItemAdded, addedItems }: SalesItemSearchProp
           {/* Quantity Input */}
           <div className="mb-3">
             <div className="flex items-center gap-1 mb-1">
-              <label className="text-xs font-semibold text-gray-700">Quantity</label>
+              <label className="text-xs font-semibold text-gray-700">
+                Quantity
+              </label>
               <HelpTooltip text="Enter how many units you're selling" />
             </div>
             <Input
@@ -186,7 +198,9 @@ export function SalesItemSearch({ onItemAdded, addedItems }: SalesItemSearchProp
           {itemPriceTiers.length > 0 && (
             <div className="mb-3">
               <div className="flex items-center gap-1 mb-1">
-                <label className="text-xs font-semibold text-gray-700">Price Tier (Optional)</label>
+                <label className="text-xs font-semibold text-gray-700">
+                  Price Tier (Optional)
+                </label>
                 <HelpTooltip text="Choose a different quantity package (e.g., 50g, 100g, 500g) with its own price" />
               </div>
               <div className="grid grid-cols-2 gap-1">
@@ -194,25 +208,26 @@ export function SalesItemSearch({ onItemAdded, addedItems }: SalesItemSearchProp
                   onClick={() => setSelectedPriceTier(null)}
                   className={`text-xs p-1.5 border rounded ${
                     !selectedPriceTier
-                      ? 'bg-blue-600 text-white border-blue-600'
-                      : 'bg-white border-gray-300'
+                      ? "bg-blue-600 text-white border-blue-600"
+                      : "bg-white border-gray-300"
                   }`}
                 >
                   Default (₹{selectedItem.sellPrice})
                 </button>
                 {itemPriceTiers.map((tier) => {
-                  const tierUnit = units.find(u => u.id === tier.unitId);
+                  const tierUnit = units.find((u) => u.id === tier.unitId);
                   return (
                     <button
                       key={tier.id}
                       onClick={() => setSelectedPriceTier(tier)}
                       className={`flex-1 text-xs sm:text-xs p-2 sm:p-1.5 border rounded min-h-12 sm:min-h-auto flex items-center justify-center font-medium ${
                         selectedPriceTier?.id === tier.id
-                          ? 'bg-blue-600 text-white border-blue-600'
-                          : 'bg-white border-gray-300'
+                          ? "bg-blue-600 text-white border-blue-600"
+                          : "bg-white border-gray-300"
                       }`}
                     >
-                      {tier.quantity}{tierUnit?.shortForm} @ ₹{tier.price}
+                      {tier.quantity}
+                      {tierUnit?.shortForm} @ ₹{tier.price}
                     </button>
                   );
                 })}
@@ -227,7 +242,11 @@ export function SalesItemSearch({ onItemAdded, addedItems }: SalesItemSearchProp
                 <div className="flex justify-between">
                   <span>Total Price:</span>
                   <span className="font-bold text-green-700">
-                    ₹{(parseFloat(quantity) * (selectedPriceTier?.price || selectedItem.sellPrice)).toFixed(2)}
+                    ₹
+                    {(
+                      parseFloat(quantity) *
+                      (selectedPriceTier?.price || selectedItem.sellPrice)
+                    ).toFixed(2)}
                   </span>
                 </div>
               </div>

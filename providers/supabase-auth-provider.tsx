@@ -46,15 +46,15 @@ function setMiddlewareAuthCookie(session: Session | null) {
   }
 
   if (!session) {
-    document.cookie = `${MIDDLEWARE_AUTH_COOKIE}=; path=/; max-age=0; SameSite=Lax`;
+    document.cookie = `${MIDDLEWARE_AUTH_COOKIE}=; path=/; max-age=0; SameSite=Lax; expires=Thu, 01 Jan 1970 00:00:00 GMT`;
     return;
   }
 
   const now = Math.floor(Date.now() / 1000);
   const maxAge = session.expires_at ? Math.max(session.expires_at - now, 0) : session.expires_in || 86400;
-  const secure = window.location.protocol === 'https:' ? '; Secure' : '';
-
-  document.cookie = `${MIDDLEWARE_AUTH_COOKIE}=1; path=/; max-age=${maxAge}; SameSite=Lax${secure}`;
+  
+  // Use a simple value '1' as expected by proxy.js
+  document.cookie = `${MIDDLEWARE_AUTH_COOKIE}=1; path=/; max-age=${maxAge}; SameSite=Lax`;
 }
 
 function setLocalAuthCookie() {
@@ -62,8 +62,13 @@ function setLocalAuthCookie() {
     return;
   }
 
-  const secure = window.location.protocol === 'https:' ? '; Secure' : '';
-  document.cookie = `${MIDDLEWARE_AUTH_COOKIE}=local; path=/; max-age=86400; SameSite=Lax${secure}`;
+  // Use a very specific expiration to ensure it's not seen as a session cookie
+  const date = new Date();
+  date.setTime(date.getTime() + (24 * 60 * 60 * 1000));
+  const expires = "; expires=" + date.toUTCString();
+  
+  document.cookie = `${MIDDLEWARE_AUTH_COOKIE}=local; path=/; max-age=86400; SameSite=Lax${expires}`;
+  console.log('[v0] Local auth cookie set');
 }
 
 function clearAuthState() {
@@ -144,42 +149,50 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
     const initializeAuth = async () => {
       try {
         const localUser = readLocalUser();
+        if (localUser && mounted) {
+          console.log('[v0] Found local user session, setting state...');
+          setUser(localUser);
+          setLocalAuthCookie();
+          // Stop loading if we have a local session
+          setLoading(false);
+        }
 
         if (!isSupabaseConfigured) {
-          console.warn('[v0] Supabase is not configured. Set NEXT_PUBLIC_SUPABASE_URL and a public anon/publishable key.');
+          console.warn('[v0] Supabase is not configured.');
           if (mounted) {
             setSession(null);
-            setUser(localUser);
-            if (localUser) {
-              setLocalAuthCookie();
-            } else {
+            if (!localUser) {
+              setUser(null);
               setMiddlewareAuthCookie(null);
             }
+            setLoading(false);
           }
           return;
         }
 
+        console.log('[v0] Fetching Supabase session...');
         const {
           data: { session: currentSession },
         } = await supabase.auth.getSession();
 
         if (mounted) {
-          setSession(currentSession);
-          setMiddlewareAuthCookie(currentSession);
-
-          if (currentSession?.user) {
+          if (currentSession) {
+            console.log('[v0] Supabase session found');
+            setSession(currentSession);
+            setMiddlewareAuthCookie(currentSession);
             const restoredUser = getUserFromSession(currentSession);
             setUser(restoredUser);
-
+            
             syncUserData(restoredUser.id, {
               email: restoredUser.email,
               shopName: restoredUser.shopName,
-            }).catch((error) => {
-              console.warn('[v0] Failed to synchronize user data after session restore:', error);
-            });
-          } else {
-            setUser(localUser);
+            }).catch(err => console.warn('[v0] Sync error:', err));
+          } else if (!localUser) {
+            console.log('[v0] No session found');
+            setUser(null);
+            setMiddlewareAuthCookie(null);
           }
+          setLoading(false);
         }
 
         const {
@@ -190,9 +203,9 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
           }
 
           setSession(newSession);
-          setMiddlewareAuthCookie(newSession);
 
           if (newSession?.user) {
+            setMiddlewareAuthCookie(newSession);
             const nextUser = getUserFromSession(newSession);
             setUser(nextUser);
 
@@ -203,7 +216,14 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
               console.warn('[v0] Failed to synchronize user data after auth state change:', error);
             });
           } else {
-            setUser(readLocalUser());
+            const localUser = readLocalUser();
+            if (localUser) {
+              setLocalAuthCookie();
+              setUser(localUser);
+            } else {
+              setMiddlewareAuthCookie(null);
+              setUser(null);
+            }
           }
         });
 
@@ -212,16 +232,18 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
         if (isSupabaseNetworkError(error)) {
           console.warn(`[v0] ${SUPABASE_UNAVAILABLE_MESSAGE}`);
           const localUser = readLocalUser();
-          if (localUser) {
+          if (localUser && mounted) {
+            setUser(localUser);
             setLocalAuthCookie();
-          } else {
+          } else if (mounted) {
             setMiddlewareAuthCookie(null);
+            setUser(null);
           }
         } else {
           console.error('[v0] Auth initialization error:', error);
         }
 
-        if (mounted) {
+        if (mounted && !user) {
           setSession(null);
           setUser(readLocalUser());
         }
@@ -237,12 +259,10 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
     timeout = setTimeout(() => {
       if (mounted && !initialized) {
         console.warn('[v0] Auth initialization timeout. Supabase did not respond in time.');
-        clearAuthState();
-        setSession(null);
-        setUser(null);
+        // Don't clear state on timeout, just stop loading
         setLoading(false);
       }
-    }, 5000);
+    }, 15000);
 
     initializeAuth();
 
@@ -287,6 +307,7 @@ export function SupabaseAuthProvider({ children }: { children: React.ReactNode }
       }
 
       if (data.session?.user) {
+        console.log('[v0] Login successful, setting session and cookies...');
         supabase.auth.startAutoRefresh();
         setMiddlewareAuthCookie(data.session);
         setSession(data.session);

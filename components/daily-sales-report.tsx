@@ -1,17 +1,25 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
-import { useSales, useItems } from '@/hooks/use-db';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { ArrowLeft, TrendingUp, DollarSign, Zap } from 'lucide-react';
-import Link from 'next/link';
+import { useEffect, useState } from "react";
+import { useSales, useItems } from "@/hooks/use-db";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { ArrowLeft, TrendingUp, DollarSign, Zap } from "lucide-react";
+import Link from "next/link";
 
 export function DailySalesReport() {
   const { getDailySummary } = useSales();
   const { items } = useItems();
   const [dailyData, setDailyData] = useState<any>(null);
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [selectedDate, setSelectedDate] = useState(
+    new Date().toISOString().split("T")[0],
+  );
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -21,7 +29,7 @@ export function DailySalesReport() {
         const summary = await getDailySummary(selectedDate);
         setDailyData(summary);
       } catch (error) {
-        console.error('[v0] Error fetching daily summary:', error);
+        console.error("[v0] Error fetching daily summary:", error);
         setDailyData(null);
       } finally {
         setLoading(false);
@@ -52,7 +60,11 @@ export function DailySalesReport() {
           />
         </div>
         <Link href="/sales" className="w-full sm:w-auto">
-          <Button variant="outline" size="sm" className="w-full sm:w-auto h-10 sm:h-9">
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full sm:w-auto h-10 sm:h-9"
+          >
             <ArrowLeft className="w-4 h-4 mr-2" />
             Back to Sales
           </Button>
@@ -64,7 +76,9 @@ export function DailySalesReport() {
         {/* Total Sales */}
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-gray-600">Total Transactions</CardTitle>
+            <CardTitle className="text-sm font-medium text-gray-600">
+              Total Transactions
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{dailyData.totalSales}</div>
@@ -81,7 +95,9 @@ export function DailySalesReport() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-blue-900">₹{dailyData.totalRevenue.toFixed(0)}</div>
+            <div className="text-2xl font-bold text-blue-900">
+              ₹{dailyData.totalRevenue.toFixed(0)}
+            </div>
             <p className="text-xs text-blue-600 mt-1">Amount earned</p>
           </CardContent>
         </Card>
@@ -95,7 +111,9 @@ export function DailySalesReport() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-900">₹{dailyData.totalProfit.toFixed(0)}</div>
+            <div className="text-2xl font-bold text-green-900">
+              ₹{dailyData.totalProfit.toFixed(0)}
+            </div>
             <p className="text-xs text-green-600 mt-1">Pure profit</p>
           </CardContent>
         </Card>
@@ -109,7 +127,9 @@ export function DailySalesReport() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-purple-900">{dailyData.profitMarginPercent.toFixed(1)}%</div>
+            <div className="text-2xl font-bold text-purple-900">
+              {dailyData.profitMarginPercent.toFixed(1)}%
+            </div>
             <p className="text-xs text-purple-600 mt-1">% of revenue</p>
           </CardContent>
         </Card>
@@ -124,15 +144,21 @@ export function DailySalesReport() {
           <div className="space-y-3">
             <div className="flex justify-between items-center">
               <span className="text-gray-700">Total Revenue</span>
-              <span className="font-bold">₹{dailyData.totalRevenue.toFixed(0)}</span>
+              <span className="font-bold">
+                ₹{dailyData.totalRevenue.toFixed(0)}
+              </span>
             </div>
             <div className="flex justify-between items-center text-red-700">
               <span>Total Cost</span>
-              <span className="font-bold">-₹{dailyData.totalCost.toFixed(0)}</span>
+              <span className="font-bold">
+                -₹{dailyData.totalCost.toFixed(0)}
+              </span>
             </div>
             <div className="border-t pt-3 flex justify-between items-center">
               <span className="font-semibold">Net Profit</span>
-              <span className="font-bold text-green-700">₹{dailyData.totalProfit.toFixed(0)}</span>
+              <span className="font-bold text-green-700">
+                ₹{dailyData.totalProfit.toFixed(0)}
+              </span>
             </div>
           </div>
         </CardContent>
@@ -146,16 +172,46 @@ export function DailySalesReport() {
             <CardDescription>{dailyData.sales.length} sales</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-2 max-h-96 overflow-y-auto">
+            <div className="space-y-3 max-h-96 overflow-y-auto">
               {dailyData.sales.map((sale: any, idx: number) => (
-                <div key={sale.id} className="flex justify-between items-center p-2 bg-gray-50 rounded">
-                  <div>
-                    <div className="text-sm font-medium">Sale #{idx + 1}</div>
-                    <div className="text-xs text-gray-500">{sale.items.length} items</div>
+                <div key={sale.id} className="border rounded-lg p-3 bg-gray-50">
+                  <div className="flex justify-between items-start mb-2">
+                    <div className="font-medium text-sm">Sale #{idx + 1}</div>
+                    <div className="text-right">
+                      <div className="font-semibold">
+                        ₹{sale.subtotal.toFixed(0)}
+                      </div>
+                      <div className="text-xs text-green-700">
+                        +₹{sale.totalProfit.toFixed(0)} profit
+                      </div>
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <div className="font-semibold">₹{sale.subtotal.toFixed(0)}</div>
-                    <div className="text-xs text-green-700">+₹{sale.totalProfit.toFixed(0)}</div>
+
+                  {/* Items in this sale */}
+                  <div className="space-y-1">
+                    {sale.items.map((item: any, itemIdx: number) => (
+                      <div
+                        key={itemIdx}
+                        className="flex justify-between items-center text-xs bg-white p-2 rounded border"
+                      >
+                        <div className="flex-1">
+                          <span className="font-medium">{item.itemName}</span>
+                          <span className="text-gray-500 ml-1">
+                            {item.quantity}
+                            {item.unitShortForm} × ₹
+                            {item.pricePerUnit.toFixed(2)}
+                          </span>
+                        </div>
+                        <div className="text-right">
+                          <div className="font-semibold">
+                            ₹{item.totalPrice.toFixed(2)}
+                          </div>
+                          <div className="text-green-600">
+                            +₹{item.profit.toFixed(2)}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               ))}

@@ -90,10 +90,6 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
     return translations[key]?.[language] || key;
   };
 
-  if (isLoading) {
-    return <div className="flex items-center justify-center min-h-screen">Loading...</div>;
-  }
-
   return (
     <LanguageContext.Provider value={{ language, setLanguage, t }}>
       {children}

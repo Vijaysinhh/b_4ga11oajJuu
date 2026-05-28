@@ -8,6 +8,7 @@ import { ToastProvider } from '@/providers/toast-provider'
 import { ErrorBoundary } from '@/components/error-boundary'
 import { Navigation } from '@/components/navigation'
 import { CommandPalette } from '@/components/command-palette'
+import { ThemeProvider } from '@/components/theme-provider'
 import './globals.css'
 
 const _geist = Geist({ subsets: ["latin"] });
@@ -55,21 +56,36 @@ export default function RootLayout({
       <head>
         <link rel="manifest" href="/manifest.json" />
         <meta name="theme-color" content="#8d5cf6" />
+        <script dangerouslySetInnerHTML={{ __html: `
+          window.onerror = function(msg, url, line, col, error) {
+            console.error('[Global Error]', msg, error);
+            return false;
+          };
+          window.onunhandledrejection = function(event) {
+            console.error('[Unhandled Rejection]', event.reason);
+          };
+          // Debug click events
+          window.onclick = function(e) {
+            console.log('[Click Debug]', e.target);
+          };
+        ` }} />
       </head>
       <body className="font-sans antialiased bg-background overflow-x-hidden m-0 p-0">
         <ErrorBoundary>
-          <SupabaseAuthProvider>
-            <ServiceWorkerProvider>
-              <LanguageProvider>
-                <Navigation />
-                <CommandPalette />
-                <main className="pt-16 sm:pt-20 pb-20 sm:pb-6 px-3 sm:px-4 sm:ml-56 md:px-6 overflow-y-auto overflow-x-hidden min-h-screen transition-all duration-300">
-                  {children}
-                </main>
-                <ToastProvider />
-              </LanguageProvider>
-            </ServiceWorkerProvider>
-          </SupabaseAuthProvider>
+          <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false}>
+            <SupabaseAuthProvider>
+              <ServiceWorkerProvider>
+                <LanguageProvider>
+                  <Navigation />
+                  <CommandPalette />
+                  <main className="pt-16 sm:pt-20 pb-20 sm:pb-6 px-3 sm:px-4 sm:ml-56 md:px-6 overflow-y-auto overflow-x-hidden min-h-screen transition-all duration-300">
+                    {children}
+                  </main>
+                  <ToastProvider />
+                </LanguageProvider>
+              </ServiceWorkerProvider>
+            </SupabaseAuthProvider>
+          </ThemeProvider>
         </ErrorBoundary>
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>

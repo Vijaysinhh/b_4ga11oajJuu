@@ -192,17 +192,34 @@ export const DEMO_ITEMS: Omit<Item, 'id'>[] = [];
 
 // Initialize database with default categories and units on first load
 export async function initializeDatabase() {
+  if (typeof window === 'undefined') return;
+  
   try {
+    if (!db.isOpen()) {
+      // Add a timeout to db.open()
+      const openPromise = db.open();
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Database open timeout')), 5000)
+      );
+      await Promise.race([openPromise, timeoutPromise]);
+    }
+
     const settingsCount = await db.appSettings.count();
     
     if (settingsCount === 0) {
-      // First time setup - clear everything and reinitialize
-      await db.delete();
-      await db.open();
+      console.log('[Dukan] Initializing default settings...');
       
-      // Initialize with default categories and units
-      await db.categories.bulkAdd(getDefaultCategories());
-      await db.units.bulkAdd(getDefaultUnits());
+      // Check if categories already exist before adding
+      const categoryCount = await db.categories.count();
+      if (categoryCount === 0) {
+        await db.categories.bulkAdd(getDefaultCategories());
+      }
+
+      // Check if units already exist before adding
+      const unitCount = await db.units.count();
+      if (unitCount === 0) {
+        await db.units.bulkAdd(getDefaultUnits());
+      }
 
       await db.appSettings.add({
         language: 'mr',
