@@ -261,7 +261,7 @@ export function SalesTransaction() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Complete Sale?</AlertDialogTitle>
-            <AlertDialogDescription>
+            <AlertDialogDescription asChild>
               <div className="space-y-2 mt-3">
                 <div className="flex justify-between text-sm">
                   <span>Items:</span>

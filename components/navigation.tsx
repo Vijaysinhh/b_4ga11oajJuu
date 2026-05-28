@@ -2,7 +2,6 @@
 
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
-import { useLanguage } from '@/providers/language-provider';
 import { useSupabaseAuth } from '@/providers/supabase-auth-provider';
 import { cn } from '@/lib/utils';
 import { 
@@ -11,52 +10,69 @@ import {
   LayoutDashboard, 
   ShoppingCart, 
   LogOut, 
-  Menu,
   BarChart3,
   Bell,
   Box,
   Layers,
   Grid3x3,
-  X,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  MoreHorizontal,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
+import {
+  Sheet,
+  SheetClose,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
 
 export function Navigation() {
-  const { t } = useLanguage();
   const { user, logout, isAuthenticated } = useSupabaseAuth();
   const pathname = usePathname();
   const router = useRouter();
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const mainNavItems = useMemo(() => [
     { href: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
     { href: '/sales', icon: ShoppingCart, label: 'Sales' },
     { href: '/items', icon: Package, label: 'Items' },
-    { href: '/reports', icon: BarChart3, label: 'Reports' },
   ], []);
 
-  const allNavItems = useMemo(() => [
-    { href: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-    { href: '/items', icon: Package, label: 'Items' },
+  const moreNavItems = useMemo(() => [
+    { href: '/reports', icon: BarChart3, label: 'Reports' },
     { href: '/categories', icon: Grid3x3, label: 'Categories' },
     { href: '/units', icon: Layers, label: 'Units' },
-    { href: '/sales', icon: ShoppingCart, label: 'Sales' },
     { href: '/batches', icon: Box, label: 'Batches' },
-    { href: '/reports', icon: BarChart3, label: 'Reports' },
     { href: '/alerts', icon: Bell, label: 'Alerts' },
     { href: '/settings', icon: Settings, label: 'Settings' },
   ], []);
 
+  const allNavItems = useMemo(() => [
+    { href: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
+    { href: '/sales', icon: ShoppingCart, label: 'Sales' },
+    { href: '/items', icon: Package, label: 'Items' },
+    { href: '/reports', icon: BarChart3, label: 'Reports' },
+    { href: '/categories', icon: Grid3x3, label: 'Categories' },
+    { href: '/units', icon: Layers, label: 'Units' },
+    { href: '/batches', icon: Box, label: 'Batches' },
+    { href: '/alerts', icon: Bell, label: 'Alerts' },
+    { href: '/settings', icon: Settings, label: 'Settings' },
+  ], []);
+
+  const isMoreActive = moreNavItems.some(
+    (item) => pathname === item.href || pathname.startsWith(item.href + '/'),
+  );
+
   const handleLogout = async () => {
+    setMoreOpen(false);
     await logout();
     router.push('/login');
   };
-
-  const closeSidebar = () => setSidebarOpen(false);
 
   // Don't show navigation on login page
   if (pathname === '/login' || !isAuthenticated) {
@@ -68,15 +84,6 @@ export function Navigation() {
       {/* Header */}
       <header className="fixed top-0 left-0 right-0 z-40 bg-background border-b border-border px-3 sm:px-4 py-3 h-16 sm:h-20 flex items-center justify-between">
         <div className="flex items-center gap-2 sm:gap-3 flex-1">
-          <Button
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-            variant="ghost"
-            size="sm"
-            className="h-10 w-10 p-0 sm:hidden"
-            title="Menu"
-          >
-            {sidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-          </Button>
           <div className="min-w-0">
             <h1 className="text-lg sm:text-2xl font-bold tracking-tight">Dukan</h1>
             <p className="text-xs text-gray-600 truncate hidden sm:block">{user?.shopName || 'Shop'}</p>
@@ -92,42 +99,6 @@ export function Navigation() {
           <span className="hidden sm:inline">Logout</span>
         </Button>
       </header>
-
-      {/* Mobile Sidebar Overlay */}
-      {sidebarOpen && (
-        <div
-          className="fixed inset-0 z-30 bg-black/50 sm:hidden"
-          onClick={closeSidebar}
-        />
-      )}
-
-      {/* Left Sidebar - Mobile (Collapsible) */}
-      <nav className={cn(
-        "fixed left-0 top-16 h-[calc(100vh-4rem)] w-64 bg-background border-r border-border overflow-y-auto transition-transform duration-300 z-30 p-3 space-y-2",
-        "sm:hidden",
-        sidebarOpen ? "translate-x-0" : "-translate-x-full"
-      )}>
-        {allNavItems.map((item) => {
-          const Icon = item.icon;
-          const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={closeSidebar}
-              className={cn(
-                "flex items-center gap-3 px-4 py-3 rounded-lg transition-colors font-medium text-sm",
-                isActive
-                  ? "bg-primary text-primary-foreground shadow-md"
-                  : "text-muted-foreground hover:bg-accent hover:text-foreground"
-              )}
-            >
-              <Icon className="w-5 h-5 flex-shrink-0" />
-              <span className="truncate">{item.label}</span>
-            </Link>
-          );
-        })}
-      </nav>
 
       {/* Left Sidebar - Desktop (Collapsible) */}
       <div className="hidden sm:flex fixed left-0 top-20 h-[calc(100vh-5rem)] z-30 flex-col">
@@ -197,6 +168,69 @@ export function Navigation() {
               </Link>
             );
           })}
+          <Sheet open={moreOpen} onOpenChange={setMoreOpen}>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => setMoreOpen(true)}
+              className={cn(
+                'flex-1 h-full rounded-none flex flex-col items-center justify-center gap-0.5 transition-colors',
+                isMoreActive ? 'bg-primary/10' : 'active:opacity-70',
+              )}
+            >
+              <MoreHorizontal className={cn(
+                'w-6 h-6',
+                isMoreActive ? 'text-primary' : 'text-muted-foreground',
+              )} />
+              <span className={cn(
+                'text-xs font-semibold text-center px-1',
+                isMoreActive ? 'text-primary' : 'text-muted-foreground',
+              )}>
+                More
+              </span>
+            </Button>
+            <SheetContent side="bottom" className="sm:hidden pb-6">
+              <SheetHeader>
+                <SheetTitle>More</SheetTitle>
+                <SheetDescription>
+                  Reports, setup, alerts, and account actions.
+                </SheetDescription>
+              </SheetHeader>
+              <div className="grid grid-cols-2 gap-2 px-4">
+                {moreNavItems.map((item) => {
+                  const Icon = item.icon;
+                  const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
+                  return (
+                    <SheetClose key={item.href} asChild>
+                      <Link
+                        href={item.href}
+                        className={cn(
+                          'flex min-h-16 items-center gap-3 rounded-md border px-3 py-3 text-sm font-medium transition-colors',
+                          isActive
+                            ? 'border-primary bg-primary/10 text-primary'
+                            : 'border-border text-foreground active:bg-accent',
+                        )}
+                      >
+                        <Icon className="h-5 w-5 flex-shrink-0" />
+                        <span className="truncate">{item.label}</span>
+                      </Link>
+                    </SheetClose>
+                  );
+                })}
+              </div>
+              <div className="px-4">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleLogout}
+                  className="h-11 w-full justify-start"
+                >
+                  <LogOut className="mr-2 h-4 w-4" />
+                  Logout
+                </Button>
+              </div>
+            </SheetContent>
+          </Sheet>
         </div>
       </nav>
     </>

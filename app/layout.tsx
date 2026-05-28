@@ -64,10 +64,6 @@ export default function RootLayout({
           window.onunhandledrejection = function(event) {
             console.error('[Unhandled Rejection]', event.reason);
           };
-          // Debug click events
-          window.onclick = function(e) {
-            console.log('[Click Debug]', e.target);
-          };
         ` }} />
       </head>
       <body className="font-sans antialiased bg-background overflow-x-hidden m-0 p-0">
@@ -92,6 +88,5 @@ export default function RootLayout({
     </html>
   )
 }
-
 
 
