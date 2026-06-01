@@ -50,6 +50,95 @@ const translations: Record<string, Record<'en' | 'mr', string>> = {
   'confirm_delete': { en: 'Are you sure?', mr: 'तुम्हाला खरोखर हवे का?' },
   'success': { en: 'Success', mr: 'यशस्वी' },
   'error': { en: 'Error', mr: 'त्रुटी' },
+
+  // Navigation & General Layout
+  'home': { en: 'Home', mr: 'मुख्यपृष्ठ' },
+  'stock': { en: 'Stock', mr: 'स्टॉक' },
+  'udhari': { en: 'Udhari', mr: 'उधारी' },
+  'new_sale': { en: 'New Sale', mr: 'नवीन विक्री' },
+  'logout': { en: 'Logout', mr: 'लॉगआउट' },
+  'sale': { en: 'Sale', mr: 'विक्री' },
+  'dukan': { en: 'Dukan', mr: 'दुकान' },
+  'general': { en: 'General', mr: 'सामान्य' },
+
+  // Dashboard Page
+  'today_sales': { en: 'Today Sales', mr: 'आजची विक्री' },
+  'today_profit': { en: 'Today Profit', mr: 'आजचा नफा' },
+  'low_stock_limit_label': { en: 'Low Stock Limit', mr: 'कमी स्टॉक मर्यादा' },
+  'low_stock_label': { en: 'Low Stock', mr: 'कमी स्टॉक' },
+  'pending': { en: 'Pending', mr: 'प्रलंबित' },
+  'products': { en: 'products', mr: 'उत्पादने' },
+  'transactions': { en: 'transactions', mr: 'व्यवहार' },
+  'reports': { en: 'Reports', mr: 'अहवाल' },
+  'high_margin_items': { en: 'High Margin Items', mr: 'अधिक नफा देणाऱ्या वस्तू' },
+  'stock_needed': { en: 'Stock Needed', mr: 'स्टॉक आवश्यक' },
+  'no_items_yet': { en: 'No items yet. Add products from Stock.', mr: 'अद्याप कोणत्याही वस्तू नाहीत. स्टॉक मधून उत्पादने जोडा.' },
+  'loading_shop_data': { en: 'Loading shop data...', mr: 'दुकान डेटा लोड होत आहे...' },
+  'today': { en: 'Today', mr: 'आज' },
+  'this_month': { en: 'This Month', mr: 'या महिन्यात' },
+  'six_months': { en: '6 Months', mr: '६ महिने' },
+  'this_year': { en: 'This Year', mr: 'या वर्षी' },
+  'pdf_report': { en: 'PDF', mr: 'पीडीएफ' },
+  'left_limit': { en: 'left, limit', mr: 'शिल्लक, मर्यादा' },
+
+  // Udhari Page
+  'customer': { en: 'Customer', mr: 'ग्राहक' },
+  'add_customer': { en: 'Add Customer', mr: 'ग्राहक जोडा' },
+  'pending_amount': { en: 'Pending Amount', mr: 'प्रलंबित रक्कम' },
+  'customers': { en: 'Customers', mr: 'ग्राहक' },
+  'no_udhari_customers': { en: 'No udhari customers yet', mr: 'अद्याप उधारीचे ग्राहक नाहीत' },
+  'balance': { en: 'Balance', mr: 'बाकी' },
+  'payment': { en: 'Payment', mr: 'जमा रक्कम' },
+  'history': { en: 'History', mr: 'इतिहास' },
+  'no_history': { en: 'No history yet', mr: 'अद्याप कोणताही इतिहास नाही' },
+  'recent': { en: 'Recent', mr: 'अलीकडील' },
+  'name_is_enough': { en: 'Name is enough. Mobile number is optional.', mr: 'फक्त नाव पुरेसे आहे. मोबाईल नंबर ऐच्छिक आहे.' },
+  'customer_name': { en: 'Customer Name', mr: 'ग्राहकाचे नाव' },
+  'mobile_number': { en: 'Mobile Number', mr: 'मोबाईल नंबर' },
+  'save_customer': { en: 'Save Customer', mr: 'ग्राहक जतन करा' },
+  'amount': { en: 'Amount', mr: 'रक्कम' },
+  'note': { en: 'Note', mr: 'टीप' },
+  'save_payment': { en: 'Save Payment', mr: 'पेमेंट जतन करा' },
+  'receive_payment': { en: 'Receive Payment', mr: 'पेमेंट जमा करा' },
+  'sale_bill': { en: 'Sale Bill', mr: 'विक्री बिल' },
+
+  // Quick Sale / Sales Page
+  'quick_sale': { en: 'Quick Sale', mr: 'त्वरित विक्री' },
+  'quick_sale_desc': { en: 'Search for items, select quantity or price variant, add to cart, and finalize the sale', mr: 'वस्तू शोधा, प्रमाण किंवा किंमतीचा प्रकार निवडा, कार्टमध्ये जोडा आणि विक्री अंतिम करा' },
+  'add_items_desc': { en: 'Add items and record transactions', mr: 'वस्तू जोडा आणि व्यवहारांची नोंद करा' },
+  'add_items': { en: 'Add Items', mr: 'वस्तू जोडा' },
+  'sale_items': { en: 'Sale Items', mr: 'विक्री वस्तू' },
+  'no_items_added': { en: 'No items added yet', mr: 'अद्याप वस्तू जोडलेल्या नाहीत' },
+  'selling': { en: 'Selling', mr: 'विक्री' },
+  'cost': { en: 'Cost', mr: 'किंमत' },
+  'profit_amount': { en: 'Profit', mr: 'नफा' },
+  'total_revenue': { en: 'Total Revenue', mr: 'एकूण महसूल' },
+  'total_cost': { en: 'Total Cost', mr: 'एकूण किंमत' },
+  'total_profit': { en: 'Total Profit', mr: 'एकूण नफा' },
+  'payment_method': { en: 'Payment Method', mr: 'पेमेंट पद्धत' },
+  'udhari_customer': { en: 'Udhari Customer', mr: 'उधारी ग्राहक' },
+  'new_customer': { en: 'New customer', mr: 'नवीन ग्राहक' },
+  'mobile': { en: 'Mobile', mr: 'मोबाईल' },
+  'optional': { en: 'Optional', mr: 'पर्यायी' },
+  'udhari_bill_notice': { en: "This bill will appear in the customer's Udhari history.", mr: 'हे बिल ग्राहकाच्या उधारी इतिहासामध्ये दिसेल.' },
+  'complete_sale': { en: 'Complete Sale', mr: 'विक्री पूर्ण करा' },
+  'processing': { en: 'Processing...', mr: 'प्रक्रिया सुरू आहे...' },
+  'cash': { en: 'Cash', mr: 'रोख' },
+  'card': { en: 'Card', mr: 'कार्ड' },
+  'partial': { en: 'Partial', mr: 'अंशतः' },
+  'udhar': { en: 'Udhar', mr: 'उधार' },
+  'confirm_sale_title': { en: 'Complete Sale?', mr: 'विक्री पूर्ण करायची?' },
+  'buy': { en: 'Buy', mr: 'खरेदी' },
+  'sell': { en: 'Sell', mr: 'विक्री' },
+  'total_value_label': { en: 'Total Value', mr: 'एकूण मूल्य' },
+  'price_variants': { en: 'Price Variants:', mr: 'किंमत प्रकार:' },
+  'low_stock_alert': { en: 'Low Stock', mr: 'कमी स्टॉक' },
+  'price_tier': { en: 'Price Tier', mr: 'किंमत स्तर' },
+  'default_label': { en: 'Default', mr: 'डीफॉल्ट' },
+  'total_price': { en: 'Total Price', mr: 'एकूण किंमत' },
+  'add_to_sale': { en: 'Add to Sale', mr: 'विक्रीत जोडा' },
+  'enter_quantity': { en: 'Enter quantity', mr: 'प्रमाण प्रविष्ट करा' },
+  'search_items': { en: 'Search items...', mr: 'वस्तू शोधा...' },
 };
 
 export function LanguageProvider({ children }: { children: React.ReactNode }) {
@@ -73,6 +162,12 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
 
     loadSettings();
   }, []);
+
+  useEffect(() => {
+    if (typeof document !== 'undefined') {
+      document.documentElement.lang = language;
+    }
+  }, [language]);
 
   const setLanguage = async (lang: 'en' | 'mr') => {
     setLanguageState(lang);
@@ -104,3 +199,4 @@ export function useLanguage() {
   }
   return context;
 }
+

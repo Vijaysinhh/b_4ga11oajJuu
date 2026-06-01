@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useSales, useUdhari } from '@/hooks/use-db';
+import { useLanguage } from '@/providers/language-provider';
 import { SalesItemSearch } from './sales-item-search';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -38,6 +39,7 @@ interface LineItem {
 export function SalesTransaction() {
   const { createSale, updateStockAfterSale } = useSales();
   const { customers, addCustomer, addCredit } = useUdhari();
+  const { t } = useLanguage();
 
   const [items, setItems] = useState<LineItem[]>([]);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
@@ -59,7 +61,7 @@ export function SalesTransaction() {
 
   const handleItemAdded = (item: LineItem) => {
     setItems([...items, item]);
-    toast.success(`${item.itemName} added to sale`);
+    toast.success(`${item.itemName} ${t('success')}`);
   };
 
   const handleRemoveItem = (index: number) => {
@@ -90,12 +92,12 @@ export function SalesTransaction() {
 
   const handleCompleteSale = async () => {
     if (items.length === 0) {
-      toast.error('Add items to complete sale');
+      toast.error(t('error'));
       return;
     }
 
     if (isUdharSale && !selectedCreditCustomer && !newCustomerName.trim()) {
-      toast.error('Select or create a customer for udhar sale');
+      toast.error(t('error'));
       return;
     }
 
@@ -162,11 +164,11 @@ export function SalesTransaction() {
         );
       }
 
-      toast.success(isUdharSale ? 'Sale added to udhari!' : 'Sale completed successfully!');
+      toast.success(t('success'));
       resetSale();
     } catch (error) {
       console.error('Error completing sale:', error);
-      toast.error('Failed to complete sale');
+      toast.error(t('error'));
     } finally {
       setIsProcessing(false);
     }
@@ -177,7 +179,7 @@ export function SalesTransaction() {
       <div className="lg:col-span-1">
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Add Items</CardTitle>
+            <CardTitle className="text-base">{t('add_items')}</CardTitle>
           </CardHeader>
           <CardContent>
             <SalesItemSearch onItemAdded={handleItemAdded} addedItems={items} />
@@ -188,12 +190,12 @@ export function SalesTransaction() {
       <div className="space-y-3 lg:col-span-2">
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Sale Items ({items.length})</CardTitle>
+            <CardTitle className="text-base">{t('sale_items')} ({items.length})</CardTitle>
           </CardHeader>
           <CardContent>
             {items.length === 0 ? (
               <div className="py-8 text-center text-gray-500">
-                <p>No items added yet</p>
+                <p>{t('no_items_added')}</p>
               </div>
             ) : (
               <div className="space-y-2">
@@ -212,17 +214,17 @@ export function SalesTransaction() {
                         </div>
                         <div className="mt-1 space-y-1 text-xs text-gray-600">
                           <div>
-                            Selling: {formatMoney(item.quantity)} x Rs. {formatMoney(item.pricePerUnit)} ={' '}
+                            {t('selling')}: {formatMoney(item.quantity)} x Rs. {formatMoney(item.pricePerUnit)} ={' '}
                             <span className="font-semibold text-blue-600">Rs. {formatMoney(item.totalPrice)}</span>
                           </div>
                           <div>
-                            Cost: {formatMoney(item.quantity)} x Rs. {formatMoney(item.costPerUnit)} ={' '}
+                            {t('cost')}: {formatMoney(item.quantity)} x Rs. {formatMoney(item.costPerUnit)} ={' '}
                             <span className="font-semibold text-red-600">Rs. {formatMoney(item.totalCost)}</span>
                           </div>
                         </div>
                         <div className="mt-1 text-xs font-semibold">
                           <span className={profit > 0 ? 'text-green-700' : 'text-red-700'}>
-                            Profit: Rs. {formatMoney(profit)} ({formatPercent(marginPct)}%)
+                            {t('profit_amount')}: Rs. {formatMoney(profit)} ({formatPercent(marginPct)}%)
                           </span>
                         </div>
                       </div>
@@ -247,21 +249,21 @@ export function SalesTransaction() {
               <CardContent className="pt-4">
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between">
-                    <span>Total Revenue:</span>
+                    <span>{t('total_revenue')}:</span>
                     <span className="font-bold">Rs. {formatMoney(totals.subtotal)}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span>Total Cost:</span>
+                    <span>{t('total_cost')}:</span>
                     <span className="font-bold">Rs. {formatMoney(totals.totalCost)}</span>
                   </div>
                   <div className="flex justify-between border-t pt-2 text-base">
-                    <span>Total Profit:</span>
+                    <span>{t('total_profit')}:</span>
                     <span className={`font-bold ${totals.totalProfit >= 0 ? 'text-green-700' : 'text-red-700'}`}>
                       Rs. {formatMoney(totals.totalProfit)}
                     </span>
                   </div>
                   <div className="flex justify-between text-xs text-gray-600">
-                    <span>Margin %:</span>
+                    <span>{t('margin')} %:</span>
                     <span className="font-semibold">{formatPercent(profitMarginPercent)}%</span>
                   </div>
                 </div>
@@ -272,17 +274,17 @@ export function SalesTransaction() {
               <CardContent className="space-y-3 pt-4">
                 <div>
                   <label className="mb-1 block text-xs font-semibold text-gray-700">
-                    Payment Method
+                    {t('payment_method')}
                   </label>
                   <Select value={paymentMethod} onValueChange={handlePaymentChange}>
                     <SelectTrigger className="h-9">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="cash">Cash</SelectItem>
-                      <SelectItem value="card">Card</SelectItem>
-                      <SelectItem value="partial">Partial</SelectItem>
-                      <SelectItem value="udhar">Udhar</SelectItem>
+                      <SelectItem value="cash">{t('cash')}</SelectItem>
+                      <SelectItem value="card">{t('card')}</SelectItem>
+                      <SelectItem value="partial">{t('partial')}</SelectItem>
+                      <SelectItem value="udhar">{t('udhar')}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -291,7 +293,7 @@ export function SalesTransaction() {
                   <div className="space-y-3 rounded-md border border-orange-200 bg-orange-50 p-3">
                     <div>
                       <label className="mb-1 block text-xs font-semibold text-orange-900">
-                        Udhari Customer
+                        {t('udhari_customer')}
                       </label>
                       <Select
                         value={creditCustomerId ? creditCustomerId.toString() : 'new'}
@@ -301,7 +303,7 @@ export function SalesTransaction() {
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="new">New customer</SelectItem>
+                          <SelectItem value="new">{t('new_customer')}</SelectItem>
                           {customers.map((customer) => (
                             <SelectItem key={customer.id} value={customer.id!.toString()}>
                               {customer.name} - Rs. {formatMoney(customer.balance)}
@@ -315,23 +317,23 @@ export function SalesTransaction() {
                       <div className="grid gap-2 sm:grid-cols-2">
                         <div>
                           <label className="mb-1 block text-xs font-semibold text-orange-900">
-                            Customer Name
+                            {t('customer_name')}
                           </label>
                           <Input
                             value={newCustomerName}
                             onChange={(event) => setNewCustomerName(event.target.value)}
-                            placeholder="Name"
+                            placeholder={t('name')}
                             className="h-9 bg-white"
                           />
                         </div>
                         <div>
                           <label className="mb-1 block text-xs font-semibold text-orange-900">
-                            Mobile
+                            {t('mobile')}
                           </label>
                           <Input
                             value={newCustomerPhone}
                             onChange={(event) => setNewCustomerPhone(cleanWholeNumberInput(event.target.value))}
-                            placeholder="Optional"
+                            placeholder={t('optional')}
                             inputMode="tel"
                             className="h-9 bg-white"
                           />
@@ -341,7 +343,7 @@ export function SalesTransaction() {
 
                     <div className="flex items-center gap-2 text-xs text-orange-900">
                       <UserPlus className="h-4 w-4" />
-                      <span>This bill will appear in the customer&apos;s Udhari history.</span>
+                      <span>{t('udhari_bill_notice')}</span>
                     </div>
                   </div>
                 )}
@@ -352,7 +354,7 @@ export function SalesTransaction() {
                   className="h-10 w-full bg-green-600 text-white hover:bg-green-700"
                 >
                   <Check className="mr-2 h-4 w-4" />
-                  {isProcessing ? 'Processing...' : 'Complete Sale'}
+                  {isProcessing ? t('processing') : t('complete_sale')}
                 </Button>
               </CardContent>
             </Card>
@@ -363,44 +365,45 @@ export function SalesTransaction() {
       <AlertDialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Complete Sale?</AlertDialogTitle>
+            <AlertDialogTitle>{t('confirm_sale_title')}</AlertDialogTitle>
             <AlertDialogDescription asChild>
               <div className="mt-3 space-y-2">
                 <div className="flex justify-between text-sm">
-                  <span>Items:</span>
+                  <span>{t('items')}:</span>
                   <span className="font-bold">{items.length}</span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span>Total Revenue:</span>
+                  <span>{t('total_revenue')}:</span>
                   <span className="font-bold">Rs. {formatMoney(totals.subtotal)}</span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span>Payment:</span>
-                  <span className="font-bold capitalize">{paymentMethod}</span>
+                  <span>{t('payment')}:</span>
+                  <span className="font-bold capitalize">{t(paymentMethod)}</span>
                 </div>
                 {isUdharSale && (
                   <div className="flex justify-between gap-3 text-sm">
-                    <span>Customer:</span>
-                    <span className="text-right font-bold">{selectedCreditCustomer?.name || newCustomerName || 'New customer'}</span>
+                    <span>{t('customer')}:</span>
+                    <span className="text-right font-bold">{selectedCreditCustomer?.name || newCustomerName || t('new_customer')}</span>
                   </div>
                 )}
                 <div className="flex justify-between text-sm">
-                  <span>Profit:</span>
+                  <span>{t('profit_amount')}:</span>
                   <span className="font-bold text-green-600">Rs. {formatMoney(totals.totalProfit)}</span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span>Margin:</span>
+                  <span>{t('margin')}:</span>
                   <span className="font-bold">{formatPercent(profitMarginPercent)}%</span>
                 </div>
               </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="flex justify-end gap-2">
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleCompleteSale}>Complete Sale</AlertDialogAction>
+            <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
+            <AlertDialogAction onClick={handleCompleteSale}>{t('complete_sale')}</AlertDialogAction>
           </div>
         </AlertDialogContent>
       </AlertDialog>
     </div>
   );
 }
+

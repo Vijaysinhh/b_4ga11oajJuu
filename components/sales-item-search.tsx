@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useItems, useUnits, usePriceTiers } from "@/hooks/use-db";
+import { useLanguage } from "@/providers/language-provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
@@ -40,6 +41,7 @@ export function SalesItemSearch({
   const { items } = useItems();
   const { units } = useUnits();
   const { priceTiers } = usePriceTiers();
+  const { t, language } = useLanguage();
 
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedItem, setSelectedItem] = useState<Item | null>(null);
@@ -50,7 +52,11 @@ export function SalesItemSearch({
     if (!searchTerm.trim()) return [];
     const term = searchTerm.toLowerCase();
     return items
-      .filter((item) => item.name.toLowerCase().includes(term))
+      .filter((item) => {
+        const matchesName = item.name.toLowerCase().includes(term);
+        const matchesNameMr = item.nameMarathi ? item.nameMarathi.toLowerCase().includes(term) : false;
+        return matchesName || matchesNameMr;
+      })
       .slice(0, 10);
   }, [searchTerm, items]);
 
@@ -94,7 +100,7 @@ export function SalesItemSearch({
 
     onItemAdded({
       itemId: selectedItem.id || 0,
-      itemName: selectedItem.name,
+      itemName: language === 'mr' && selectedItem.nameMarathi ? selectedItem.nameMarathi : selectedItem.name,
       quantity: qty,
       unitId: selectedItem.unitId,
       unitShortForm: itemUnit?.shortForm || "unit",
@@ -116,7 +122,7 @@ export function SalesItemSearch({
         <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
         <Input
           type="text"
-          placeholder="Search items..."
+          placeholder={t('search_items')}
           value={searchTerm}
           onChange={(event) => setSearchTerm(event.target.value)}
           className="h-10 pl-10"
@@ -132,9 +138,9 @@ export function SalesItemSearch({
               onClick={() => handleItemSelect(item)}
               className="h-auto min-h-12 w-full border-b p-3 text-left last:border-b-0 hover:bg-gray-100 sm:p-2"
             >
-              <div className="text-sm font-semibold">{item.name}</div>
+              <div className="text-sm font-semibold">{language === 'mr' && item.nameMarathi ? item.nameMarathi : item.name}</div>
               <div className="text-xs text-gray-600">
-                Stock: {formatWholeNumber(item.quantity)}
+                {t('stock')}: {formatWholeNumber(item.quantity)}
                 {units.find((u) => u.id === item.unitId)?.shortForm}
               </div>
             </button>
@@ -146,9 +152,9 @@ export function SalesItemSearch({
         <Card className="border-blue-200 bg-blue-50 p-3">
           <div className="mb-2 flex items-start justify-between">
             <div>
-              <div className="text-sm font-bold">{selectedItem.name}</div>
+              <div className="text-sm font-bold">{language === 'mr' && selectedItem.nameMarathi ? selectedItem.nameMarathi : selectedItem.name}</div>
               <div className="text-xs text-gray-600">
-                Stock: {formatWholeNumber(selectedItem.quantity)}
+                {t('stock')}: {formatWholeNumber(selectedItem.quantity)}
                 {units.find((u) => u.id === selectedItem.unitId)?.shortForm}
               </div>
             </div>
@@ -164,9 +170,9 @@ export function SalesItemSearch({
           <div className="mb-3">
             <div className="mb-1 flex items-center gap-1">
               <label className="text-xs font-semibold text-gray-700">
-                Quantity
+                {t('quantity')}
               </label>
-              <HelpTooltip text="Enter whole quantity only. Use grams/ml units instead of decimals." />
+              <HelpTooltip text={language === 'mr' ? 'फक्त पूर्ण संख्या प्रविष्ट करा. दशांशांऐवजी ग्रॅम/मिली एकके वापरा.' : 'Enter whole quantity only. Use grams/ml units instead of decimals.'} />
             </div>
             <Input
               type="text"
@@ -174,7 +180,7 @@ export function SalesItemSearch({
               pattern="[0-9]*"
               value={quantity}
               onChange={(event) => setQuantity(cleanWholeNumberInput(event.target.value))}
-              placeholder="Enter quantity"
+              placeholder={t('enter_quantity')}
               className="h-9 text-sm"
             />
           </div>
@@ -183,9 +189,9 @@ export function SalesItemSearch({
             <div className="mb-3">
               <div className="mb-1 flex items-center gap-1">
                 <label className="text-xs font-semibold text-gray-700">
-                  Price Tier
+                  {t('price_tier')}
                 </label>
-                <HelpTooltip text="Choose a package like 50g, 100g, or 500ml." />
+                <HelpTooltip text={language === 'mr' ? '५० ग्रॅम, १०० ग्रॅम किंवा ५०० मिली सारखे पॅकेज निवडा.' : 'Choose a package like 50g, 100g, or 500ml.'} />
               </div>
               <div className="grid grid-cols-2 gap-1">
                 <button
@@ -196,7 +202,7 @@ export function SalesItemSearch({
                       : "border-gray-300 bg-white"
                   }`}
                 >
-                  Default Rs. {formatMoney(selectedItem.sellPrice)}
+                  {t('default_label')} Rs. {formatMoney(selectedItem.sellPrice)}
                 </button>
                 {itemPriceTiers.map((tier) => {
                   const tierUnit = units.find((u) => u.id === tier.unitId);
@@ -223,7 +229,7 @@ export function SalesItemSearch({
             <div className="mb-3 rounded border border-blue-100 bg-white p-2">
               <div className="text-xs text-gray-700">
                 <div className="flex justify-between">
-                  <span>Total Price:</span>
+                  <span>{t('total_price')}:</span>
                   <span className="font-bold text-green-700">
                     Rs. {formatMoney(parseWholeNumberInput(quantity) * (selectedPriceTier?.price || selectedItem.sellPrice))}
                   </span>
@@ -238,7 +244,7 @@ export function SalesItemSearch({
             className="h-10 w-full bg-green-600 text-sm font-semibold hover:bg-green-700"
           >
             <Plus className="mr-2 h-5 w-5" />
-            Add to Sale
+            {t('add_to_sale')}
           </Button>
         </Card>
       )}

@@ -50,7 +50,7 @@ interface ItemFormData {
 }
 
 export function ItemsManagement() {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const { items, addItem, updateItem, deleteItem } = useItems();
   const { syncItemToCloud } = useSyncToCloud();
   const { categories } = useCategories();
@@ -470,7 +470,7 @@ export function ItemsManagement() {
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
-              placeholder="Search items..."
+              placeholder={t('search_items')}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="pl-10"
@@ -552,13 +552,13 @@ export function ItemsManagement() {
                     {/* Item Name and Category */}
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
-                        <h3 className="font-bold text-base">{item.name}</h3>
+                        <h3 className="font-bold text-base">{language === 'mr' && item.nameMarathi ? item.nameMarathi : item.name}</h3>
                         <p className="text-xs text-muted-foreground">{getCategoryName(item.categoryId)}</p>
                       </div>
                       <div className="text-right">
                         <p className="text-sm font-semibold text-blue-600">{formatWholeNumber(item.quantity)} {getUnitName(item.unitId)}</p>
                         {item.quantity <= item.lowStockLimit && (
-                          <p className="text-xs font-semibold text-orange-600">Low Stock</p>
+                          <p className="text-xs font-semibold text-orange-600">{t('low_stock_alert')}</p>
                         )}
                       </div>
                     </div>
@@ -566,15 +566,15 @@ export function ItemsManagement() {
                     {/* Default Prices */}
                     <div className="grid grid-cols-3 gap-2 text-xs">
                       <div>
-                        <span className="text-muted-foreground">Buy:</span>
+                        <span className="text-muted-foreground">{t('buy')}:</span>
                         <p className="font-semibold">Rs. {formatMoney(item.buyPrice)}</p>
                       </div>
                       <div>
-                        <span className="text-muted-foreground">Sell:</span>
+                        <span className="text-muted-foreground">{t('sell')}:</span>
                         <p className="font-semibold">Rs. {formatMoney(item.sellPrice)}</p>
                       </div>
                       <div>
-                        <span className="text-muted-foreground">Margin:</span>
+                        <span className="text-muted-foreground">{t('margin')}:</span>
                         <p className="font-semibold text-green-600">{formatPercent(calculateMargin(item.buyPrice, item.sellPrice))}%</p>
                       </div>
                     </div>
@@ -582,7 +582,7 @@ export function ItemsManagement() {
                     {/* Price Tiers */}
                     {itemPriceTiers.length > 0 && (
                       <div className="pt-2 border-t">
-                        <p className="text-xs font-semibold text-muted-foreground mb-2">Price Variants:</p>
+                        <p className="text-xs font-semibold text-muted-foreground mb-2">{t('price_variants')}</p>
                         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                           {itemPriceTiers.map((tier) => (
                             <div key={tier.id} className="bg-amber-50 p-2 rounded border border-amber-200">
@@ -599,7 +599,7 @@ export function ItemsManagement() {
                     {/* Stock Value */}
                     <div className="pt-2 border-t">
                       <p className="text-xs text-muted-foreground">
-                        Total Value: <span className="font-semibold text-foreground">Rs. {formatMoney(item.quantity * item.buyPrice)}</span>
+                        {t('total_value_label')}: <span className="font-semibold text-foreground">Rs. {formatMoney(item.quantity * item.buyPrice)}</span>
                       </p>
                     </div>
 
@@ -612,7 +612,7 @@ export function ItemsManagement() {
                         className="flex-1 gap-1 h-8"
                       >
                         <Edit2 className="w-3 h-3" />
-                        Edit
+                        {t('edit')}
                       </Button>
                       <AlertDialog>
                         <AlertDialog open={deleteId === item.id} onOpenChange={(open) => {
@@ -625,18 +625,18 @@ export function ItemsManagement() {
                             className="flex-1 gap-1 h-8"
                           >
                             <Trash2 className="w-3 h-3" />
-                            Delete
+                            {t('delete')}
                           </Button>
                           <AlertDialogContent>
                             <AlertDialogHeader>
-                              <AlertDialogTitle>Delete Item?</AlertDialogTitle>
+                              <AlertDialogTitle>{t('confirm_delete')}</AlertDialogTitle>
                               <AlertDialogDescription>
-                                Are you sure you want to delete &quot;{item.name}&quot;? This action cannot be undone.
+                                Are you sure you want to delete &quot;{language === 'mr' && item.nameMarathi ? item.nameMarathi : item.name}&quot;? This action cannot be undone.
                               </AlertDialogDescription>
                             </AlertDialogHeader>
                             <div className="flex gap-2">
-                              <AlertDialogCancel>Cancel</AlertDialogCancel>
-                              <AlertDialogAction onClick={handleDelete}>Delete</AlertDialogAction>
+                              <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
+                              <AlertDialogAction onClick={handleDelete}>{t('delete')}</AlertDialogAction>
                             </div>
                           </AlertDialogContent>
                         </AlertDialog>

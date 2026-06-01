@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { useUdhari } from '@/hooks/use-db';
+import { useLanguage } from '@/providers/language-provider';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -23,6 +24,7 @@ export default function UdhariPage() {
     receivePayment,
     getCustomerEntries,
   } = useUdhari();
+  const { t } = useLanguage();
 
   const [customerDialogOpen, setCustomerDialogOpen] = useState(false);
   const [entryDialogOpen, setEntryDialogOpen] = useState(false);
@@ -56,7 +58,7 @@ export default function UdhariPage() {
 
   const handleAddCustomer = async () => {
     if (!customerName.trim()) {
-      toast.error('Enter customer name');
+      toast.error(t('customer_name'));
       return;
     }
 
@@ -65,7 +67,7 @@ export default function UdhariPage() {
       phone: customerPhone.trim() || undefined,
     });
 
-    toast.success('Customer added');
+    toast.success(t('success'));
     resetCustomerForm();
   };
 
@@ -81,21 +83,21 @@ export default function UdhariPage() {
     const value = parseWholeNumberInput(amount);
 
     if (!selectedCustomer || !Number.isFinite(value) || value <= 0) {
-      toast.error('Enter a valid amount');
+      toast.error(t('error'));
       return;
     }
 
     if (entryMode === 'payment' && value > selectedCustomer.balance) {
-      toast.error('Payment cannot be more than balance');
+      toast.error(t('error'));
       return;
     }
 
     if (entryMode === 'credit') {
       await addCredit(selectedCustomer.id!, value, note.trim() || undefined);
-      toast.success('Udhari added');
+      toast.success(t('success'));
     } else {
       await receivePayment(selectedCustomer.id!, value, note.trim() || undefined);
-      toast.success('Payment received');
+      toast.success(t('success'));
     }
 
     resetEntryForm();
@@ -105,19 +107,19 @@ export default function UdhariPage() {
     <div className="mx-auto max-w-4xl space-y-6 pb-24 sm:pb-10">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Udhari</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Customer credit balances</p>
+          <h1 className="text-3xl font-bold tracking-tight">{t('udhari')}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">{t('pending_amount')}</p>
         </div>
         <Button onClick={() => setCustomerDialogOpen(true)} className="h-10 gap-2">
           <Plus className="h-4 w-4" />
-          Customer
+          {t('customer')}
         </Button>
       </div>
 
       <div className="grid grid-cols-2 gap-3">
         <Card className="border-2">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Pending</CardTitle>
+            <CardTitle className="text-sm font-medium">{t('pending')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">Rs. {formatMoney(totalPending)}</div>
@@ -125,7 +127,7 @@ export default function UdhariPage() {
         </Card>
         <Card className="border-2">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Customers</CardTitle>
+            <CardTitle className="text-sm font-medium">{t('customers')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{customers.length}</div>
@@ -136,10 +138,10 @@ export default function UdhariPage() {
       {customers.length === 0 ? (
         <Card className="border-dashed">
           <CardContent className="py-10 text-center">
-            <p className="text-sm text-muted-foreground">No udhari customers yet</p>
+            <p className="text-sm text-muted-foreground">{t('no_udhari_customers')}</p>
             <Button onClick={() => setCustomerDialogOpen(true)} className="mt-4 gap-2">
               <Plus className="h-4 w-4" />
-              Add Customer
+              {t('add_customer')}
             </Button>
           </CardContent>
         </Card>
@@ -163,7 +165,7 @@ export default function UdhariPage() {
                       )}
                     </div>
                     <div className="text-right">
-                      <p className="text-xs text-muted-foreground">Balance</p>
+                      <p className="text-xs text-muted-foreground">{t('balance')}</p>
                       <p className="text-lg font-bold text-orange-700">Rs. {formatMoney(customer.balance)}</p>
                     </div>
                   </div>
@@ -173,7 +175,7 @@ export default function UdhariPage() {
                       onClick={() => openEntryDialog(customer.id!, 'credit')}
                       className="h-9 bg-orange-600 text-xs hover:bg-orange-700"
                     >
-                      Add
+                      {t('add')}
                     </Button>
                     <Button
                       onClick={() => openEntryDialog(customer.id!, 'payment')}
@@ -181,28 +183,28 @@ export default function UdhariPage() {
                       className="h-9 text-xs"
                       disabled={customer.balance <= 0}
                     >
-                      Payment
+                      {t('payment')}
                     </Button>
                     <Button
                       onClick={() => setExpandedCustomerId(isExpanded ? null : customer.id!)}
                       variant="ghost"
                       className="h-9 text-xs"
                     >
-                      History
+                      {t('history')}
                     </Button>
                   </div>
 
                   {isExpanded && (
                     <div className="mt-4 space-y-2 border-t pt-3">
                       {customerEntries.length === 0 ? (
-                        <p className="text-xs text-muted-foreground">No history yet</p>
+                        <p className="text-xs text-muted-foreground">{t('no_history')}</p>
                       ) : (
                         customerEntries.map((entry) => (
                           <div key={entry.id} className="rounded-md bg-muted/50 px-3 py-2 text-xs">
                             <div className="flex items-start justify-between gap-3">
                               <div>
                                 <p className="font-semibold">
-                                  {entry.saleId ? `Sale Bill #${entry.saleId}` : entry.type === 'credit' ? 'Udhari' : 'Payment'}
+                                  {entry.saleId ? `${t('sale_bill')} #${entry.saleId}` : entry.type === 'credit' ? t('udhari') : t('payment')}
                                 </p>
                                 <p className="text-muted-foreground">
                                   {new Date(entry.timestamp).toLocaleDateString('en-IN')}
@@ -244,7 +246,7 @@ export default function UdhariPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
               <ReceiptText className="h-4 w-4" />
-              Recent
+              {t('recent')}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
@@ -253,7 +255,7 @@ export default function UdhariPage() {
                 <div>
                   <p className="font-semibold">{entry.customerName}</p>
                   <p className="text-xs text-muted-foreground">
-                    {entry.saleId ? `Sale Bill #${entry.saleId}` : entry.type === 'credit' ? 'Udhari' : 'Payment'} - {new Date(entry.timestamp).toLocaleDateString('en-IN')}
+                    {entry.saleId ? `${t('sale_bill')} #${entry.saleId}` : entry.type === 'credit' ? t('udhari') : t('payment')} - {new Date(entry.timestamp).toLocaleDateString('en-IN')}
                   </p>
                 </div>
                 <p className={entry.type === 'credit' ? 'font-bold text-orange-700' : 'font-bold text-green-700'}>
@@ -268,23 +270,23 @@ export default function UdhariPage() {
       <Dialog open={customerDialogOpen} onOpenChange={setCustomerDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Add Customer</DialogTitle>
-            <DialogDescription>Name is enough. Mobile number is optional.</DialogDescription>
+            <DialogTitle>{t('add_customer')}</DialogTitle>
+            <DialogDescription>{t('name_is_enough')}</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <Input
               value={customerName}
               onChange={(event) => setCustomerName(event.target.value)}
-              placeholder="Customer name"
+              placeholder={t('customer_name')}
             />
             <Input
               value={customerPhone}
               onChange={(event) => setCustomerPhone(cleanWholeNumberInput(event.target.value))}
-              placeholder="Mobile number"
+              placeholder={t('mobile_number')}
               inputMode="tel"
             />
             <Button onClick={handleAddCustomer} className="w-full">
-              Save Customer
+              {t('save_customer')}
             </Button>
           </div>
         </DialogContent>
@@ -293,7 +295,7 @@ export default function UdhariPage() {
       <Dialog open={entryDialogOpen} onOpenChange={setEntryDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{entryMode === 'credit' ? 'Add Udhari' : 'Receive Payment'}</DialogTitle>
+            <DialogTitle>{entryMode === 'credit' ? `${t('add')} ${t('udhari')}` : t('receive_payment')}</DialogTitle>
             <DialogDescription>{selectedCustomer?.name}</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
@@ -302,7 +304,7 @@ export default function UdhariPage() {
               <Input
                 value={amount}
                 onChange={(event) => setAmount(cleanWholeNumberInput(event.target.value))}
-                placeholder="Amount"
+                placeholder={t('amount')}
                 inputMode="numeric"
                 pattern="[0-9]*"
                 className="pl-10"
@@ -311,11 +313,11 @@ export default function UdhariPage() {
             <Textarea
               value={note}
               onChange={(event) => setNote(event.target.value)}
-              placeholder="Note"
+              placeholder={t('note')}
               rows={3}
             />
             <Button onClick={handleSaveEntry} className="w-full">
-              {entryMode === 'credit' ? 'Add Udhari' : 'Save Payment'}
+              {entryMode === 'credit' ? `${t('add')} ${t('udhari')}` : t('save_payment')}
             </Button>
           </div>
         </DialogContent>
@@ -323,3 +325,4 @@ export default function UdhariPage() {
     </div>
   );
 }
+

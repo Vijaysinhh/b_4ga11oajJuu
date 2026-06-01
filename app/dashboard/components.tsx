@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { useSupabaseAuth } from '@/providers/supabase-auth-provider';
+import { useLanguage } from '@/providers/language-provider';
 import { useDashboardStats, useItems, useSales, useUdhari } from '@/hooks/use-db';
 import { downloadSimplePdf, type PdfSection } from '@/lib/simple-pdf';
 import { formatMoney, formatPercent, formatWholeNumber } from '@/lib/number-format';
@@ -26,6 +27,7 @@ function monthKey(date: Date) {
 export function Dashboard() {
   const router = useRouter();
   const { user, loading: authLoading, isAuthenticated } = useSupabaseAuth();
+  const { t, language } = useLanguage();
   const stats = useDashboardStats();
   const { items } = useItems();
   const { sales } = useSales();
@@ -55,7 +57,7 @@ export function Dashboard() {
     const sixMonthStart = dateKey(sixMonthsAgo);
     const thisYear = `${now.getFullYear()}`;
 
-    const makeReport = (label: string, key: ReportKey, filteredSales: typeof sales) => {
+    const makeReport = (labelKey: string, key: ReportKey, filteredSales: typeof sales) => {
       const itemMap = new Map<string, { quantity: number; revenue: number; profit: number }>();
 
       for (const sale of filteredSales) {
@@ -75,7 +77,8 @@ export function Dashboard() {
 
       return {
         key,
-        label,
+        labelKey,
+        label: t(labelKey),
         sales: filteredSales,
         transactions: filteredSales.length,
         revenue,
@@ -90,12 +93,12 @@ export function Dashboard() {
     };
 
     return [
-      makeReport('Today', 'today', sales.filter((sale) => sale.date === today)),
-      makeReport('This Month', 'month', sales.filter((sale) => sale.date.startsWith(thisMonth))),
-      makeReport('6 Months', 'sixMonths', sales.filter((sale) => sale.date >= sixMonthStart)),
-      makeReport('This Year', 'year', sales.filter((sale) => sale.date.startsWith(thisYear))),
+      makeReport('today', 'today', sales.filter((sale) => sale.date === today)),
+      makeReport('this_month', 'month', sales.filter((sale) => sale.date.startsWith(thisMonth))),
+      makeReport('six_months', 'sixMonths', sales.filter((sale) => sale.date >= sixMonthStart)),
+      makeReport('this_year', 'year', sales.filter((sale) => sale.date.startsWith(thisYear))),
     ];
-  }, [sales]);
+  }, [sales, t]);
 
   const todayReport = reportData[0];
   const topMarginItems = useMemo(
@@ -148,8 +151,8 @@ export function Dashboard() {
     return (
       <div className="space-y-6 pb-24 sm:pb-10">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Home</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Loading shop data...</p>
+          <h1 className="text-3xl font-bold tracking-tight">{t('home')}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">{t('loading_shop_data')}</p>
         </div>
         <div className="grid grid-cols-2 gap-3">
           {[1, 2, 3, 4].map((item) => (
@@ -165,59 +168,59 @@ export function Dashboard() {
   return (
     <div className="mx-auto max-w-5xl space-y-6 pb-24 sm:pb-10">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">Home</h1>
+        <h1 className="text-3xl font-bold tracking-tight">{t('home')}</h1>
         <p className="mt-1 text-sm text-muted-foreground">{user?.shopName || 'Shop'}</p>
       </div>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Card className="border-2">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Today Sales</CardTitle>
+            <CardTitle className="text-sm font-medium">{t('today_sales')}</CardTitle>
             <TrendingUp className="h-4 w-4 text-green-600" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">Rs. {formatMoney(todayReport.revenue)}</div>
-            <p className="mt-1 text-xs text-muted-foreground">{todayReport.transactions} transactions</p>
+            <p className="mt-1 text-xs text-muted-foreground">{todayReport.transactions} {t('transactions')}</p>
           </CardContent>
         </Card>
 
         <Card className="border-2">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Today Profit</CardTitle>
+            <CardTitle className="text-sm font-medium">{t('today_profit')}</CardTitle>
             <TrendingUp className="h-4 w-4 text-blue-600" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">Rs. {formatMoney(todayReport.profit)}</div>
-            <p className="mt-1 text-xs text-muted-foreground">{formatPercent(todayReport.margin)}% margin</p>
+            <p className="mt-1 text-xs text-muted-foreground">{formatPercent(todayReport.margin)}% {t('margin')}</p>
           </CardContent>
         </Card>
 
         <Card className="border-2">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Udhari</CardTitle>
+            <CardTitle className="text-sm font-medium">{t('udhari')}</CardTitle>
             <WalletCards className="h-4 w-4 text-orange-600" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">Rs. {formatMoney(totalPending)}</div>
-            <p className="mt-1 text-xs text-muted-foreground">pending</p>
+            <p className="mt-1 text-xs text-muted-foreground">{t('pending')}</p>
           </CardContent>
         </Card>
 
         <Card className="border-2">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Low Stock</CardTitle>
+            <CardTitle className="text-sm font-medium">{t('low_stock_label')}</CardTitle>
             <AlertTriangle className="h-4 w-4 text-red-600" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{lowStockItems.length}</div>
-            <p className="mt-1 text-xs text-muted-foreground">{stats.totalItems} products</p>
+            <p className="mt-1 text-xs text-muted-foreground">{stats.totalItems} {t('products')}</p>
           </CardContent>
         </Card>
       </div>
 
       <section className="space-y-3">
         <div className="flex items-center justify-between gap-3">
-          <h2 className="text-xl font-bold">Reports</h2>
+          <h2 className="text-xl font-bold">{t('reports')}</h2>
         </div>
 
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -227,7 +230,7 @@ export function Dashboard() {
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <CardTitle className="text-base">{report.label}</CardTitle>
-                    <p className="mt-1 text-xs text-muted-foreground">{report.transactions} transactions</p>
+                    <p className="mt-1 text-xs text-muted-foreground">{report.transactions} {t('transactions')}</p>
                   </div>
                   <Button
                     onClick={() => handleDownloadReport(report)}
@@ -236,22 +239,22 @@ export function Dashboard() {
                     className="h-9 gap-2"
                   >
                     <FileDown className="h-4 w-4" />
-                    PDF
+                    {t('pdf_report')}
                   </Button>
                 </div>
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-3 gap-2 text-sm">
                   <div>
-                    <p className="text-xs text-muted-foreground">Sales</p>
+                    <p className="text-xs text-muted-foreground">{t('sale')}</p>
                     <p className="font-bold">Rs. {formatMoney(report.revenue)}</p>
                   </div>
                   <div>
-                    <p className="text-xs text-muted-foreground">Profit</p>
+                    <p className="text-xs text-muted-foreground">{t('profit_amount')}</p>
                     <p className="font-bold text-green-700">Rs. {formatMoney(report.profit)}</p>
                   </div>
                   <div>
-                    <p className="text-xs text-muted-foreground">Margin</p>
+                    <p className="text-xs text-muted-foreground">{t('margin')}</p>
                     <p className="font-bold">{formatPercent(report.margin)}%</p>
                   </div>
                 </div>
@@ -263,13 +266,13 @@ export function Dashboard() {
 
       {topMarginItems.length > 0 && (
         <section className="space-y-3">
-          <h2 className="text-xl font-bold">High Margin Items</h2>
+          <h2 className="text-xl font-bold">{t('high_margin_items')}</h2>
           <div className="grid gap-2">
             {topMarginItems.map((item, index) => (
               <div key={item.id} className="flex items-center justify-between rounded-md border bg-green-50 px-3 py-3">
                 <div className="min-w-0">
-                  <p className="truncate font-semibold">{index + 1}. {item.name}</p>
-                  <p className="text-xs text-green-800">Rs. {formatMoney(item.marginAmount || 0)} profit/unit</p>
+                  <p className="truncate font-semibold">{index + 1}. {language === 'mr' && item.nameMarathi ? item.nameMarathi : item.name}</p>
+                  <p className="text-xs text-green-800">Rs. {formatMoney(item.marginAmount || 0)} {t('profit_amount')}/{t('unit')}</p>
                 </div>
                 <p className="font-bold text-green-700">{formatPercent(item.marginPercent || 0)}%</p>
               </div>
@@ -280,16 +283,16 @@ export function Dashboard() {
 
       {lowStockItems.length > 0 && (
         <section className="space-y-3">
-          <h2 className="text-xl font-bold">Stock Needed</h2>
+          <h2 className="text-xl font-bold">{t('stock_needed')}</h2>
           <div className="grid gap-2">
             {lowStockItems.slice(0, 6).map((item) => (
               <div key={item.id} className="flex items-center justify-between rounded-md border border-orange-200 bg-orange-50 px-3 py-3">
                 <div className="min-w-0">
-                  <p className="truncate font-semibold text-orange-950">{item.name}</p>
-                  <p className="text-xs text-orange-800">Limit {item.lowStockLimit}</p>
+                  <p className="truncate font-semibold text-orange-950">{language === 'mr' && item.nameMarathi ? item.nameMarathi : item.name}</p>
+                  <p className="text-xs text-orange-800">{t('low_stock_limit_label')} {item.lowStockLimit}</p>
                 </div>
                 <p className="font-bold text-orange-700">
-                  {item.quantity}
+                  {item.quantity} {t('quantity')}
                 </p>
               </div>
             ))}
@@ -301,10 +304,11 @@ export function Dashboard() {
         <Card className="border-2 border-dashed">
           <CardContent className="py-8 text-center">
             <Package className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
-            <p className="text-sm text-muted-foreground">No items yet. Add products from Stock.</p>
+            <p className="text-sm text-muted-foreground">{t('no_items_yet')}</p>
           </CardContent>
         </Card>
       )}
     </div>
   );
 }
+
