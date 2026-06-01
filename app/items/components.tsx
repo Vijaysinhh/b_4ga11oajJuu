@@ -2,8 +2,8 @@
 
 import { useState, useMemo } from 'react';
 import { useLanguage } from '@/providers/language-provider';
-import { useItems, useCategories, useUnits, usePriceTiers } from '@/hooks/use-db';
-import { useSyncToCloud } from '@/hooks/use-sync-to-cloud';
+import { useItems as useSupabaseItems, useCategories as useSupabaseCategories, useUnits as useSupabaseUnits } from '@/hooks/use-supabase';
+import { useAuth } from '@/providers/auth-provider';
 import { PriceTierManager } from '@/components/price-tier-manager';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -51,11 +51,15 @@ interface ItemFormData {
 
 export function ItemsManagement() {
   const { t, language } = useLanguage();
-  const { items, addItem, updateItem, deleteItem } = useItems();
-  const { syncItemToCloud } = useSyncToCloud();
-  const { categories } = useCategories();
-  const { units } = useUnits();
-  const { priceTiers, addPriceTier, deletePriceTier } = usePriceTiers();
+  const { currentShopId } = useAuth();
+  const { items, addItem, updateItem, deleteItem } = useSupabaseItems(currentShopId);
+  const { categories } = useSupabaseCategories(currentShopId);
+  const { units } = useSupabaseUnits(currentShopId);
+
+  // Placeholders for price tiers (we'll implement this later)
+  const priceTiers = [];
+  const addPriceTier = async () => {};
+  const deletePriceTier = async () => {};
 
   const [isOpen, setIsOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -154,14 +158,9 @@ export function ItemsManagement() {
           sellPrice: formData.sellPrice,
           lowStockLimit: formData.lowStockLimit,
         });
-        // Sync updated item to cloud
-        const updatedItem = items.find(i => i.id === editingId);
-        if (updatedItem) {
-          await syncItemToCloud(updatedItem).catch(() => {/* sync failed but local save succeeded */});
-        }
         toast.success('Item updated successfully');
       } else {
-        const newItemId = await addItem({
+        await addItem({
           name: formData.name,
           nameMarathi: formData.nameMarathi,
           categoryId: formData.categoryId,
@@ -171,11 +170,6 @@ export function ItemsManagement() {
           sellPrice: formData.sellPrice,
           lowStockLimit: formData.lowStockLimit,
         });
-        // Sync new item to cloud
-        const newItem = items.find(i => i.id === newItemId);
-        if (newItem) {
-          await syncItemToCloud(newItem).catch(() => {/* sync failed but local save succeeded */});
-        }
         toast.success('Item added successfully');
       }
       resetForm();

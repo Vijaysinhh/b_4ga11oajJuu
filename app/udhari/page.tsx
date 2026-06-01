@@ -1,7 +1,8 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { useUdhari } from '@/hooks/use-db';
+import { useUdhari } from '@/hooks/use-supabase';
+import { useAuth } from '@/providers/auth-provider';
 import { useLanguage } from '@/providers/language-provider';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -15,6 +16,7 @@ import { toast } from 'sonner';
 type EntryMode = 'credit' | 'payment';
 
 export default function UdhariPage() {
+  const { currentShopId } = useAuth();
   const {
     customers,
     entries,
@@ -23,7 +25,7 @@ export default function UdhariPage() {
     addCredit,
     receivePayment,
     getCustomerEntries,
-  } = useUdhari();
+  } = useUdhari(currentShopId);
   const { t } = useLanguage();
 
   const [customerDialogOpen, setCustomerDialogOpen] = useState(false);

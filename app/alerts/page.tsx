@@ -1,7 +1,8 @@
 "use client";
 
 import { Bell, CircleAlert, CircleCheck } from "lucide-react";
-import { useAlerts } from "@/hooks/use-db";
+import { useAlerts } from "@/hooks/use-supabase";
+import { useAuth } from "@/providers/auth-provider";
 import { useLanguage } from "@/providers/language-provider";
 import { PageContainer, PageHeader } from "@/components/page-shell";
 import { Badge } from "@/components/ui/badge";
@@ -19,7 +20,8 @@ const severityClassNames = {
 
 export default function AlertsPage() {
   const { t } = useLanguage();
-  const { alerts, isLoading } = useAlerts();
+  const { currentShopId } = useAuth();
+  const { alerts, isLoading } = useAlerts(currentShopId);
   const unreadCount = alerts.filter((alert) => !alert.read).length;
 
   const severityLabel = (severity: keyof typeof severityClassNames) => {

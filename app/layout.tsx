@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
-import { SupabaseAuthProvider } from "@/providers/supabase-auth-provider";
+import { AuthProvider } from "@/providers/auth-provider";
 import { LanguageProvider } from "@/providers/language-provider";
 import { ServiceWorkerProvider } from "@/providers/service-worker-provider";
 import { ToastProvider } from "@/providers/toast-provider";
@@ -9,6 +9,7 @@ import { ErrorBoundary } from "@/components/error-boundary";
 import { Navigation } from "@/components/navigation";
 import { CommandPalette } from "@/components/command-palette";
 import { ThemeProvider } from "@/components/theme-provider";
+import { Toaster } from "@/components/ui/toaster";
 import "./globals.css";
 
 const _geist = Geist({ subsets: ["latin"] });
@@ -64,7 +65,7 @@ export default function RootLayout({
             defaultTheme="light"
             enableSystem={false}
           >
-            <SupabaseAuthProvider>
+            <AuthProvider>
               <ServiceWorkerProvider>
                 <LanguageProvider>
                   <Navigation />
@@ -72,10 +73,11 @@ export default function RootLayout({
                   <main className="pt-16 sm:pt-20 pb-20 sm:pb-6 px-3 sm:px-4 sm:ml-56 md:px-6 overflow-y-auto overflow-x-hidden min-h-screen transition-all duration-300">
                     {children}
                   </main>
+                  <Toaster />
                   <ToastProvider />
                 </LanguageProvider>
               </ServiceWorkerProvider>
-            </SupabaseAuthProvider>
+            </AuthProvider>
           </ThemeProvider>
         </ErrorBoundary>
         {process.env.NODE_ENV === "production" && <Analytics />}

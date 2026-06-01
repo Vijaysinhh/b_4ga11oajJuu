@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { useSales, useUdhari, useItems } from "@/hooks/use-db";
+import { useSales, useUdhari, useItems } from "@/hooks/use-supabase";
+import { useAuth } from "@/providers/auth-provider";
 import { useLanguage } from "@/providers/language-provider";
 import { dateKey } from "@/lib/utils";
 import { SalesItemSearch } from "./sales-item-search";
@@ -49,9 +50,10 @@ interface LineItem {
 }
 
 export function SalesTransaction() {
-  const { createSale, updateStockAfterSale } = useSales();
-  const { customers, addCustomer, addCredit } = useUdhari();
-  const { items: allItems } = useItems();
+  const { currentShopId } = useAuth();
+  const { createSale, updateStockAfterSale } = useSales(currentShopId);
+  const { customers, addCustomer, addCredit } = useUdhari(currentShopId);
+  const { items: allItems } = useItems(currentShopId);
   const { t } = useLanguage();
 
   const [items, setItems] = useState<LineItem[]>([]);

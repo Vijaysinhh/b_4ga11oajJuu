@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useSupabaseAuth } from "@/providers/supabase-auth-provider";
+import { useAuth } from "@/providers/auth-provider";
 import { useLanguage } from "@/providers/language-provider";
 import {
   useDashboardStats,
@@ -10,7 +10,7 @@ import {
   useUnits,
   useSales,
   useUdhari,
-} from "@/hooks/use-db";
+} from "@/hooks/use-supabase";
 import { downloadSimplePdf, type PdfSection } from "@/lib/simple-pdf";
 import {
   formatMoney,
@@ -77,13 +77,13 @@ const paymentBadgeStyles: Record<string, string> = {
 
 export function Dashboard() {
   const router = useRouter();
-  const { user, loading: authLoading, isAuthenticated } = useSupabaseAuth();
+  const { user, isLoading: authLoading, isAuthenticated, currentShopId } = useAuth();
   const { t, language } = useLanguage();
-  const stats = useDashboardStats();
-  const { items } = useItems();
-  const { units } = useUnits();
-  const { sales } = useSales();
-  const { totalPending } = useUdhari();
+  const stats = useDashboardStats(currentShopId);
+  const { items } = useItems(currentShopId);
+  const { units } = useUnits(currentShopId);
+  const { sales } = useSales(currentShopId);
+  const { totalPending } = useUdhari(currentShopId);
   const [isClientReady, setIsClientReady] = useState(false);
 
   // --- Date navigation state ---

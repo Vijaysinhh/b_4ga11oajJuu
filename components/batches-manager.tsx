@@ -2,7 +2,8 @@
 
 import { useState } from 'react';
 import { useLanguage } from '@/providers/language-provider';
-import { useBatches, useItems } from '@/hooks/use-db';
+import { useBatches, useItems } from '@/hooks/use-supabase';
+import { useAuth } from '@/providers/auth-provider';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -20,8 +21,9 @@ import { cleanWholeNumberInput, formatMoney, formatWholeNumber, parseWholeNumber
 
 export function BatchesManager() {
   const { t } = useLanguage();
-  const { batches, createBatch, getExpiringBatches, deleteBatch } = useBatches();
-  const { items } = useItems();
+  const { currentShopId } = useAuth();
+  const { batches, createBatch, getExpiringBatches, deleteBatch } = useBatches(currentShopId);
+  const { items } = useItems(currentShopId);
   const [selectedItem, setSelectedItem] = useState<number | null>(null);
   const [batchNumber, setBatchNumber] = useState('');
   const [quantity, setQuantity] = useState('');

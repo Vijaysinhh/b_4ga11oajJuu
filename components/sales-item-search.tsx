@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useItems, useUnits, usePriceTiers } from "@/hooks/use-db";
+import { useItems, useUnits, usePriceTiers } from "@/hooks/use-supabase";
+import { useAuth } from "@/providers/auth-provider";
 import { useLanguage } from "@/providers/language-provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -40,9 +41,10 @@ export function SalesItemSearch({
   onItemAdded,
   addedItems,
 }: SalesItemSearchProps) {
-  const { items } = useItems();
-  const { units } = useUnits();
-  const { priceTiers } = usePriceTiers();
+  const { currentShopId } = useAuth();
+  const { items } = useItems(currentShopId);
+  const { units } = useUnits(currentShopId);
+  const { priceTiers } = usePriceTiers(currentShopId);
   const { t, language } = useLanguage();
 
   const [searchTerm, setSearchTerm] = useState("");

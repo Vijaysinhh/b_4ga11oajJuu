@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { useSales } from "@/hooks/use-db";
+import { useSales } from "@/hooks/use-supabase";
+import { useAuth } from "@/providers/auth-provider";
 import { useLanguage } from "@/providers/language-provider";
 import {
   Card,
@@ -28,7 +29,8 @@ import { monthKey } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 
 export function MonthlyPLReport() {
-  const { sales } = useSales();
+  const { currentShopId } = useAuth();
+  const { sales } = useSales(currentShopId);
   const { t, formatDate } = useLanguage();
   const [selectedMonth, setSelectedMonth] = useState(() => monthKey(new Date()));
   const [loading, setLoading] = useState(false);

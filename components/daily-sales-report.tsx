@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useSales, useItems } from "@/hooks/use-db";
+import { useSales, useItems } from "@/hooks/use-supabase";
+import { useAuth } from "@/providers/auth-provider";
 import { useLanguage } from "@/providers/language-provider";
 import {
   Card,
@@ -18,8 +19,9 @@ import { dateKey } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 
 export function DailySalesReport() {
-  const { getDailySummary } = useSales();
-  const { items } = useItems();
+  const { currentShopId } = useAuth();
+  const { getDailySummary, sales } = useSales(currentShopId);
+  const { items } = useItems(currentShopId);
   const { t } = useLanguage();
   const [dailyData, setDailyData] = useState<any>(null);
   const [selectedDate, setSelectedDate] = useState(() => dateKey(new Date()));

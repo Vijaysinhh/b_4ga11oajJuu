@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { useLanguage } from "@/providers/language-provider";
-import { useUnits } from "@/hooks/use-db";
+import { useUnits as useSupabaseUnits } from "@/hooks/use-supabase";
+import { useAuth } from "@/providers/auth-provider";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,7 +37,8 @@ interface UnitFormData {
 
 export function UnitsManagement({ embedded = false }: { embedded?: boolean }) {
   const { t } = useLanguage();
-  const { units, addUnit, updateUnit, deleteUnit } = useUnits();
+  const { currentShopId } = useAuth();
+  const { units, addUnit, updateUnit, deleteUnit } = useSupabaseUnits(currentShopId);
 
   const [isOpen, setIsOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);

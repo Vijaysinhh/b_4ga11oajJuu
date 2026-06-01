@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { useLanguage } from "@/providers/language-provider";
-import { useCategories } from "@/hooks/use-db";
+import { useCategories as useSupabaseCategories } from "@/hooks/use-supabase";
+import { useAuth } from "@/providers/auth-provider";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -47,7 +48,8 @@ const DEFAULT_COLORS = [
 
 export function CategoriesManagement({ embedded = false }: { embedded?: boolean }) {
   const { t } = useLanguage();
-  const { categories, addCategory, updateCategory, deleteCategory } = useCategories();
+  const { currentShopId } = useAuth();
+  const { categories, addCategory, updateCategory, deleteCategory } = useSupabaseCategories(currentShopId);
 
   const [isOpen, setIsOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);

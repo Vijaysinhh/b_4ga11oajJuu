@@ -115,6 +115,29 @@ export interface Alert {
   createdAt: number;
 }
 
+// New Types for Multi-Role System
+export interface Shop {
+  id?: number;
+  ownerName: string;
+  shopName: string;
+  address: string;
+  phoneNumber: string;
+  password: string; // Shop owner password
+  isPaused: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface User {
+  id?: number;
+  shopId: number; // Which shop does this user belong to?
+  username: string;
+  password: string;
+  role: 'super_admin' | 'owner' | 'worker';
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface Sale {
   id?: number;
   date: string; // YYYY-MM-DD format
@@ -178,6 +201,9 @@ export class DukanDB extends Dexie {
   alerts!: Table<Alert>;
   creditCustomers!: Table<CreditCustomer>;
   creditEntries!: Table<CreditEntry>;
+  // New tables for multi-role system
+  shops!: Table<Shop>;
+  users!: Table<User>;
 
   constructor() {
     super('DukanDB');
@@ -206,6 +232,23 @@ export class DukanDB extends Dexie {
       alerts: '++id, itemId, alertType, createdAt',
       creditCustomers: '++id, name, updatedAt',
       creditEntries: '++id, customerId, date, timestamp',
+    });
+    // New version with shops and users tables
+    this.version(3).stores({
+      items: '++id, categoryId, updatedAt',
+      priceTiers: '++id, itemId, updatedAt',
+      categories: '++id, updatedAt',
+      units: '++id, updatedAt',
+      appSettings: '++id',
+      sales: '++id, date, timestamp',
+      saleItems: '++id, saleId, itemId',
+      stockHistory: '++id, itemId, createdAt',
+      batches: '++id, itemId, expiryDate',
+      alerts: '++id, itemId, alertType, createdAt',
+      creditCustomers: '++id, name, updatedAt',
+      creditEntries: '++id, customerId, date, timestamp',
+      shops: '++id, shopName, ownerName, isPaused, updatedAt',
+      users: '++id, shopId, username, role, updatedAt',
     });
   }
 }
@@ -246,12 +289,7 @@ export async function initializeDatabase() {
   
   try {
     if (!db.isOpen()) {
-      // Add a timeout to db.open()
-      const openPromise = db.open();
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Database open timeout')), 5000)
-      );
-      await Promise.race([openPromise, timeoutPromise]);
+      await db.open();
     }
 
     const settingsCount = await db.appSettings.count();

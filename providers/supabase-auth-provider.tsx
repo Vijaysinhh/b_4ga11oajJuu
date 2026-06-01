@@ -13,10 +13,10 @@ import {
 import type { Session } from '@supabase/supabase-js';
 
 interface User {
-  id: string;
-  email: string;
+  id?: number;
   username: string;
-  shopName: string;
+  role: 'super_admin' | 'owner' | 'worker';
+  shopId?: number;
 }
 
 interface AuthContextType {
