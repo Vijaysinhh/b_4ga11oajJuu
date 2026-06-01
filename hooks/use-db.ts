@@ -17,6 +17,7 @@ import {
   type CreditEntry,
   type CreditBillItem,
 } from '@/lib/db';
+import { dateKey } from '@/lib/utils';
 
 // Categories Hook
 export function useCategories() {
@@ -267,7 +268,7 @@ export function useSales() {
   };
 
   const getTodaySales = async () => {
-    const today = new Date().toISOString().split('T')[0];
+    const today = dateKey(new Date());
     return db.sales.where('date').equals(today).toArray();
   };
 
@@ -499,7 +500,7 @@ export function useUdhari() {
     }
 
     const now = Date.now();
-    const date = new Date().toISOString().split('T')[0];
+    const date = dateKey(new Date());
 
     return db.transaction('rw', db.creditCustomers, db.creditEntries, async () => {
       await db.creditEntries.add({
@@ -529,7 +530,7 @@ export function useUdhari() {
     }
 
     const now = Date.now();
-    const date = new Date().toISOString().split('T')[0];
+    const date = dateKey(new Date());
 
     return db.transaction('rw', db.creditCustomers, db.creditEntries, async () => {
       await db.creditEntries.add({

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useSales, useItems } from "@/hooks/use-db";
+import { useLanguage } from "@/providers/language-provider";
 import {
   Card,
   CardContent,
@@ -13,14 +14,15 @@ import { Button } from "@/components/ui/button";
 import { ArrowLeft, TrendingUp, DollarSign, Zap } from "lucide-react";
 import Link from "next/link";
 import { formatMoney, formatPercent, formatWholeNumber } from "@/lib/number-format";
+import { dateKey } from "@/lib/utils";
+import { Input } from "@/components/ui/input";
 
 export function DailySalesReport() {
   const { getDailySummary } = useSales();
   const { items } = useItems();
+  const { t } = useLanguage();
   const [dailyData, setDailyData] = useState<any>(null);
-  const [selectedDate, setSelectedDate] = useState(
-    new Date().toISOString().split("T")[0],
-  );
+  const [selectedDate, setSelectedDate] = useState(() => dateKey(new Date()));
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -40,24 +42,23 @@ export function DailySalesReport() {
   }, [selectedDate]);
 
   if (loading) {
-    return <div className="text-center py-8">Loading...</div>;
+    return <div className="py-8 text-center">{t("loading_report")}</div>;
   }
 
   if (!dailyData) {
-    return <div className="text-center py-8">No data available</div>;
+    return <div className="py-8 text-center">{t("no_data")}</div>;
   }
 
   return (
     <div className="space-y-4">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+      <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
         <div>
-          <h1 className="text-2xl font-bold">Daily Report</h1>
-          <input
+          <h1 className="text-2xl font-bold tracking-tight">{t("daily_report_title")}</h1>
+          <Input
             type="date"
             value={selectedDate}
             onChange={(e) => setSelectedDate(e.target.value)}
-            className="mt-2 px-3 py-2 border rounded-lg w-full sm:w-auto"
+            className="mt-2 h-10 w-full sm:w-auto"
           />
         </div>
         <Link href="/sales" className="w-full sm:w-auto">
@@ -67,97 +68,91 @@ export function DailySalesReport() {
             className="w-full sm:w-auto h-10 sm:h-9"
           >
             <ArrowLeft className="w-4 h-4 mr-2" />
-            Back to Sales
+            {t("back_to_sales")}
           </Button>
         </Link>
       </div>
 
-      {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Total Sales */}
-        <Card>
+        <Card className="border-2">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-gray-600">
-              Total Transactions
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              {t("total_transactions")}
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{dailyData.totalSales}</div>
-            <p className="text-xs text-gray-500 mt-1">Sales completed</p>
+            <p className="mt-1 text-xs text-muted-foreground">{t("sales_completed")}</p>
           </CardContent>
         </Card>
 
-        {/* Revenue */}
-        <Card className="bg-blue-50 border-blue-200">
+        <Card className="border-2">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-blue-700 flex items-center gap-2">
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
               <DollarSign className="w-4 h-4" />
-              Total Revenue
+              {t("total_revenue")}
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-blue-900">
+            <div className="text-2xl font-bold">
               Rs. {formatMoney(dailyData.totalRevenue)}
             </div>
-            <p className="text-xs text-blue-600 mt-1">Amount earned</p>
+            <p className="mt-1 text-xs text-muted-foreground">{t("revenue")}</p>
           </CardContent>
         </Card>
 
-        {/* Profit */}
-        <Card className="bg-green-50 border-green-200">
+        <Card className="border-2">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-green-700 flex items-center gap-2">
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
               <TrendingUp className="w-4 h-4" />
-              Total Profit
+              {t("total_profit")}
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-900">
+            <div className="text-2xl font-bold">
               Rs. {formatMoney(dailyData.totalProfit)}
             </div>
-            <p className="text-xs text-green-600 mt-1">Pure profit</p>
+            <p className="mt-1 text-xs text-muted-foreground">{t("profit_amount")}</p>
           </CardContent>
         </Card>
 
-        {/* Profit Margin */}
-        <Card className="bg-purple-50 border-purple-200">
+        <Card className="border-2">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-purple-700 flex items-center gap-2">
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
               <Zap className="w-4 h-4" />
-              Profit Margin
+              {t("margin")}
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-purple-900">
+            <div className="text-2xl font-bold">
               {formatPercent(dailyData.profitMarginPercent)}%
             </div>
-            <p className="text-xs text-purple-600 mt-1">% of revenue</p>
+            <p className="mt-1 text-xs text-muted-foreground">{t("margin")}</p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Cost Breakdown */}
-      <Card>
+      <Card className="border-2">
         <CardHeader>
-          <CardTitle className="text-base">Cost Breakdown</CardTitle>
+          <CardTitle className="text-base">{t("total_cost")}</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
             <div className="flex justify-between items-center">
-              <span className="text-gray-700">Total Revenue</span>
+              <span className="text-muted-foreground">{t("total_revenue")}</span>
               <span className="font-bold">
                 Rs. {formatMoney(dailyData.totalRevenue)}
               </span>
             </div>
-            <div className="flex justify-between items-center text-red-700">
-              <span>Total Cost</span>
+            <div className="flex justify-between items-center">
+              <span className="text-muted-foreground">{t("total_cost")}</span>
               <span className="font-bold">
                 -Rs. {formatMoney(dailyData.totalCost)}
               </span>
             </div>
             <div className="border-t pt-3 flex justify-between items-center">
-              <span className="font-semibold">Net Profit</span>
-              <span className="font-bold text-green-700">
+              <span className="font-semibold">{t("total_profit")}</span>
+              <span className="font-bold">
                 Rs. {formatMoney(dailyData.totalProfit)}
               </span>
             </div>
@@ -165,39 +160,37 @@ export function DailySalesReport() {
         </CardContent>
       </Card>
 
-      {/* Sales List */}
       {dailyData.sales.length > 0 && (
-        <Card>
+        <Card className="border-2">
           <CardHeader>
-            <CardTitle className="text-base">All Transactions Today</CardTitle>
-            <CardDescription>{dailyData.sales.length} sales</CardDescription>
+            <CardTitle className="text-base">{t("transactions")}</CardTitle>
+            <CardDescription>{dailyData.sales.length} {t("transactions")}</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-3 max-h-96 overflow-y-auto">
               {dailyData.sales.map((sale: any, idx: number) => (
-                <div key={sale.id} className="border rounded-lg p-3 bg-gray-50">
+                <div key={sale.id} className="rounded-lg border bg-muted/30 p-3">
                   <div className="flex justify-between items-start mb-2">
-                    <div className="font-medium text-sm">Sale #{idx + 1}</div>
+                    <div className="font-medium text-sm">{t("sale")} #{idx + 1}</div>
                     <div className="text-right">
                       <div className="font-semibold">
                         Rs. {formatMoney(sale.subtotal)}
                       </div>
-                      <div className="text-xs text-green-700">
-                        +Rs. {formatMoney(sale.totalProfit)} profit
+                      <div className="text-xs text-muted-foreground">
+                        +Rs. {formatMoney(sale.totalProfit)} {t("profit_amount")}
                       </div>
                     </div>
                   </div>
 
-                  {/* Items in this sale */}
                   <div className="space-y-1">
                     {sale.items.map((item: any, itemIdx: number) => (
                       <div
                         key={itemIdx}
-                        className="flex justify-between items-center text-xs bg-white p-2 rounded border"
+                        className="flex justify-between items-center text-xs bg-background p-2 rounded border"
                       >
                         <div className="flex-1">
                           <span className="font-medium">{item.itemName}</span>
-                          <span className="text-gray-500 ml-1">
+                          <span className="text-muted-foreground ml-1">
                             {formatWholeNumber(item.quantity)}
                             {item.unitShortForm} x Rs. {formatMoney(item.pricePerUnit)}
                           </span>
@@ -206,7 +199,7 @@ export function DailySalesReport() {
                           <div className="font-semibold">
                             Rs. {formatMoney(item.totalPrice)}
                           </div>
-                          <div className="text-green-600">
+                          <div className="text-muted-foreground">
                             +Rs. {formatMoney(item.profit)}
                           </div>
                         </div>
@@ -221,8 +214,10 @@ export function DailySalesReport() {
       )}
 
       {dailyData.sales.length === 0 && (
-        <Card className="text-center py-8">
-          <p className="text-gray-500">No sales recorded for {selectedDate}</p>
+        <Card className="border-2 border-dashed">
+          <CardContent className="py-8 text-center">
+            <p className="text-muted-foreground">{t("no_sales_day")} ({selectedDate})</p>
+          </CardContent>
         </Card>
       )}
     </div>

@@ -1,14 +1,26 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { useSales, useUdhari } from '@/hooks/use-db';
-import { useLanguage } from '@/providers/language-provider';
-import { SalesItemSearch } from './sales-item-search';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { cleanWholeNumberInput, formatMoney, formatPercent } from '@/lib/number-format';
+import { useState } from "react";
+import { useSales, useUdhari, useItems } from "@/hooks/use-db";
+import { useLanguage } from "@/providers/language-provider";
+import { dateKey } from "@/lib/utils";
+import { SalesItemSearch } from "./sales-item-search";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  cleanWholeNumberInput,
+  formatMoney,
+  formatPercent,
+  formatWholeNumber,
+} from "@/lib/number-format";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -17,11 +29,11 @@ import {
   AlertDialogDescription,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { Check, Trash2, UserPlus } from 'lucide-react';
-import { toast } from 'sonner';
+} from "@/components/ui/alert-dialog";
+import { Check, Trash2, UserPlus } from "lucide-react";
+import { toast } from "sonner";
 
-type PaymentMethod = 'cash' | 'card' | 'partial' | 'udhar';
+type PaymentMethod = "cash" | "card" | "partial" | "udhar";
 
 interface LineItem {
   itemId: number;
@@ -39,29 +51,35 @@ interface LineItem {
 export function SalesTransaction() {
   const { createSale, updateStockAfterSale } = useSales();
   const { customers, addCustomer, addCredit } = useUdhari();
+  const { items: allItems } = useItems();
   const { t } = useLanguage();
 
   const [items, setItems] = useState<LineItem[]>([]);
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
   const [creditCustomerId, setCreditCustomerId] = useState<number | null>(null);
-  const [newCustomerName, setNewCustomerName] = useState('');
-  const [newCustomerPhone, setNewCustomerPhone] = useState('');
+  const [newCustomerName, setNewCustomerName] = useState("");
+  const [newCustomerPhone, setNewCustomerPhone] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
 
   const totals = {
     subtotal: items.reduce((sum, item) => sum + (item.totalPrice || 0), 0),
     totalCost: items.reduce((sum, item) => sum + (item.totalCost || 0), 0),
-    totalProfit: items.reduce((sum, item) => sum + ((item.totalPrice || 0) - (item.totalCost || 0)), 0),
+    totalProfit: items.reduce(
+      (sum, item) => sum + ((item.totalPrice || 0) - (item.totalCost || 0)),
+      0,
+    ),
   };
 
-  const isUdharSale = paymentMethod === 'udhar';
-  const selectedCreditCustomer = customers.find((customer) => customer.id === creditCustomerId) || null;
-  const profitMarginPercent = totals.subtotal > 0 ? (totals.totalProfit / totals.subtotal) * 100 : 0;
+  const isUdharSale = paymentMethod === "udhar";
+  const selectedCreditCustomer =
+    customers.find((customer) => customer.id === creditCustomerId) || null;
+  const profitMarginPercent =
+    totals.subtotal > 0 ? (totals.totalProfit / totals.subtotal) * 100 : 0;
 
   const handleItemAdded = (item: LineItem) => {
     setItems([...items, item]);
-    toast.success(`${item.itemName} ${t('success')}`);
+    toast.success(`${item.itemName} ${t("success")}`);
   };
 
   const handleRemoveItem = (index: number) => {
@@ -70,13 +88,13 @@ export function SalesTransaction() {
 
   const resetCreditFields = () => {
     setCreditCustomerId(null);
-    setNewCustomerName('');
-    setNewCustomerPhone('');
+    setNewCustomerName("");
+    setNewCustomerPhone("");
   };
 
   const resetSale = () => {
     setItems([]);
-    setPaymentMethod('cash');
+    setPaymentMethod("cash");
     resetCreditFields();
     setShowConfirmDialog(false);
   };
@@ -85,19 +103,45 @@ export function SalesTransaction() {
     const nextPaymentMethod = value as PaymentMethod;
     setPaymentMethod(nextPaymentMethod);
 
-    if (nextPaymentMethod !== 'udhar') {
+    if (nextPaymentMethod !== "udhar") {
       resetCreditFields();
     }
   };
 
   const handleCompleteSale = async () => {
     if (items.length === 0) {
-      toast.error(t('error'));
+      toast.error(t("error"));
       return;
     }
 
     if (isUdharSale && !selectedCreditCustomer && !newCustomerName.trim()) {
-      toast.error(t('error'));
+      toast.error(t("error"));
+      return;
+    }
+
+    // Verify stock availability (sum quantities per item in cart)
+    const quantityByItemId = items.reduce<Map<number, number>>((acc, lineItem) => {
+      acc.set(
+        lineItem.itemId,
+        (acc.get(lineItem.itemId) || 0) + lineItem.quantity,
+      );
+      return acc;
+    }, new Map());
+
+    const stockErrors: string[] = [];
+    for (const [itemId, requestedQty] of quantityByItemId) {
+      const currentItem = allItems.find((item) => item.id === itemId);
+      const lineItem = items.find((item) => item.itemId === itemId);
+      if (!currentItem || currentItem.quantity < requestedQty) {
+        const availableQty = currentItem?.quantity || 0;
+        stockErrors.push(
+          `${lineItem?.itemName || "Item"}: Only ${formatWholeNumber(availableQty)} ${lineItem?.unitShortForm || ""} available (tried to sell ${formatWholeNumber(requestedQty)})`,
+        );
+      }
+    }
+
+    if (stockErrors.length > 0) {
+      toast.error(`Stock issue: ${stockErrors[0]}`);
       return;
     }
 
@@ -119,7 +163,7 @@ export function SalesTransaction() {
       }));
 
       let finalCreditCustomerId = creditCustomerId;
-      let finalCreditCustomerName = selectedCreditCustomer?.name || '';
+      let finalCreditCustomerName = selectedCreditCustomer?.name || "";
 
       if (isUdharSale && !finalCreditCustomerId) {
         const createdCustomerId = await addCustomer({
@@ -131,7 +175,7 @@ export function SalesTransaction() {
         finalCreditCustomerName = newCustomerName.trim();
       }
 
-      const today = new Date().toISOString().split('T')[0];
+      const today = dateKey(new Date());
       const saleId = await createSale({
         date: today,
         timestamp: Date.now(),
@@ -142,7 +186,9 @@ export function SalesTransaction() {
         totalProfit: totals.totalProfit,
         profitMarginPercent,
         paymentMethod,
-        creditCustomerId: isUdharSale ? finalCreditCustomerId || undefined : undefined,
+        creditCustomerId: isUdharSale
+          ? finalCreditCustomerId || undefined
+          : undefined,
         creditCustomerName: isUdharSale ? finalCreditCustomerName : undefined,
       });
 
@@ -152,7 +198,7 @@ export function SalesTransaction() {
         await addCredit(
           finalCreditCustomerId,
           totals.subtotal,
-          `Sale bill - ${items.length} item${items.length === 1 ? '' : 's'}`,
+          `Sale bill - ${items.length} item${items.length === 1 ? "" : "s"}`,
           items.map((item) => ({
             itemName: item.itemName,
             quantity: item.quantity,
@@ -164,11 +210,11 @@ export function SalesTransaction() {
         );
       }
 
-      toast.success(t('success'));
+      toast.success(t("success"));
       resetSale();
     } catch (error) {
-      console.error('Error completing sale:', error);
-      toast.error(t('error'));
+      console.error("Error completing sale:", error);
+      toast.error(t("error"));
     } finally {
       setIsProcessing(false);
     }
@@ -179,7 +225,7 @@ export function SalesTransaction() {
       <div className="lg:col-span-1">
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">{t('add_items')}</CardTitle>
+            <CardTitle className="text-base">{t("add_items")}</CardTitle>
           </CardHeader>
           <CardContent>
             <SalesItemSearch onItemAdded={handleItemAdded} addedItems={items} />
@@ -190,18 +236,21 @@ export function SalesTransaction() {
       <div className="space-y-3 lg:col-span-2">
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">{t('sale_items')} ({items.length})</CardTitle>
+            <CardTitle className="text-base">
+              {t("sale_items")} ({items.length})
+            </CardTitle>
           </CardHeader>
           <CardContent>
             {items.length === 0 ? (
               <div className="py-8 text-center text-gray-500">
-                <p>{t('no_items_added')}</p>
+                <p>{t("no_items_added")}</p>
               </div>
             ) : (
               <div className="space-y-2">
                 {items.map((item, index) => {
                   const profit = item.totalPrice - item.totalCost;
-                  const marginPct = item.totalPrice > 0 ? (profit / item.totalPrice) * 100 : 0;
+                  const marginPct =
+                    item.totalPrice > 0 ? (profit / item.totalPrice) * 100 : 0;
 
                   return (
                     <div
@@ -210,21 +259,33 @@ export function SalesTransaction() {
                     >
                       <div className="min-w-0 flex-1">
                         <div className="text-sm font-semibold">
-                          {item.itemName} x {item.quantity}{item.unitShortForm}
+                          {item.itemName} x {item.quantity}
+                          {item.unitShortForm}
                         </div>
                         <div className="mt-1 space-y-1 text-xs text-gray-600">
                           <div>
-                            {t('selling')}: {formatMoney(item.quantity)} x Rs. {formatMoney(item.pricePerUnit)} ={' '}
-                            <span className="font-semibold text-blue-600">Rs. {formatMoney(item.totalPrice)}</span>
+                            {t("selling")}: {formatMoney(item.quantity)} x Rs.{" "}
+                            {formatMoney(item.pricePerUnit)} ={" "}
+                            <span className="font-semibold text-blue-600">
+                              Rs. {formatMoney(item.totalPrice)}
+                            </span>
                           </div>
                           <div>
-                            {t('cost')}: {formatMoney(item.quantity)} x Rs. {formatMoney(item.costPerUnit)} ={' '}
-                            <span className="font-semibold text-red-600">Rs. {formatMoney(item.totalCost)}</span>
+                            {t("cost")}: {formatMoney(item.quantity)} x Rs.{" "}
+                            {formatMoney(item.costPerUnit)} ={" "}
+                            <span className="font-semibold text-red-600">
+                              Rs. {formatMoney(item.totalCost)}
+                            </span>
                           </div>
                         </div>
                         <div className="mt-1 text-xs font-semibold">
-                          <span className={profit > 0 ? 'text-green-700' : 'text-red-700'}>
-                            {t('profit_amount')}: Rs. {formatMoney(profit)} ({formatPercent(marginPct)}%)
+                          <span
+                            className={
+                              profit > 0 ? "text-green-700" : "text-red-700"
+                            }
+                          >
+                            {t("profit_amount")}: Rs. {formatMoney(profit)} (
+                            {formatPercent(marginPct)}%)
                           </span>
                         </div>
                       </div>
@@ -249,22 +310,30 @@ export function SalesTransaction() {
               <CardContent className="pt-4">
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between">
-                    <span>{t('total_revenue')}:</span>
-                    <span className="font-bold">Rs. {formatMoney(totals.subtotal)}</span>
+                    <span>{t("total_revenue")}:</span>
+                    <span className="font-bold">
+                      Rs. {formatMoney(totals.subtotal)}
+                    </span>
                   </div>
                   <div className="flex justify-between">
-                    <span>{t('total_cost')}:</span>
-                    <span className="font-bold">Rs. {formatMoney(totals.totalCost)}</span>
+                    <span>{t("total_cost")}:</span>
+                    <span className="font-bold">
+                      Rs. {formatMoney(totals.totalCost)}
+                    </span>
                   </div>
                   <div className="flex justify-between border-t pt-2 text-base">
-                    <span>{t('total_profit')}:</span>
-                    <span className={`font-bold ${totals.totalProfit >= 0 ? 'text-green-700' : 'text-red-700'}`}>
+                    <span>{t("total_profit")}:</span>
+                    <span
+                      className={`font-bold ${totals.totalProfit >= 0 ? "text-green-700" : "text-red-700"}`}
+                    >
                       Rs. {formatMoney(totals.totalProfit)}
                     </span>
                   </div>
                   <div className="flex justify-between text-xs text-gray-600">
-                    <span>{t('margin')} %:</span>
-                    <span className="font-semibold">{formatPercent(profitMarginPercent)}%</span>
+                    <span>{t("margin")} %:</span>
+                    <span className="font-semibold">
+                      {formatPercent(profitMarginPercent)}%
+                    </span>
                   </div>
                 </div>
               </CardContent>
@@ -274,17 +343,20 @@ export function SalesTransaction() {
               <CardContent className="space-y-3 pt-4">
                 <div>
                   <label className="mb-1 block text-xs font-semibold text-gray-700">
-                    {t('payment_method')}
+                    {t("payment_method")}
                   </label>
-                  <Select value={paymentMethod} onValueChange={handlePaymentChange}>
+                  <Select
+                    value={paymentMethod}
+                    onValueChange={handlePaymentChange}
+                  >
                     <SelectTrigger className="h-9">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="cash">{t('cash')}</SelectItem>
-                      <SelectItem value="card">{t('card')}</SelectItem>
-                      <SelectItem value="partial">{t('partial')}</SelectItem>
-                      <SelectItem value="udhar">{t('udhar')}</SelectItem>
+                      <SelectItem value="cash">{t("cash")}</SelectItem>
+                      <SelectItem value="card">{t("card")}</SelectItem>
+                      <SelectItem value="partial">{t("partial")}</SelectItem>
+                      <SelectItem value="udhar">{t("udhar")}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -293,20 +365,32 @@ export function SalesTransaction() {
                   <div className="space-y-3 rounded-md border border-orange-200 bg-orange-50 p-3">
                     <div>
                       <label className="mb-1 block text-xs font-semibold text-orange-900">
-                        {t('udhari_customer')}
+                        {t("udhari_customer")}
                       </label>
                       <Select
-                        value={creditCustomerId ? creditCustomerId.toString() : 'new'}
-                        onValueChange={(value) => setCreditCustomerId(value === 'new' ? null : Number(value))}
+                        value={
+                          creditCustomerId ? creditCustomerId.toString() : "new"
+                        }
+                        onValueChange={(value) =>
+                          setCreditCustomerId(
+                            value === "new" ? null : Number(value),
+                          )
+                        }
                       >
                         <SelectTrigger className="h-9 bg-white">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="new">{t('new_customer')}</SelectItem>
+                          <SelectItem value="new">
+                            {t("new_customer")}
+                          </SelectItem>
                           {customers.map((customer) => (
-                            <SelectItem key={customer.id} value={customer.id!.toString()}>
-                              {customer.name} - Rs. {formatMoney(customer.balance)}
+                            <SelectItem
+                              key={customer.id}
+                              value={customer.id!.toString()}
+                            >
+                              {customer.name} - Rs.{" "}
+                              {formatMoney(customer.balance)}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -317,23 +401,29 @@ export function SalesTransaction() {
                       <div className="grid gap-2 sm:grid-cols-2">
                         <div>
                           <label className="mb-1 block text-xs font-semibold text-orange-900">
-                            {t('customer_name')}
+                            {t("customer_name")}
                           </label>
                           <Input
                             value={newCustomerName}
-                            onChange={(event) => setNewCustomerName(event.target.value)}
-                            placeholder={t('name')}
+                            onChange={(event) =>
+                              setNewCustomerName(event.target.value)
+                            }
+                            placeholder={t("name")}
                             className="h-9 bg-white"
                           />
                         </div>
                         <div>
                           <label className="mb-1 block text-xs font-semibold text-orange-900">
-                            {t('mobile')}
+                            {t("mobile")}
                           </label>
                           <Input
                             value={newCustomerPhone}
-                            onChange={(event) => setNewCustomerPhone(cleanWholeNumberInput(event.target.value))}
-                            placeholder={t('optional')}
+                            onChange={(event) =>
+                              setNewCustomerPhone(
+                                cleanWholeNumberInput(event.target.value),
+                              )
+                            }
+                            placeholder={t("optional")}
                             inputMode="tel"
                             className="h-9 bg-white"
                           />
@@ -343,7 +433,7 @@ export function SalesTransaction() {
 
                     <div className="flex items-center gap-2 text-xs text-orange-900">
                       <UserPlus className="h-4 w-4" />
-                      <span>{t('udhari_bill_notice')}</span>
+                      <span>{t("udhari_bill_notice")}</span>
                     </div>
                   </div>
                 )}
@@ -354,7 +444,7 @@ export function SalesTransaction() {
                   className="h-10 w-full bg-green-600 text-white hover:bg-green-700"
                 >
                   <Check className="mr-2 h-4 w-4" />
-                  {isProcessing ? t('processing') : t('complete_sale')}
+                  {isProcessing ? t("processing") : t("complete_sale")}
                 </Button>
               </CardContent>
             </Card>
@@ -365,45 +455,58 @@ export function SalesTransaction() {
       <AlertDialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>{t('confirm_sale_title')}</AlertDialogTitle>
+            <AlertDialogTitle>{t("confirm_sale_title")}</AlertDialogTitle>
             <AlertDialogDescription asChild>
               <div className="mt-3 space-y-2">
                 <div className="flex justify-between text-sm">
-                  <span>{t('items')}:</span>
+                  <span>{t("items")}:</span>
                   <span className="font-bold">{items.length}</span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span>{t('total_revenue')}:</span>
-                  <span className="font-bold">Rs. {formatMoney(totals.subtotal)}</span>
+                  <span>{t("total_revenue")}:</span>
+                  <span className="font-bold">
+                    Rs. {formatMoney(totals.subtotal)}
+                  </span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span>{t('payment')}:</span>
-                  <span className="font-bold capitalize">{t(paymentMethod)}</span>
+                  <span>{t("payment")}:</span>
+                  <span className="font-bold capitalize">
+                    {t(paymentMethod)}
+                  </span>
                 </div>
                 {isUdharSale && (
                   <div className="flex justify-between gap-3 text-sm">
-                    <span>{t('customer')}:</span>
-                    <span className="text-right font-bold">{selectedCreditCustomer?.name || newCustomerName || t('new_customer')}</span>
+                    <span>{t("customer")}:</span>
+                    <span className="text-right font-bold">
+                      {selectedCreditCustomer?.name ||
+                        newCustomerName ||
+                        t("new_customer")}
+                    </span>
                   </div>
                 )}
                 <div className="flex justify-between text-sm">
-                  <span>{t('profit_amount')}:</span>
-                  <span className="font-bold text-green-600">Rs. {formatMoney(totals.totalProfit)}</span>
+                  <span>{t("profit_amount")}:</span>
+                  <span className="font-bold text-green-600">
+                    Rs. {formatMoney(totals.totalProfit)}
+                  </span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span>{t('margin')}:</span>
-                  <span className="font-bold">{formatPercent(profitMarginPercent)}%</span>
+                  <span>{t("margin")}:</span>
+                  <span className="font-bold">
+                    {formatPercent(profitMarginPercent)}%
+                  </span>
                 </div>
               </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="flex justify-end gap-2">
-            <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
-            <AlertDialogAction onClick={handleCompleteSale}>{t('complete_sale')}</AlertDialogAction>
+            <AlertDialogCancel>{t("cancel")}</AlertDialogCancel>
+            <AlertDialogAction onClick={handleCompleteSale}>
+              {t("complete_sale")}
+            </AlertDialogAction>
           </div>
         </AlertDialogContent>
       </AlertDialog>
     </div>
   );
 }
-

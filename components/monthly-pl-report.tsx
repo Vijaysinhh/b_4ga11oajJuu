@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { useSales } from "@/hooks/use-db";
-import { Button } from "@/components/ui/button";
+import { useLanguage } from "@/providers/language-provider";
 import {
   Card,
   CardContent,
@@ -24,12 +24,13 @@ import {
 } from "recharts";
 import { DollarSign, TrendingUp, TrendingDown } from "lucide-react";
 import { formatMoney, formatPercent, formatWholeNumber } from "@/lib/number-format";
+import { monthKey } from "@/lib/utils";
+import { Input } from "@/components/ui/input";
 
 export function MonthlyPLReport() {
   const { sales } = useSales();
-  const [selectedMonth, setSelectedMonth] = useState(
-    new Date().toISOString().slice(0, 7),
-  );
+  const { t, formatDate } = useLanguage();
+  const [selectedMonth, setSelectedMonth] = useState(() => monthKey(new Date()));
   const [loading, setLoading] = useState(false);
 
   // Memoize the calculations to prevent unnecessary recalculations
@@ -104,42 +105,33 @@ export function MonthlyPLReport() {
   }, [selectedMonth, sales]);
 
   return (
-    <div className="space-y-6 pb-10">
-      <div>
-        <h1 className="text-3xl font-bold">Monthly P&L Report</h1>
-        <p className="text-muted-foreground mt-2">
-          Profit and Loss analysis for your shop
-        </p>
-      </div>
-
-      {/* Month Selector */}
+    <div className="space-y-6">
       <div className="flex gap-2">
-        <input
+        <Input
           type="month"
           value={selectedMonth}
           onChange={(e) => setSelectedMonth(e.target.value)}
-          className="flex-1 p-2 border rounded"
+          className="h-10"
           disabled={loading}
         />
       </div>
 
       {loading ? (
         <div className="text-center py-8 text-muted-foreground">
-          Loading report...
+          {t("loading_report")}
         </div>
       ) : monthSales.length === 0 ? (
         <div className="text-center py-8 text-muted-foreground">
-          No sales data for this month
+          {t("no_sales_month")}
         </div>
       ) : (
         <>
-          {/* Summary Cards */}
           <div className="grid grid-cols-2 gap-3 sm:gap-4">
             <Card className="border-2">
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm flex items-center gap-1">
                   <DollarSign className="w-4 h-4" />
-                  Revenue
+                  {t("revenue")}
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -151,7 +143,7 @@ export function MonthlyPLReport() {
 
             <Card className="border-2">
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm">Cost of Goods</CardTitle>
+                <CardTitle className="text-sm">{t("cost_of_goods")}</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">
@@ -164,7 +156,7 @@ export function MonthlyPLReport() {
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm flex items-center gap-1">
                   <TrendingUp className="w-4 h-4 text-green-600" />
-                  Profit
+                  {t("profit_amount")}
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -178,7 +170,7 @@ export function MonthlyPLReport() {
 
             <Card className="border-2">
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm">Profit Margin</CardTitle>
+                <CardTitle className="text-sm">{t("margin")}</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">{formatPercent(Number(profitMargin))}%</div>
@@ -186,11 +178,10 @@ export function MonthlyPLReport() {
             </Card>
           </div>
 
-          {/* Revenue vs Cost Chart - Hidden on mobile */}
           {dailyData.length > 0 && (
             <Card className="border-2 hidden sm:block">
               <CardHeader>
-                <CardTitle>Daily Revenue vs Cost</CardTitle>
+                <CardTitle>{t("daily_breakdown")}</CardTitle>
               </CardHeader>
               <CardContent>
                 <ResponsiveContainer width="100%" height={300}>
@@ -200,19 +191,18 @@ export function MonthlyPLReport() {
                     <YAxis />
                     <Tooltip />
                     <Legend />
-                    <Bar dataKey="revenue" fill="#3b82f6" name="Revenue" />
-                    <Bar dataKey="cost" fill="#ef4444" name="Cost" />
+                    <Bar dataKey="revenue" fill="#3b82f6" name={t("revenue")} />
+                    <Bar dataKey="cost" fill="#ef4444" name={t("cost")} />
                   </BarChart>
                 </ResponsiveContainer>
               </CardContent>
             </Card>
           )}
 
-          {/* Profit Trend - Hidden on mobile */}
           {dailyData.length > 0 && (
             <Card className="border-2 hidden sm:block">
               <CardHeader>
-                <CardTitle>Profit Trend</CardTitle>
+                <CardTitle>{t("profit_amount")}</CardTitle>
               </CardHeader>
               <CardContent>
                 <ResponsiveContainer width="100%" height={300}>
@@ -227,7 +217,7 @@ export function MonthlyPLReport() {
                       dataKey="profit"
                       stroke="#10b981"
                       strokeWidth={2}
-                      name="Profit"
+                      name={t("profit_amount")}
                     />
                   </LineChart>
                 </ResponsiveContainer>
@@ -235,13 +225,12 @@ export function MonthlyPLReport() {
             </Card>
           )}
 
-          {/* Recent Sales with Item Details */}
           {monthSales.length > 0 && (
             <Card className="border-2">
               <CardHeader>
-                <CardTitle className="text-lg">Recent Sales</CardTitle>
+                <CardTitle className="text-lg">{t("transactions")}</CardTitle>
                 <CardDescription>
-                  Latest transactions with item details
+                  {t("top_selling_items")}
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -252,39 +241,38 @@ export function MonthlyPLReport() {
                     .map((sale: any, idx: number) => (
                       <div
                         key={sale.id}
-                        className="border rounded-lg p-3 bg-gray-50"
+                        className="rounded-lg border bg-muted/30 p-3"
                       >
                         <div className="flex justify-between items-start mb-2">
                           <div>
                             <div className="font-medium text-sm">
-                              Sale #{monthSales.length - idx}
+                              {t("sale")} #{monthSales.length - idx}
                             </div>
-                            <div className="text-xs text-gray-500">
-                              {new Date(sale.timestamp).toLocaleDateString()}
+                            <div className="text-xs text-muted-foreground">
+                              {formatDate(new Date(sale.timestamp))}
                             </div>
                           </div>
                           <div className="text-right">
                             <div className="font-semibold">
                               Rs. {formatMoney(sale.subtotal)}
                             </div>
-                            <div className="text-xs text-green-700">
-                              +Rs. {formatMoney(sale.totalProfit)} profit
+                            <div className="text-xs text-muted-foreground">
+                              +Rs. {formatMoney(sale.totalProfit)} {t("profit_amount")}
                             </div>
                           </div>
                         </div>
 
-                        {/* Items in this sale */}
                         <div className="space-y-1">
                           {sale.items.map((item: any, itemIdx: number) => (
                             <div
                               key={itemIdx}
-                              className="flex justify-between items-center text-xs bg-white p-2 rounded border"
+                              className="flex justify-between items-center text-xs bg-background p-2 rounded border"
                             >
                               <div className="flex-1">
                                 <span className="font-medium">
                                   {item.itemName}
                                 </span>
-                                <span className="text-gray-500 ml-1">
+                                <span className="text-muted-foreground ml-1">
                                   {formatWholeNumber(item.quantity)}
                                   {item.unitShortForm} x Rs. {formatMoney(item.pricePerUnit)}
                                 </span>
@@ -293,7 +281,7 @@ export function MonthlyPLReport() {
                                 <div className="font-semibold">
                                   Rs. {formatMoney(item.totalPrice)}
                                 </div>
-                                <div className="text-green-600">
+                                <div className="text-muted-foreground">
                                   +Rs. {formatMoney(item.profit)}
                                 </div>
                               </div>
@@ -311,7 +299,7 @@ export function MonthlyPLReport() {
             <Card className="border-2 border-dashed">
               <CardContent className="pt-8 pb-8 text-center">
                 <p className="text-muted-foreground">
-                  No sales data for this month
+                  {t("no_sales_month")}
                 </p>
               </CardContent>
             </Card>

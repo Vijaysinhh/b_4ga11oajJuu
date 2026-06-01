@@ -1,8 +1,7 @@
 'use client';
 
-import { useState } from 'react';
 import { useLanguage } from '@/providers/language-provider';
-import { Button } from '@/components/ui/button';
+import { PageContainer, PageHeader } from '@/components/page-shell';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Select,
@@ -20,76 +19,62 @@ export function Settings() {
   const { t, language, setLanguage } = useLanguage();
 
   return (
-    <div className="space-y-8">
-      <div>
-        <h1 className="text-4xl font-bold tracking-tight">{t('settings')}</h1>
-        <p className="text-muted-foreground mt-2 text-base">Manage your app preferences and inventory settings</p>
-      </div>
+    <PageContainer>
+      <PageHeader title={t('settings')} description={t('settings_desc')} />
 
       <Tabs defaultValue="general" className="w-full">
-        <TabsList className="grid w-full grid-cols-3 h-12">
-          <TabsTrigger value="general" className="text-base">{t('general')}</TabsTrigger>
-          <TabsTrigger value="categories" className="text-base">{t('categories')}</TabsTrigger>
-          <TabsTrigger value="units" className="text-base">{t('units')}</TabsTrigger>
+        <TabsList className="grid h-11 w-full grid-cols-3">
+          <TabsTrigger value="general">{t('general')}</TabsTrigger>
+          <TabsTrigger value="categories">{t('categories')}</TabsTrigger>
+          <TabsTrigger value="units">{t('units')}</TabsTrigger>
         </TabsList>
 
-        {/* General Settings Tab */}
-        <TabsContent value="general" className="space-y-6 mt-6">
-          {/* Language Settings */}
+        <TabsContent value="general" className="mt-6 space-y-6">
           <Card className="border-2">
             <CardHeader>
-              <CardTitle className="flex items-center gap-3 text-xl">
-                <Globe className="w-6 h-6" />
+              <CardTitle className="flex items-center gap-3 text-lg">
+                <Globe className="h-5 w-5" />
                 {t('language')}
               </CardTitle>
-              <CardDescription className="text-base">Choose your preferred language</CardDescription>
+              <CardDescription>{t('language_desc')}</CardDescription>
             </CardHeader>
             <CardContent>
               <Select value={language} onValueChange={(value) => setLanguage(value as 'en' | 'mr')}>
-                <SelectTrigger className="w-full h-12 text-base">
+                <SelectTrigger className="h-11 w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="en" className="text-base">{t('english')}</SelectItem>
-                  <SelectItem value="mr" className="text-base">{t('marathi')}</SelectItem>
+                  <SelectItem value="en">{t('english')}</SelectItem>
+                  <SelectItem value="mr">{t('marathi')}</SelectItem>
                 </SelectContent>
               </Select>
-              <p className="text-base text-muted-foreground mt-4">
-                {language === 'mr'
-                  ? 'तुमच्या अनुमतीने, या अनुप्रयोगातील सर्व मराठी भाषेत दिसेल.'
-                  : 'The application will be displayed in your selected language.'}
+              <p className="mt-4 text-sm text-muted-foreground">
+                {language === 'mr' ? t('language_note_mr') : t('language_note_en')}
               </p>
             </CardContent>
           </Card>
 
-          {/* About */}
-          <Card>
+          <Card className="border-2">
             <CardHeader>
-              <CardTitle>About Dukan</CardTitle>
-              <CardDescription>Shop inventory management app</CardDescription>
+              <CardTitle>{t('about_title')}</CardTitle>
+              <CardDescription>{t('about_subtitle')}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-2">
-              <p className="text-sm text-muted-foreground">
-                Dukan is a simple and powerful inventory management system designed for small grocery shops and retail businesses.
-              </p>
-              <p className="text-sm text-muted-foreground">
-                All your data is stored locally on your device and never sent to any server. It works perfectly offline.
-              </p>
-              <p className="text-sm font-medium mt-4">Version 1.0.0</p>
+              <p className="text-sm text-muted-foreground">{t('about_body1')}</p>
+              <p className="text-sm text-muted-foreground">{t('about_body2')}</p>
+              <p className="mt-4 text-sm font-medium">{t('version')} 1.0.0</p>
             </CardContent>
           </Card>
         </TabsContent>
 
-        {/* Categories Tab */}
         <TabsContent value="categories" className="mt-6">
-          <CategoriesManagement />
+          <CategoriesManagement embedded />
         </TabsContent>
 
-        {/* Units Tab */}
         <TabsContent value="units" className="mt-6">
-          <UnitsManagement />
+          <UnitsManagement embedded />
         </TabsContent>
       </Tabs>
-    </div>
+    </PageContainer>
   );
 }

@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { LanguageToggle } from '@/components/page-shell';
 
 export function Navigation() {
   const { user, logout, isAuthenticated } = useSupabaseAuth();
@@ -50,9 +51,11 @@ export function Navigation() {
         <div className="flex items-center gap-2 sm:gap-3 flex-1">
           <div className="min-w-0">
             <h1 className="text-lg sm:text-2xl font-bold tracking-tight">{t('dukan')}</h1>
-            <p className="text-xs text-gray-600 truncate hidden sm:block">{user?.shopName || 'Shop'}</p>
+            <p className="text-xs text-muted-foreground truncate hidden sm:block">{user?.shopName || t('shop')}</p>
           </div>
         </div>
+        <div className="flex items-center gap-2">
+          <LanguageToggle className="hidden sm:flex" />
         <Button
           onClick={handleLogout}
           variant="ghost"
@@ -62,6 +65,7 @@ export function Navigation() {
           <LogOut className="w-4 h-4 mr-1 sm:mr-2" />
           <span className="hidden sm:inline">{t('logout')}</span>
         </Button>
+        </div>
       </header>
 
       {/* Left Sidebar - Desktop (Collapsible) */}
@@ -110,7 +114,7 @@ export function Navigation() {
           variant="ghost"
           size="sm"
           className="w-full rounded-none border-t border-border h-12"
-          title={sidebarCollapsed ? "Expand menu" : "Collapse menu"}
+          title={sidebarCollapsed ? t('expand_menu') : t('collapse_menu')}
         >
           {sidebarCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
         </Button>
