@@ -139,6 +139,21 @@ const translations: Record<string, Record<'en' | 'mr', string>> = {
   'add_to_sale': { en: 'Add to Sale', mr: 'विक्रीत जोडा' },
   'enter_quantity': { en: 'Enter quantity', mr: 'प्रमाण प्रविष्ट करा' },
   'search_items': { en: 'Search items...', mr: 'वस्तू शोधा...' },
+
+  // Daily Sales Timeline
+  'daily_sales': { en: 'Daily Sales', mr: 'दैनिक विक्री' },
+  'no_sales_day': { en: 'No sales on this day', mr: 'या दिवशी विक्री नाही' },
+  'no_sales_day_desc': { en: 'Sales recorded on this day will appear here.', mr: 'या दिवशी नोंदवलेली विक्री येथे दिसेल.' },
+  'day_summary': { en: 'Day Summary', mr: 'दिवसाचा सारांश' },
+  'revenue': { en: 'Revenue', mr: 'महसूल' },
+  'items_sold': { en: 'Items Sold', mr: 'विकलेल्या वस्तू' },
+  'stock_left': { en: 'Stock Left', mr: 'शिल्लक स्टॉक' },
+  'per_unit': { en: 'per unit', mr: 'प्रति एकक' },
+  'transaction': { en: 'Transaction', mr: 'व्यवहार' },
+  'credit_sale': { en: 'Credit Sale', mr: 'उधार विक्री' },
+  'tap_to_expand': { en: 'Tap to see details', mr: 'तपशील पाहण्यासाठी टॅप करा' },
+  'previous_day': { en: 'Previous Day', mr: 'मागील दिवस' },
+  'next_day': { en: 'Next Day', mr: 'पुढचा दिवस' },
 };
 
 export function LanguageProvider({ children }: { children: React.ReactNode }) {
