@@ -125,10 +125,44 @@ export interface Sale {
   totalCost: number; // Sum of all item costs
   totalProfit: number; // subtotal - totalCost
   profitMarginPercent: number; // (totalProfit / subtotal) * 100
-  paymentMethod: 'cash' | 'card' | 'partial'; // How they paid
+  paymentMethod: 'cash' | 'card' | 'partial' | 'udhar'; // How they paid
+  creditCustomerId?: number; // Udhari customer if payment method is udhar
+  creditCustomerName?: string;
   notes?: string; // Optional notes
   createdAt: number;
   updatedAt: number;
+}
+
+export interface CreditCustomer {
+  id?: number;
+  name: string;
+  phone?: string;
+  balance: number;
+  notes?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface CreditBillItem {
+  itemName: string;
+  quantity: number;
+  unitShortForm: string;
+  pricePerUnit: number;
+  totalPrice: number;
+}
+
+export interface CreditEntry {
+  id?: number;
+  customerId: number;
+  customerName: string;
+  type: 'credit' | 'payment';
+  amount: number;
+  note?: string;
+  saleId?: number;
+  billItems?: CreditBillItem[];
+  date: string;
+  timestamp: number;
+  createdAt: number;
 }
 
 export class DukanDB extends Dexie {
@@ -142,6 +176,8 @@ export class DukanDB extends Dexie {
   stockHistory!: Table<StockHistory>;
   batches!: Table<Batch>;
   alerts!: Table<Alert>;
+  creditCustomers!: Table<CreditCustomer>;
+  creditEntries!: Table<CreditEntry>;
 
   constructor() {
     super('DukanDB');
@@ -156,6 +192,20 @@ export class DukanDB extends Dexie {
       stockHistory: '++id, itemId, createdAt',
       batches: '++id, itemId, expiryDate',
       alerts: '++id, itemId, alertType, createdAt',
+    });
+    this.version(2).stores({
+      items: '++id, categoryId, updatedAt',
+      priceTiers: '++id, itemId, updatedAt',
+      categories: '++id, updatedAt',
+      units: '++id, updatedAt',
+      appSettings: '++id',
+      sales: '++id, date, timestamp',
+      saleItems: '++id, saleId, itemId',
+      stockHistory: '++id, itemId, createdAt',
+      batches: '++id, itemId, expiryDate',
+      alerts: '++id, itemId, alertType, createdAt',
+      creditCustomers: '++id, name, updatedAt',
+      creditEntries: '++id, customerId, date, timestamp',
     });
   }
 }

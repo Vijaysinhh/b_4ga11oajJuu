@@ -16,6 +16,7 @@ import {
 import { Plus, AlertTriangle, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Batch } from '@/lib/db';
+import { cleanWholeNumberInput, formatMoney, formatWholeNumber, parseWholeNumberInput } from '@/lib/number-format';
 
 export function BatchesManager() {
   const { t } = useLanguage();
@@ -44,10 +45,10 @@ export function BatchesManager() {
       batchNumber: batchNumber || `BATCH-${Date.now()}`,
       purchaseDate: Date.now(),
       expiryDate: expiryDate ? new Date(expiryDate).getTime() : undefined,
-      quantityReceived: parseFloat(quantity),
+      quantityReceived: parseWholeNumberInput(quantity),
       quantitySold: 0,
-      quantityAvailable: parseFloat(quantity),
-      costPerUnit: parseFloat(cost),
+      quantityAvailable: parseWholeNumberInput(quantity),
+      costPerUnit: parseWholeNumberInput(cost),
       status: 'active',
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -84,7 +85,7 @@ export function BatchesManager() {
                 <div key={batch.id} className="flex justify-between items-center p-2 bg-white rounded border border-orange-200">
                   <div>
                     <p className="font-semibold">{batch.itemName}</p>
-                    <p className="text-xs text-muted-foreground">Available: {batch.quantityAvailable}</p>
+                    <p className="text-xs text-muted-foreground">Available: {formatWholeNumber(batch.quantityAvailable)}</p>
                   </div>
                   <p className="text-sm font-bold text-orange-600">
                     {batch.expiryDate ? new Date(batch.expiryDate).toLocaleDateString() : 'No date'}
@@ -137,9 +138,11 @@ export function BatchesManager() {
             <div>
               <label className="text-sm font-semibold">Quantity Received</label>
               <Input
-                type="number"
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
                 value={quantity}
-                onChange={(e) => setQuantity(e.target.value)}
+                onChange={(e) => setQuantity(cleanWholeNumberInput(e.target.value))}
                 placeholder="0"
               />
             </div>
@@ -147,9 +150,11 @@ export function BatchesManager() {
             <div>
               <label className="text-sm font-semibold">Cost per Unit</label>
               <Input
-                type="number"
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
                 value={cost}
-                onChange={(e) => setCost(e.target.value)}
+                onChange={(e) => setCost(cleanWholeNumberInput(e.target.value))}
                 placeholder="0"
               />
             </div>
@@ -185,11 +190,11 @@ export function BatchesManager() {
                     </div>
                     <div>
                       <p className="text-muted-foreground">Available</p>
-                      <p className="font-semibold">{batch.quantityAvailable}</p>
+                      <p className="font-semibold">{formatWholeNumber(batch.quantityAvailable)}</p>
                     </div>
                     <div>
                       <p className="text-muted-foreground">Cost/Unit</p>
-                      <p className="font-semibold">₹{batch.costPerUnit}</p>
+                      <p className="font-semibold">Rs. {formatMoney(batch.costPerUnit)}</p>
                     </div>
                     <div>
                       <p className="text-muted-foreground">Expiry</p>

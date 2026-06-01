@@ -7,69 +7,31 @@ import { cn } from '@/lib/utils';
 import { 
   Package, 
   Settings, 
-  LayoutDashboard, 
+  Home,
   ShoppingCart, 
   LogOut, 
-  BarChart3,
-  Bell,
-  Box,
-  Layers,
-  Grid3x3,
+  Users,
   ChevronLeft,
   ChevronRight,
-  MoreHorizontal,
+  Plus,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
-import {
-  Sheet,
-  SheetClose,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet';
 
 export function Navigation() {
   const { user, logout, isAuthenticated } = useSupabaseAuth();
   const pathname = usePathname();
   const router = useRouter();
-  const [moreOpen, setMoreOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
-  const mainNavItems = useMemo(() => [
-    { href: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-    { href: '/sales', icon: ShoppingCart, label: 'Sales' },
-    { href: '/items', icon: Package, label: 'Items' },
-  ], []);
-
-  const moreNavItems = useMemo(() => [
-    { href: '/reports', icon: BarChart3, label: 'Reports' },
-    { href: '/categories', icon: Grid3x3, label: 'Categories' },
-    { href: '/units', icon: Layers, label: 'Units' },
-    { href: '/batches', icon: Box, label: 'Batches' },
-    { href: '/alerts', icon: Bell, label: 'Alerts' },
+  const navItems = useMemo(() => [
+    { href: '/dashboard', icon: Home, label: 'Home' },
+    { href: '/items', icon: Package, label: 'Stock' },
+    { href: '/udhari', icon: Users, label: 'Udhari' },
     { href: '/settings', icon: Settings, label: 'Settings' },
   ], []);
-
-  const allNavItems = useMemo(() => [
-    { href: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-    { href: '/sales', icon: ShoppingCart, label: 'Sales' },
-    { href: '/items', icon: Package, label: 'Items' },
-    { href: '/reports', icon: BarChart3, label: 'Reports' },
-    { href: '/categories', icon: Grid3x3, label: 'Categories' },
-    { href: '/units', icon: Layers, label: 'Units' },
-    { href: '/batches', icon: Box, label: 'Batches' },
-    { href: '/alerts', icon: Bell, label: 'Alerts' },
-    { href: '/settings', icon: Settings, label: 'Settings' },
-  ], []);
-
-  const isMoreActive = moreNavItems.some(
-    (item) => pathname === item.href || pathname.startsWith(item.href + '/'),
-  );
 
   const handleLogout = async () => {
-    setMoreOpen(false);
     await logout();
     router.push('/login');
   };
@@ -106,7 +68,19 @@ export function Navigation() {
           "bg-background border-r border-border overflow-y-auto transition-all duration-300 flex flex-col p-3 gap-2",
           sidebarCollapsed ? "w-20" : "w-56"
         )}>
-          {allNavItems.map((item) => {
+          <Link
+            href="/sales"
+            title={sidebarCollapsed ? "New Sale" : undefined}
+            className={cn(
+              "mb-2 flex items-center gap-3 rounded-lg bg-green-600 px-3 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-green-700",
+              sidebarCollapsed && "justify-center px-0"
+            )}
+          >
+            <ShoppingCart className="w-5 h-5 flex-shrink-0" />
+            {!sidebarCollapsed && <span className="truncate">New Sale</span>}
+          </Link>
+
+          {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
             return (
@@ -143,7 +117,7 @@ export function Navigation() {
       {/* Bottom Navigation - Mobile Only (Quick Access) */}
       <nav className="sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-background border-t border-border h-16 flex items-center shadow-lg">
         <div className="flex items-center justify-around w-full h-full">
-          {mainNavItems.map((item) => {
+          {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
             return (
@@ -168,71 +142,18 @@ export function Navigation() {
               </Link>
             );
           })}
-          <Sheet open={moreOpen} onOpenChange={setMoreOpen}>
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => setMoreOpen(true)}
-              className={cn(
-                'flex-1 h-full rounded-none flex flex-col items-center justify-center gap-0.5 transition-colors',
-                isMoreActive ? 'bg-primary/10' : 'active:opacity-70',
-              )}
-            >
-              <MoreHorizontal className={cn(
-                'w-6 h-6',
-                isMoreActive ? 'text-primary' : 'text-muted-foreground',
-              )} />
-              <span className={cn(
-                'text-xs font-semibold text-center px-1',
-                isMoreActive ? 'text-primary' : 'text-muted-foreground',
-              )}>
-                More
-              </span>
-            </Button>
-            <SheetContent side="bottom" className="sm:hidden pb-6">
-              <SheetHeader>
-                <SheetTitle>More</SheetTitle>
-                <SheetDescription>
-                  Reports, setup, alerts, and account actions.
-                </SheetDescription>
-              </SheetHeader>
-              <div className="grid grid-cols-2 gap-2 px-4">
-                {moreNavItems.map((item) => {
-                  const Icon = item.icon;
-                  const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
-                  return (
-                    <SheetClose key={item.href} asChild>
-                      <Link
-                        href={item.href}
-                        className={cn(
-                          'flex min-h-16 items-center gap-3 rounded-md border px-3 py-3 text-sm font-medium transition-colors',
-                          isActive
-                            ? 'border-primary bg-primary/10 text-primary'
-                            : 'border-border text-foreground active:bg-accent',
-                        )}
-                      >
-                        <Icon className="h-5 w-5 flex-shrink-0" />
-                        <span className="truncate">{item.label}</span>
-                      </Link>
-                    </SheetClose>
-                  );
-                })}
-              </div>
-              <div className="px-4">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={handleLogout}
-                  className="h-11 w-full justify-start"
-                >
-                  <LogOut className="mr-2 h-4 w-4" />
-                  Logout
-                </Button>
-              </div>
-            </SheetContent>
-          </Sheet>
         </div>
       </nav>
+
+      {pathname !== '/sales' && (
+        <Link
+          href="/sales"
+          className="fixed bottom-20 right-4 z-50 inline-flex h-12 items-center gap-2 rounded-full bg-green-600 px-4 text-sm font-bold text-white shadow-lg transition active:scale-95 hover:bg-green-700 sm:bottom-6 sm:right-6"
+        >
+          <Plus className="h-5 w-5" />
+          Sale
+        </Link>
+      )}
     </>
   );
 }

@@ -36,6 +36,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Trash2, Edit2, Plus, Search } from 'lucide-react';
 import { HelpTooltip, LabelWithTooltip } from '@/components/help-tooltip';
+import { formatMoney, formatPercent, formatWholeNumber, parseWholeNumberInput } from '@/lib/number-format';
 
 interface ItemFormData {
   name: string;
@@ -249,9 +250,9 @@ export function ItemsManagement() {
     return unit?.shortForm || unit?.name || 'N/A';
   };
 
-  const calculateMargin = (buyPrice: number, sellPrice: number): string => {
-    if (buyPrice === 0) return '0';
-    return (((sellPrice - buyPrice) / buyPrice) * 100).toFixed(1);
+  const calculateMargin = (buyPrice: number, sellPrice: number): number => {
+    if (buyPrice === 0) return 0;
+    return ((sellPrice - buyPrice) / buyPrice) * 100;
   };
 
   return (
@@ -361,9 +362,11 @@ export function ItemsManagement() {
                   required
                 />
                 <Input
-                  type="number"
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
                   value={formData.quantity || ''}
-                  onChange={(e) => setFormData({ ...formData, quantity: e.target.value === '' ? 0 : parseFloat(e.target.value) || 0 })}
+                  onChange={(e) => setFormData({ ...formData, quantity: parseWholeNumberInput(e.target.value) })}
                   placeholder="0"
                   className="mt-1"
                 />
@@ -372,13 +375,15 @@ export function ItemsManagement() {
               <div>
                 <LabelWithTooltip 
                   label="Buying Price" 
-                  tooltip="The cost price - how much you pay to buy this item from your supplier (in ₹)"
+                  tooltip="The cost price - how much you pay to buy this item from your supplier (in Rs.)"
                   required
                 />
                 <Input
-                  type="number"
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
                   value={formData.buyPrice || ''}
-                  onChange={(e) => setFormData({ ...formData, buyPrice: e.target.value === '' ? 0 : parseFloat(e.target.value) || 0 })}
+                  onChange={(e) => setFormData({ ...formData, buyPrice: parseWholeNumberInput(e.target.value) })}
                   placeholder="0"
                   className="mt-1"
                 />
@@ -387,19 +392,21 @@ export function ItemsManagement() {
               <div>
                 <LabelWithTooltip 
                   label="Selling Price" 
-                  tooltip="The retail price - how much you sell this item for to customers (in ₹)"
+                  tooltip="The retail price - how much you sell this item for to customers (in Rs.)"
                   required
                 />
                 <Input
-                  type="number"
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
                   value={formData.sellPrice || ''}
-                  onChange={(e) => setFormData({ ...formData, sellPrice: e.target.value === '' ? 0 : parseFloat(e.target.value) || 0 })}
+                  onChange={(e) => setFormData({ ...formData, sellPrice: parseWholeNumberInput(e.target.value) })}
                   placeholder="0"
                   className="mt-1"
                 />
                 {formData.buyPrice > 0 && formData.sellPrice > 0 && (
                   <p className="text-xs text-green-600 mt-1">
-                    Margin: {calculateMargin(formData.buyPrice, formData.sellPrice)}%
+                    Margin: {formatPercent(calculateMargin(formData.buyPrice, formData.sellPrice))}%
                   </p>
                 )}
               </div>
@@ -411,11 +418,12 @@ export function ItemsManagement() {
                 </div>
                 <div className="flex gap-2 mt-1">
                   <Input
-                    type="number"
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
                     value={formData.lowStockLimit === 0 ? '' : formData.lowStockLimit}
                     onChange={(e) => {
-                      const value = e.target.value;
-                      setFormData({ ...formData, lowStockLimit: value === '' ? 0 : Math.max(0, parseFloat(value) || 0) });
+                      setFormData({ ...formData, lowStockLimit: parseWholeNumberInput(e.target.value) });
                     }}
                     placeholder="Leave empty to disable alerts"
                     className="mt-0"
@@ -548,7 +556,7 @@ export function ItemsManagement() {
                         <p className="text-xs text-muted-foreground">{getCategoryName(item.categoryId)}</p>
                       </div>
                       <div className="text-right">
-                        <p className="text-sm font-semibold text-blue-600">{item.quantity} {getUnitName(item.unitId)}</p>
+                        <p className="text-sm font-semibold text-blue-600">{formatWholeNumber(item.quantity)} {getUnitName(item.unitId)}</p>
                         {item.quantity <= item.lowStockLimit && (
                           <p className="text-xs font-semibold text-orange-600">Low Stock</p>
                         )}
@@ -559,15 +567,15 @@ export function ItemsManagement() {
                     <div className="grid grid-cols-3 gap-2 text-xs">
                       <div>
                         <span className="text-muted-foreground">Buy:</span>
-                        <p className="font-semibold">₹{item.buyPrice.toFixed(2)}</p>
+                        <p className="font-semibold">Rs. {formatMoney(item.buyPrice)}</p>
                       </div>
                       <div>
                         <span className="text-muted-foreground">Sell:</span>
-                        <p className="font-semibold">₹{item.sellPrice.toFixed(2)}</p>
+                        <p className="font-semibold">Rs. {formatMoney(item.sellPrice)}</p>
                       </div>
                       <div>
                         <span className="text-muted-foreground">Margin:</span>
-                        <p className="font-semibold text-green-600">{calculateMargin(item.buyPrice, item.sellPrice)}%</p>
+                        <p className="font-semibold text-green-600">{formatPercent(calculateMargin(item.buyPrice, item.sellPrice))}%</p>
                       </div>
                     </div>
 
@@ -579,9 +587,9 @@ export function ItemsManagement() {
                           {itemPriceTiers.map((tier) => (
                             <div key={tier.id} className="bg-amber-50 p-2 rounded border border-amber-200">
                               <p className="text-xs font-semibold text-amber-900">
-                                {tier.quantity}{getUnitName(tier.unitId)}
+                                {formatWholeNumber(tier.quantity)}{getUnitName(tier.unitId)}
                               </p>
-                              <p className="text-xs text-amber-700">₹{(tier.price || 0).toFixed(2)}</p>
+                              <p className="text-xs text-amber-700">Rs. {formatMoney(tier.price || 0)}</p>
                             </div>
                           ))}
                         </div>
@@ -591,7 +599,7 @@ export function ItemsManagement() {
                     {/* Stock Value */}
                     <div className="pt-2 border-t">
                       <p className="text-xs text-muted-foreground">
-                        Total Value: <span className="font-semibold text-foreground">₹{(item.quantity * item.buyPrice).toFixed(2)}</span>
+                        Total Value: <span className="font-semibold text-foreground">Rs. {formatMoney(item.quantity * item.buyPrice)}</span>
                       </p>
                     </div>
 

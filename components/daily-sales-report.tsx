@@ -12,6 +12,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, TrendingUp, DollarSign, Zap } from "lucide-react";
 import Link from "next/link";
+import { formatMoney, formatPercent, formatWholeNumber } from "@/lib/number-format";
 
 export function DailySalesReport() {
   const { getDailySummary } = useSales();
@@ -96,7 +97,7 @@ export function DailySalesReport() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-blue-900">
-              ₹{dailyData.totalRevenue.toFixed(0)}
+              Rs. {formatMoney(dailyData.totalRevenue)}
             </div>
             <p className="text-xs text-blue-600 mt-1">Amount earned</p>
           </CardContent>
@@ -112,7 +113,7 @@ export function DailySalesReport() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-green-900">
-              ₹{dailyData.totalProfit.toFixed(0)}
+              Rs. {formatMoney(dailyData.totalProfit)}
             </div>
             <p className="text-xs text-green-600 mt-1">Pure profit</p>
           </CardContent>
@@ -128,7 +129,7 @@ export function DailySalesReport() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-purple-900">
-              {dailyData.profitMarginPercent.toFixed(1)}%
+              {formatPercent(dailyData.profitMarginPercent)}%
             </div>
             <p className="text-xs text-purple-600 mt-1">% of revenue</p>
           </CardContent>
@@ -145,19 +146,19 @@ export function DailySalesReport() {
             <div className="flex justify-between items-center">
               <span className="text-gray-700">Total Revenue</span>
               <span className="font-bold">
-                ₹{dailyData.totalRevenue.toFixed(0)}
+                Rs. {formatMoney(dailyData.totalRevenue)}
               </span>
             </div>
             <div className="flex justify-between items-center text-red-700">
               <span>Total Cost</span>
               <span className="font-bold">
-                -₹{dailyData.totalCost.toFixed(0)}
+                -Rs. {formatMoney(dailyData.totalCost)}
               </span>
             </div>
             <div className="border-t pt-3 flex justify-between items-center">
               <span className="font-semibold">Net Profit</span>
               <span className="font-bold text-green-700">
-                ₹{dailyData.totalProfit.toFixed(0)}
+                Rs. {formatMoney(dailyData.totalProfit)}
               </span>
             </div>
           </div>
@@ -179,10 +180,10 @@ export function DailySalesReport() {
                     <div className="font-medium text-sm">Sale #{idx + 1}</div>
                     <div className="text-right">
                       <div className="font-semibold">
-                        ₹{sale.subtotal.toFixed(0)}
+                        Rs. {formatMoney(sale.subtotal)}
                       </div>
                       <div className="text-xs text-green-700">
-                        +₹{sale.totalProfit.toFixed(0)} profit
+                        +Rs. {formatMoney(sale.totalProfit)} profit
                       </div>
                     </div>
                   </div>
@@ -197,17 +198,16 @@ export function DailySalesReport() {
                         <div className="flex-1">
                           <span className="font-medium">{item.itemName}</span>
                           <span className="text-gray-500 ml-1">
-                            {item.quantity}
-                            {item.unitShortForm} × ₹
-                            {item.pricePerUnit.toFixed(2)}
+                            {formatWholeNumber(item.quantity)}
+                            {item.unitShortForm} x Rs. {formatMoney(item.pricePerUnit)}
                           </span>
                         </div>
                         <div className="text-right">
                           <div className="font-semibold">
-                            ₹{item.totalPrice.toFixed(2)}
+                            Rs. {formatMoney(item.totalPrice)}
                           </div>
                           <div className="text-green-600">
-                            +₹{item.profit.toFixed(2)}
+                            +Rs. {formatMoney(item.profit)}
                           </div>
                         </div>
                       </div>

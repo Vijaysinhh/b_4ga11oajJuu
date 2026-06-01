@@ -1,52 +1,160 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
-import { useLanguage } from '@/providers/language-provider';
+import { useEffect, useMemo, useState } from 'react';
 import { useSupabaseAuth } from '@/providers/supabase-auth-provider';
-import { useDashboardStats, useItems } from '@/hooks/use-db';
+import { useDashboardStats, useItems, useSales, useUdhari } from '@/hooks/use-db';
+import { downloadSimplePdf, type PdfSection } from '@/lib/simple-pdf';
+import { formatMoney, formatPercent, formatWholeNumber } from '@/lib/number-format';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Package, AlertTriangle, TrendingUp, DollarSign } from 'lucide-react';
+import { AlertTriangle, FileDown, Package, TrendingUp, WalletCards } from 'lucide-react';
+
+type ReportKey = 'today' | 'month' | 'sixMonths' | 'year';
+
+function dateKey(date: Date) {
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, '0');
+  const day = `${date.getDate()}`.padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function monthKey(date: Date) {
+  return dateKey(date).slice(0, 7);
+}
 
 export function Dashboard() {
   const router = useRouter();
   const { user, loading: authLoading, isAuthenticated } = useSupabaseAuth();
-  const { t } = useLanguage();
   const stats = useDashboardStats();
-  const { items, isLoading } = useItems();
+  const { items } = useItems();
+  const { sales } = useSales();
+  const { totalPending } = useUdhari();
   const [isClientReady, setIsClientReady] = useState(false);
 
-  // Check if component is mounted on client
   useEffect(() => {
     setIsClientReady(true);
   }, []);
 
-  // Redirect to login if not authenticated
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
       router.push('/login');
     }
   }, [authLoading, isAuthenticated, router]);
 
-  // Show header immediately with loading state for content
-  // This prevents blank screen and improves perceived performance
+  const lowStockItems = useMemo(
+    () => items.filter((item) => item.quantity <= item.lowStockLimit),
+    [items],
+  );
+
+  const reportData = useMemo(() => {
+    const now = new Date();
+    const today = dateKey(now);
+    const thisMonth = monthKey(now);
+    const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1);
+    const sixMonthStart = dateKey(sixMonthsAgo);
+    const thisYear = `${now.getFullYear()}`;
+
+    const makeReport = (label: string, key: ReportKey, filteredSales: typeof sales) => {
+      const itemMap = new Map<string, { quantity: number; revenue: number; profit: number }>();
+
+      for (const sale of filteredSales) {
+        for (const item of sale.items || []) {
+          const existing = itemMap.get(item.itemName) || { quantity: 0, revenue: 0, profit: 0 };
+          itemMap.set(item.itemName, {
+            quantity: existing.quantity + Number(item.quantity || 0),
+            revenue: existing.revenue + Number(item.totalPrice || 0),
+            profit: existing.profit + Number(item.profit || 0),
+          });
+        }
+      }
+
+      const revenue = filteredSales.reduce((sum, sale) => sum + sale.subtotal, 0);
+      const cost = filteredSales.reduce((sum, sale) => sum + sale.totalCost, 0);
+      const profit = revenue - cost;
+
+      return {
+        key,
+        label,
+        sales: filteredSales,
+        transactions: filteredSales.length,
+        revenue,
+        cost,
+        profit,
+        margin: revenue > 0 ? (profit / revenue) * 100 : 0,
+        topItems: Array.from(itemMap.entries())
+          .map(([name, value]) => ({ name, ...value }))
+          .sort((a, b) => b.revenue - a.revenue)
+          .slice(0, 5),
+      };
+    };
+
+    return [
+      makeReport('Today', 'today', sales.filter((sale) => sale.date === today)),
+      makeReport('This Month', 'month', sales.filter((sale) => sale.date.startsWith(thisMonth))),
+      makeReport('6 Months', 'sixMonths', sales.filter((sale) => sale.date >= sixMonthStart)),
+      makeReport('This Year', 'year', sales.filter((sale) => sale.date.startsWith(thisYear))),
+    ];
+  }, [sales]);
+
+  const todayReport = reportData[0];
+  const topMarginItems = useMemo(
+    () => [...items].sort((a, b) => (b.marginPercent || 0) - (a.marginPercent || 0)).slice(0, 4),
+    [items],
+  );
+
+  const handleDownloadReport = (report: (typeof reportData)[number]) => {
+    const sections: PdfSection[] = [
+      {
+        heading: 'Summary',
+        rows: [
+          ['Transactions', `${report.transactions}`],
+          ['Sales', `Rs. ${formatMoney(report.revenue)}`],
+          ['Profit', `Rs. ${formatMoney(report.profit)}`],
+          ['Margin', `${formatPercent(report.margin)}%`],
+          ['Pending Udhari', `Rs. ${formatMoney(totalPending)}`],
+          ['Low Stock Items', `${lowStockItems.length}`],
+        ],
+      },
+      {
+        heading: 'Top Items',
+        rows: report.topItems.length
+          ? report.topItems.map((item) => [
+              item.name,
+              `${formatWholeNumber(item.quantity)} sold, Rs. ${formatMoney(item.revenue)} sales`,
+            ])
+          : [['Items', 'No sales in this period']],
+      },
+      {
+        heading: 'Stock Alerts',
+        rows: lowStockItems.length
+          ? lowStockItems.slice(0, 8).map((item) => [
+              item.name,
+              `${item.quantity} left, limit ${item.lowStockLimit}`,
+            ])
+          : [['Low Stock', 'No low stock items']],
+      },
+    ];
+
+    downloadSimplePdf({
+      title: `Dukan ${report.label} Report`,
+      subtitle: user?.shopName || 'Shop report',
+      sections,
+      fileName: `dukan-${report.key}-report.pdf`,
+    });
+  };
+
   if (!isClientReady || authLoading) {
     return (
-      <div className="space-y-8 pb-10">
+      <div className="space-y-6 pb-24 sm:pb-10">
         <div>
-          <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">{t('dashboard')}</h1>
-          <p className="text-muted-foreground mt-1 sm:mt-2 text-sm sm:text-base">Loading your shop data...</p>
+          <h1 className="text-3xl font-bold tracking-tight">Home</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Loading shop data...</p>
         </div>
-        <div className="grid grid-cols-2 gap-3 sm:gap-5">
-          {[1, 2, 3, 4].map((i) => (
-            <Card key={i} className="border-2 animate-pulse">
-              <CardHeader className="pb-2 sm:pb-3">
-                <div className="h-4 bg-gray-200 rounded w-20"></div>
-              </CardHeader>
-              <CardContent>
-                <div className="h-8 bg-gray-200 rounded w-12 mb-2"></div>
-                <div className="h-3 bg-gray-100 rounded w-16"></div>
-              </CardContent>
+        <div className="grid grid-cols-2 gap-3">
+          {[1, 2, 3, 4].map((item) => (
+            <Card key={item} className="animate-pulse border-2">
+              <CardContent className="h-28" />
             </Card>
           ))}
         </div>
@@ -54,120 +162,146 @@ export function Dashboard() {
     );
   }
 
-  // Get low stock items
-  const lowStockItems = items.filter((item) => item.quantity <= item.lowStockLimit);
-
-  // Top 5 items by margin
-  const topMarginItems = [...items]
-    .sort((a, b) => (b.marginPercent || 0) - (a.marginPercent || 0))
-    .slice(0, 5);
-
   return (
-    <div className="space-y-8 pb-10">
+    <div className="mx-auto max-w-5xl space-y-6 pb-24 sm:pb-10">
       <div>
-        <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">{t('dashboard')}</h1>
-        <p className="text-muted-foreground mt-1 sm:mt-2 text-sm sm:text-base">Shop: {user?.shopName}</p>
+        <h1 className="text-3xl font-bold tracking-tight">Home</h1>
+        <p className="mt-1 text-sm text-muted-foreground">{user?.shopName || 'Shop'}</p>
       </div>
 
-      {/* Stats Cards - 2x2 Grid Mobile First */}
-      <div className="grid grid-cols-2 gap-3 sm:gap-5">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Card className="border-2">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 sm:pb-3">
-            <CardTitle className="text-xs sm:text-base font-semibold">{t('total_items')}</CardTitle>
-            <Package className="h-4 sm:h-5 w-4 sm:w-5 text-blue-600" />
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Today Sales</CardTitle>
+            <TrendingUp className="h-4 w-4 text-green-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl sm:text-3xl font-bold">{stats.totalItems}</div>
-            <p className="text-xs text-muted-foreground mt-0.5 sm:mt-1">Products</p>
+            <div className="text-2xl font-bold">Rs. {formatMoney(todayReport.revenue)}</div>
+            <p className="mt-1 text-xs text-muted-foreground">{todayReport.transactions} transactions</p>
           </CardContent>
         </Card>
 
         <Card className="border-2">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 sm:pb-3">
-            <CardTitle className="text-xs sm:text-base font-semibold">{t('low_stock_items')}</CardTitle>
-            <AlertTriangle className="h-4 sm:h-5 w-4 sm:w-5 text-orange-600" />
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Today Profit</CardTitle>
+            <TrendingUp className="h-4 w-4 text-blue-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl sm:text-3xl font-bold text-orange-600">{lowStockItems.length}</div>
-            <p className="text-xs text-muted-foreground mt-0.5 sm:mt-1">Low stock</p>
+            <div className="text-2xl font-bold">Rs. {formatMoney(todayReport.profit)}</div>
+            <p className="mt-1 text-xs text-muted-foreground">{formatPercent(todayReport.margin)}% margin</p>
           </CardContent>
         </Card>
 
         <Card className="border-2">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 sm:pb-3">
-            <CardTitle className="text-xs sm:text-base font-semibold">{t('total_value')}</CardTitle>
-            <DollarSign className="h-4 sm:h-5 w-4 sm:w-5 text-green-600" />
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Udhari</CardTitle>
+            <WalletCards className="h-4 w-4 text-orange-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-xl sm:text-3xl font-bold">₹{stats.totalValue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</div>
-            <p className="text-xs text-muted-foreground mt-0.5 sm:mt-1">Stock Value</p>
+            <div className="text-2xl font-bold">Rs. {formatMoney(totalPending)}</div>
+            <p className="mt-1 text-xs text-muted-foreground">pending</p>
           </CardContent>
         </Card>
 
         <Card className="border-2">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 sm:pb-3">
-            <CardTitle className="text-xs sm:text-base font-semibold">{t('avg_margin') || 'Avg Margin'}</CardTitle>
-            <TrendingUp className="h-4 sm:h-5 w-4 sm:w-5 text-purple-600" />
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Low Stock</CardTitle>
+            <AlertTriangle className="h-4 w-4 text-red-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl sm:text-3xl font-bold">{stats.avgMargin.toFixed(1)}%</div>
-            <p className="text-xs text-muted-foreground mt-0.5 sm:mt-1">Average Margin</p>
+            <div className="text-2xl font-bold">{lowStockItems.length}</div>
+            <p className="mt-1 text-xs text-muted-foreground">{stats.totalItems} products</p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Top Margin Items */}
-      {topMarginItems.length > 0 && (
-        <Card className="border-2">
-          <CardHeader>
-            <CardTitle className="text-lg">Top High Margin Products</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              {topMarginItems.map((item, idx) => (
-                <div key={item.id} className="flex items-center justify-between p-3 bg-green-50 border border-green-200 rounded">
-                  <div className="flex-1">
-                    <p className="font-bold text-base">{idx + 1}. {item.name}</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">₹{(item.marginAmount || 0).toFixed(0)} profit/unit</p>
+      <section className="space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-xl font-bold">Reports</h2>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          {reportData.map((report) => (
+            <Card key={report.key} className="border-2">
+              <CardHeader className="pb-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <CardTitle className="text-base">{report.label}</CardTitle>
+                    <p className="mt-1 text-xs text-muted-foreground">{report.transactions} transactions</p>
                   </div>
-                  <div className="text-right">
-                    <p className="font-bold text-green-700 text-lg">{(item.marginPercent || 0).toFixed(1)}%</p>
+                  <Button
+                    onClick={() => handleDownloadReport(report)}
+                    variant="outline"
+                    size="sm"
+                    className="h-9 gap-2"
+                  >
+                    <FileDown className="h-4 w-4" />
+                    PDF
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-3 gap-2 text-sm">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Sales</p>
+                    <p className="font-bold">Rs. {formatMoney(report.revenue)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Profit</p>
+                    <p className="font-bold text-green-700">Rs. {formatMoney(report.profit)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Margin</p>
+                    <p className="font-bold">{formatPercent(report.margin)}%</p>
                   </div>
                 </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </section>
+
+      {topMarginItems.length > 0 && (
+        <section className="space-y-3">
+          <h2 className="text-xl font-bold">High Margin Items</h2>
+          <div className="grid gap-2">
+            {topMarginItems.map((item, index) => (
+              <div key={item.id} className="flex items-center justify-between rounded-md border bg-green-50 px-3 py-3">
+                <div className="min-w-0">
+                  <p className="truncate font-semibold">{index + 1}. {item.name}</p>
+                  <p className="text-xs text-green-800">Rs. {formatMoney(item.marginAmount || 0)} profit/unit</p>
+                </div>
+                <p className="font-bold text-green-700">{formatPercent(item.marginPercent || 0)}%</p>
+              </div>
+            ))}
+          </div>
+        </section>
       )}
 
-      {/* Low Stock Alert */}
       {lowStockItems.length > 0 && (
-        <Card className="border-2">
-          <CardHeader>
-            <CardTitle className="text-lg">Low Stock Alert</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              {lowStockItems.map((item) => (
-                <div key={item.id} className="flex items-center justify-between p-3 bg-orange-50 border-2 border-orange-300 rounded">
-                  <div className="flex-1">
-                    <p className="font-bold text-base text-orange-900">{item.name}</p>
-                    <p className="text-xs text-orange-700 mt-0.5">Min: {item.lowStockLimit}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-bold text-orange-600 text-lg">{item.quantity}</p>
-                  </div>
+        <section className="space-y-3">
+          <h2 className="text-xl font-bold">Stock Needed</h2>
+          <div className="grid gap-2">
+            {lowStockItems.slice(0, 6).map((item) => (
+              <div key={item.id} className="flex items-center justify-between rounded-md border border-orange-200 bg-orange-50 px-3 py-3">
+                <div className="min-w-0">
+                  <p className="truncate font-semibold text-orange-950">{item.name}</p>
+                  <p className="text-xs text-orange-800">Limit {item.lowStockLimit}</p>
                 </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+                <p className="font-bold text-orange-700">
+                  {item.quantity}
+                </p>
+              </div>
+            ))}
+          </div>
+        </section>
       )}
 
       {items.length === 0 && (
         <Card className="border-2 border-dashed">
-          <CardContent className="pt-8 pb-8 text-center">
-            <p className="text-muted-foreground">No items yet. Go to Items tab to add products.</p>
+          <CardContent className="py-8 text-center">
+            <Package className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
+            <p className="text-sm text-muted-foreground">No items yet. Add products from Stock.</p>
           </CardContent>
         </Card>
       )}

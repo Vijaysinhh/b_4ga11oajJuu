@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import type { Unit, PriceTier } from '@/lib/db';
 import { calculatePricingMetrics } from '@/lib/pricing-calculator';
 import { convertUnit } from '@/lib/unit-conversion';
+import { formatMoney, formatPercent, formatWholeNumber, parseWholeNumberInput } from '@/lib/number-format';
 
 interface PriceTierManagerProps {
   itemId?: number;
@@ -44,9 +45,9 @@ export function PriceTierManager({
 
     onAdd({
       itemId,
-      quantity: parseFloat(newTier.quantity),
+      quantity: parseWholeNumberInput(newTier.quantity),
       unitId: newTier.unitId,
-      price: parseFloat(newTier.price),
+      price: parseWholeNumberInput(newTier.price),
     });
 
     setNewTier({
@@ -85,7 +86,7 @@ export function PriceTierManager({
     const totalCost = costPerUnit * tierQtyInWholesaleUnit;
     
     if (price === 0) return 0;
-    // Margin % = (profit / selling price) × 100
+    // Margin % = (profit / selling price) * 100
     return ((price - totalCost) / price) * 100;
   };
 
@@ -100,7 +101,7 @@ export function PriceTierManager({
     const totalCost = costPerUnit * tierQtyInWholesaleUnit;
     
     if (totalCost === 0) return 0;
-    // Markup % = (profit / cost) × 100
+    // Markup % = (profit / cost) * 100
     return ((price - totalCost) / totalCost) * 100;
   };
 
@@ -117,7 +118,7 @@ export function PriceTierManager({
     const wholesaleUnit = units.find(u => u.id === wholesaleUnitId)?.shortForm || 'unit';
     const tierUnit = units.find(u => u.id === tierUnitId)?.shortForm || 'unit';
     
-    // wholesaleCost is already per-unit price (e.g., ₹100/kg)
+    // wholesaleCost is already per-unit price (e.g., Rs. 100/kg)
     // No need to divide again
     const costPerUnit = wholesaleCost;
 
@@ -140,11 +141,11 @@ export function PriceTierManager({
         
         <div className="grid grid-cols-1 gap-2 text-blue-900">
           <div className="bg-white rounded p-2 border border-blue-100">
-            <span className="font-semibold">Example: Buy 3kg rice at ₹200/kg, sell 50g at ₹15</span>
+            <span className="font-semibold">Example: Buy 3kg rice at Rs. 200/kg, sell 50g at Rs. 15</span>
             <div className="text-xs text-gray-700 mt-1 space-y-0.5">
-              <div>Step 1: Convert 50g → 0.05kg automatically</div>
-              <div>Step 2: Cost = ₹200 × 0.05kg = ₹10</div>
-              <div>Step 3: Profit = ₹15 - ₹10 = ₹5</div>
+              <div>Step 1: Choose grams/ml so no decimal entry is needed</div>
+              <div>Step 2: App converts units automatically</div>
+              <div>Step 3: Profit = Rs. 15 - Rs. 10 = Rs. 5</div>
               <div className="font-semibold text-green-700">✓ Margin: 33.33% | Markup: 50%</div>
             </div>
           </div>
@@ -155,7 +156,7 @@ export function PriceTierManager({
               <div className="text-xs text-green-800 mt-1">
                 Shows % of selling price that is profit
                 <br/>
-                Formula: (Profit ÷ Selling Price) × 100
+                Formula: Profit / Selling Price * 100
               </div>
             </div>
             <div className="bg-orange-50 border border-orange-200 rounded p-2">
@@ -163,7 +164,7 @@ export function PriceTierManager({
               <div className="text-xs text-orange-800 mt-1">
                 Shows % markup above cost price
                 <br/>
-                Formula: (Profit ÷ Cost) × 100
+                Formula: Profit / Cost * 100
               </div>
             </div>
           </div>
@@ -178,19 +179,19 @@ export function PriceTierManager({
               <div className="flex-1">
                 <div className="flex items-center gap-2">
                   <span className="font-semibold text-sm">
-                    {tier.quantity} {getUnitName(tier.unitId)}
+                    {formatWholeNumber(tier.quantity)} {getUnitName(tier.unitId)}
                   </span>
-                  <span className="text-sm text-gray-600">@ ₹{tier.price.toFixed(2)}</span>
+                  <span className="text-sm text-gray-600">@ Rs. {formatMoney(tier.price)}</span>
                 </div>
                 <div className="text-xs text-green-700 mt-1 space-y-0.5">
                   <div>
                     {(() => {
                       const metrics = getMetrics(tier.price, tier.quantity, tier.unitId);
                       return <>
-                        <div>Cost: ₹{metrics.cost.toFixed(2)} | Profit: ₹{metrics.profit.toFixed(2)}</div>
+                        <div>Cost: Rs. {formatMoney(metrics.cost)} | Profit: Rs. {formatMoney(metrics.profit)}</div>
                         <div className="flex gap-3">
-                          <span>Margin: {metrics.margin.toFixed(1)}%</span>
-                          <span className="text-gray-500">Markup: {metrics.markup.toFixed(1)}%</span>
+                          <span>Margin: {formatPercent(metrics.margin)}%</span>
+                          <span className="text-gray-500">Markup: {formatPercent(metrics.markup)}%</span>
                         </div>
                       </>;
                     })()}
@@ -216,10 +217,11 @@ export function PriceTierManager({
           <div>
             <label className="text-xs font-semibold text-gray-700 mb-1 block">Qty</label>
             <Input
-              type="number"
-              step="0.01"
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
               value={newTier.quantity}
-              onChange={(e) => setNewTier({ ...newTier, quantity: e.target.value })}
+              onChange={(e) => setNewTier({ ...newTier, quantity: String(parseWholeNumberInput(e.target.value) || '') })}
               placeholder="e.g., 50"
               className="h-9 text-sm"
             />
@@ -245,11 +247,12 @@ export function PriceTierManager({
           <div>
             <label className="text-xs font-semibold text-gray-700 mb-1 block">Price</label>
             <Input
-              type="number"
-              step="0.01"
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
               value={newTier.price}
-              onChange={(e) => setNewTier({ ...newTier, price: e.target.value })}
-              placeholder="₹ Price"
+              onChange={(e) => setNewTier({ ...newTier, price: String(parseWholeNumberInput(e.target.value) || '') })}
+              placeholder="Rs. Price"
               className="h-9 text-sm"
             />
           </div>
@@ -258,15 +261,15 @@ export function PriceTierManager({
         {newTier.price && newTier.quantity && (
           <div className="bg-blue-50 border border-blue-200 rounded p-2 text-xs space-y-1">
             {(() => {
-              const metrics = getMetrics(parseFloat(newTier.price), parseFloat(newTier.quantity), newTier.unitId);
+              const metrics = getMetrics(parseWholeNumberInput(newTier.price), parseWholeNumberInput(newTier.quantity), newTier.unitId);
               return (
                 <>
                   <div className="font-semibold text-blue-900">
-                    Cost: ₹{metrics.cost.toFixed(2)} | Profit: ₹{metrics.profit.toFixed(2)}
+                    Cost: Rs. {formatMoney(metrics.cost)} | Profit: Rs. {formatMoney(metrics.profit)}
                   </div>
                   <div className="text-blue-800 flex gap-3">
-                    <span>Margin: {metrics.margin.toFixed(1)}%</span>
-                    <span className="text-blue-600">Markup: {metrics.markup.toFixed(1)}%</span>
+                    <span>Margin: {formatPercent(metrics.margin)}%</span>
+                    <span className="text-blue-600">Markup: {formatPercent(metrics.markup)}%</span>
                   </div>
                 </>
               );

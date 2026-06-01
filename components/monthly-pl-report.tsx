@@ -23,6 +23,7 @@ import {
   Line,
 } from "recharts";
 import { DollarSign, TrendingUp, TrendingDown } from "lucide-react";
+import { formatMoney, formatPercent, formatWholeNumber } from "@/lib/number-format";
 
 export function MonthlyPLReport() {
   const { sales } = useSales();
@@ -75,7 +76,7 @@ export function MonthlyPLReport() {
       const totalProfitCalc = totalRevenueCalc - totalCostCalc;
       const profitMarginCalc =
         totalRevenueCalc > 0
-          ? ((totalProfitCalc / totalRevenueCalc) * 100).toFixed(1)
+          ? (totalProfitCalc / totalRevenueCalc) * 100
           : 0;
 
       setLoading(false);
@@ -143,10 +144,7 @@ export function MonthlyPLReport() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">
-                  ₹
-                  {totalRevenue.toLocaleString("en-IN", {
-                    maximumFractionDigits: 0,
-                  })}
+                  Rs. {formatMoney(totalRevenue)}
                 </div>
               </CardContent>
             </Card>
@@ -157,10 +155,7 @@ export function MonthlyPLReport() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">
-                  ₹
-                  {totalCost.toLocaleString("en-IN", {
-                    maximumFractionDigits: 0,
-                  })}
+                  Rs. {formatMoney(totalCost)}
                 </div>
               </CardContent>
             </Card>
@@ -176,10 +171,7 @@ export function MonthlyPLReport() {
                 <div
                   className={`text-2xl font-bold ${totalProfit >= 0 ? "text-green-600" : "text-red-600"}`}
                 >
-                  ₹
-                  {totalProfit.toLocaleString("en-IN", {
-                    maximumFractionDigits: 0,
-                  })}
+                  Rs. {formatMoney(totalProfit)}
                 </div>
               </CardContent>
             </Card>
@@ -189,7 +181,7 @@ export function MonthlyPLReport() {
                 <CardTitle className="text-sm">Profit Margin</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{profitMargin}%</div>
+                <div className="text-2xl font-bold">{formatPercent(Number(profitMargin))}%</div>
               </CardContent>
             </Card>
           </div>
@@ -273,10 +265,10 @@ export function MonthlyPLReport() {
                           </div>
                           <div className="text-right">
                             <div className="font-semibold">
-                              ₹{sale.subtotal.toFixed(0)}
+                              Rs. {formatMoney(sale.subtotal)}
                             </div>
                             <div className="text-xs text-green-700">
-                              +₹{sale.totalProfit.toFixed(0)} profit
+                              +Rs. {formatMoney(sale.totalProfit)} profit
                             </div>
                           </div>
                         </div>
@@ -293,17 +285,16 @@ export function MonthlyPLReport() {
                                   {item.itemName}
                                 </span>
                                 <span className="text-gray-500 ml-1">
-                                  {item.quantity}
-                                  {item.unitShortForm} × ₹
-                                  {item.pricePerUnit.toFixed(2)}
+                                  {formatWholeNumber(item.quantity)}
+                                  {item.unitShortForm} x Rs. {formatMoney(item.pricePerUnit)}
                                 </span>
                               </div>
                               <div className="text-right">
                                 <div className="font-semibold">
-                                  ₹{item.totalPrice.toFixed(2)}
+                                  Rs. {formatMoney(item.totalPrice)}
                                 </div>
                                 <div className="text-green-600">
-                                  +₹{item.profit.toFixed(2)}
+                                  +Rs. {formatMoney(item.profit)}
                                 </div>
                               </div>
                             </div>
