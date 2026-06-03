@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { createClient } from '@/lib/supabase';
 import type { Database } from '@/lib/db-supabase-types';
+import { dateKey } from '@/lib/utils';
 
 // Types
 type Category = Database['public']['Tables']['categories']['Row'];
@@ -450,9 +451,10 @@ export function useSales(shopId?: number) {
   }, [sales, saleItems]);
 
   const createSale = useCallback(async (saleData: any) => {
+    console.log("Creating sale with data:", saleData);
     if (!shopId) return null;
     const now = new Date().toISOString();
-    const { data: sale } = await (supabase as any)
+    const { data: sale, error } = await (supabase as any)
       .from('sales')
       .insert({
         shop_id: shopId,
@@ -464,14 +466,21 @@ export function useSales(shopId?: number) {
         total_profit: saleData.totalProfit,
         profit_margin_percent: saleData.profitMarginPercent,
         payment_method: saleData.paymentMethod,
-        credit_customer_id: saleData.creditCustomerId,
-        credit_customer_name: saleData.creditCustomerName,
-        notes: saleData.notes,
+        credit_customer_id: saleData.creditCustomerId || null,
+        credit_customer_name: saleData.creditCustomerName || null,
+        notes: saleData.notes || null,
         created_at: now,
         updated_at: now,
       })
       .select('id')
       .single();
+    
+    console.log("Supabase sale insert response:", { data: sale, error });
+    
+    if (error) {
+      console.error("[Supabase] Error inserting sale:", error);
+      throw error;
+    }
     
     if (!sale) return null;
 
@@ -485,7 +494,7 @@ export function useSales(shopId?: number) {
         quantity: item.quantity,
         unit_id: item.unitId,
         unit_short_form: item.unitShortForm,
-        price_tier_id: item.priceTierId,
+        price_tier_id: item.priceTierId || null,
         price_per_unit: item.pricePerUnit,
         total_price: item.totalPrice,
         cost_per_unit: item.costPerUnit,
@@ -494,7 +503,13 @@ export function useSales(shopId?: number) {
         created_at: now,
       }));
 
-      await (supabase as any).from('sale_items').insert(itemsToInsert);
+      const { data: insertedItems, error: itemsError } = await (supabase as any).from('sale_items').insert(itemsToInsert).select();
+      console.log("Supabase sale items insert response:", { data: insertedItems, error: itemsError });
+      
+      if (itemsError) {
+        console.error("[Supabase] Error inserting sale items:", itemsError);
+        throw itemsError;
+      }
     }
 
     // Refresh sales
@@ -779,7 +794,7 @@ export function useUdhari(shopId?: number) {
   const addCustomer = useCallback(async (customerData: any) => {
     if (!shopId) return null;
     const now = new Date().toISOString();
-    const { data } = await (supabase as any)
+    const { data, error } = await (supabase as any)
       .from('credit_customers')
       .insert({
         shop_id: shopId,
@@ -791,6 +806,12 @@ export function useUdhari(shopId?: number) {
       })
       .select('id')
       .single();
+    
+    if (error) {
+      console.error("[Supabase] Error inserting customer:", error);
+      throw error;
+    }
+    
     if (data) {
       await loadUdhari();
       return (data as any).id;
@@ -801,9 +822,9 @@ export function useUdhari(shopId?: number) {
   const addCredit = useCallback(async (customerId: number, amount: number, note?: string, billItems?: any[], saleId?: number) => {
     if (!shopId) return;
     const now = new Date().toISOString();
-    const today = new Date().toISOString().split('T')[0];
+    const today = dateKey(new Date());
     // First add the credit entry
-    await (supabase as any).from('credit_entries').insert({
+    const { error: entryError } = await (supabase as any).from('credit_entries').insert({
       shop_id: shopId,
       customer_id: customerId,
       customer_name: customers.find(c => c.id === customerId)?.name || '',
@@ -816,13 +837,24 @@ export function useUdhari(shopId?: number) {
       timestamp: Date.now(),
       created_at: now,
     });
+    
+    if (entryError) {
+      console.error("[Supabase] Error inserting credit entry:", entryError);
+      throw entryError;
+    }
+    
     // Then update the customer balance
     const customer = customers.find(c => c.id === customerId);
     if (customer) {
-      await (supabase as any).from('credit_customers').update({
+      const { error: customerError } = await (supabase as any).from('credit_customers').update({
         balance: customer.balance + amount,
         updated_at: now,
       }).eq('id', customerId);
+      
+      if (customerError) {
+        console.error("[Supabase] Error updating customer balance:", customerError);
+        throw customerError;
+      }
     }
     await loadUdhari();
   }, [shopId, customers, loadUdhari, supabase]);
@@ -830,9 +862,9 @@ export function useUdhari(shopId?: number) {
   const receivePayment = useCallback(async (customerId: number, amount: number, note?: string) => {
     if (!shopId) return;
     const now = new Date().toISOString();
-    const today = new Date().toISOString().split('T')[0];
+    const today = dateKey(new Date());
     // First add the payment entry
-    await (supabase as any).from('credit_entries').insert({
+    const { error: entryError } = await (supabase as any).from('credit_entries').insert({
       shop_id: shopId,
       customer_id: customerId,
       customer_name: customers.find(c => c.id === customerId)?.name || '',
@@ -843,13 +875,24 @@ export function useUdhari(shopId?: number) {
       timestamp: Date.now(),
       created_at: now,
     });
+    
+    if (entryError) {
+      console.error("[Supabase] Error inserting payment entry:", entryError);
+      throw entryError;
+    }
+    
     // Then update the customer balance
     const customer = customers.find(c => c.id === customerId);
     if (customer) {
-      await (supabase as any).from('credit_customers').update({
+      const { error: customerError } = await (supabase as any).from('credit_customers').update({
         balance: customer.balance - amount,
         updated_at: now,
       }).eq('id', customerId);
+      
+      if (customerError) {
+        console.error("[Supabase] Error updating customer balance:", customerError);
+        throw customerError;
+      }
     }
     await loadUdhari();
   }, [shopId, customers, loadUdhari, supabase]);
@@ -870,7 +913,7 @@ export function useDashboardStats(shopId?: number) {
   const stats = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const todayKey = today.toISOString().split('T')[0];
+    const todayKey = dateKey(today);
 
     const todaySales = sales.filter(s => s.date === todayKey);
     const todayRevenue = todaySales.reduce((sum, s) => sum + s.subtotal, 0);
