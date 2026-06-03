@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { createClient } from '@/lib/supabase';
 import type { Database } from '@/lib/db-supabase-types';
 
@@ -54,7 +54,7 @@ export function useCategories(shopId?: number) {
 
   const loadCategories = useCallback(async () => {
     if (!shopId) return;
-    const { data } = await supabase
+    const { data } = await (supabase as any)
       .from('categories')
       .select('*')
       .eq('shop_id', shopId)
@@ -70,7 +70,7 @@ export function useCategories(shopId?: number) {
   const addCategory = async (category: any) => {
     if (!shopId) return;
     const now = new Date().toISOString();
-    const { data } = await supabase
+    const { data } = await (supabase as any)
       .from('categories')
       .insert({
         shop_id: shopId,
@@ -85,13 +85,13 @@ export function useCategories(shopId?: number) {
     if (data) {
       setCategories(prev => [...prev, mapCategory(data)]);
     }
-    return data?.id;
+    return (data as any)?.id;
   };
 
   const updateCategory = async (id: number, updates: any) => {
     if (!shopId) return;
     const now = new Date().toISOString();
-    const { data } = await supabase
+    const { data } = await (supabase as any)
       .from('categories')
       .update({
         name: updates.name,
@@ -109,7 +109,7 @@ export function useCategories(shopId?: number) {
 
   const deleteCategory = async (id: number) => {
     if (!shopId) return;
-    await supabase.from('categories').delete().eq('id', id);
+    await (supabase as any).from('categories').delete().eq('id', id);
     setCategories(prev => prev.filter(c => c.id !== id));
   };
 
@@ -129,7 +129,7 @@ export function useUnits(shopId?: number) {
 
   const loadUnits = useCallback(async () => {
     if (!shopId) return;
-    const { data } = await supabase
+    const { data } = await (supabase as any)
       .from('units')
       .select('*')
       .eq('shop_id', shopId)
@@ -145,7 +145,7 @@ export function useUnits(shopId?: number) {
   const addUnit = async (unit: any) => {
     if (!shopId) return;
     const now = new Date().toISOString();
-    const { data } = await supabase
+    const { data } = await (supabase as any)
       .from('units')
       .insert({
         shop_id: shopId,
@@ -160,13 +160,13 @@ export function useUnits(shopId?: number) {
     if (data) {
       setUnits(prev => [...prev, mapUnit(data)]);
     }
-    return data?.id;
+    return (data as any)?.id;
   };
 
   const updateUnit = async (id: number, updates: any) => {
     if (!shopId) return;
     const now = new Date().toISOString();
-    const { data } = await supabase
+    const { data } = await (supabase as any)
       .from('units')
       .update({
         name: updates.name,
@@ -184,7 +184,7 @@ export function useUnits(shopId?: number) {
 
   const deleteUnit = async (id: number) => {
     if (!shopId) return;
-    await supabase.from('units').delete().eq('id', id);
+    await (supabase as any).from('units').delete().eq('id', id);
     setUnits(prev => prev.filter(u => u.id !== id));
   };
 
@@ -204,7 +204,7 @@ export function useItems(shopId?: number) {
 
   const loadItems = useCallback(async () => {
     if (!shopId) return;
-    const { data } = await supabase
+    const { data } = await (supabase as any)
       .from('items')
       .select('*')
       .eq('shop_id', shopId)
@@ -227,7 +227,7 @@ export function useItems(shopId?: number) {
     if (!shopId) return;
     const now = new Date().toISOString();
     const { marginAmount, marginPercent } = calculateMargins(item.buyPrice, item.sellPrice);
-    const { data } = await supabase
+    const { data } = await (supabase as any)
       .from('items')
       .insert({
         shop_id: shopId,
@@ -249,7 +249,7 @@ export function useItems(shopId?: number) {
     if (data) {
       setItems(prev => [...prev, mapItem(data)]);
     }
-    return data?.id;
+    return (data as any)?.id;
   };
 
   const updateItem = async (id: number, updates: any) => {
@@ -284,7 +284,7 @@ export function useItems(shopId?: number) {
       updated_at: updateData.updated_at,
     };
 
-    const { data } = await supabase
+    const { data } = await (supabase as any)
       .from('items')
       .update(supabaseUpdate)
       .eq('id', id)
@@ -297,7 +297,7 @@ export function useItems(shopId?: number) {
 
   const deleteItem = async (id: number) => {
     if (!shopId) return;
-    await supabase.from('items').delete().eq('id', id);
+    await (supabase as any).from('items').delete().eq('id', id);
     setItems(prev => prev.filter(i => i.id !== id));
   };
 
@@ -329,7 +329,7 @@ export function usePriceTiers(shopId?: number) {
 
   const loadPriceTiers = useCallback(async () => {
     if (!shopId) return;
-    const { data } = await supabase.from('price_tiers').select('*').eq('shop_id', shopId);
+    const { data } = await (supabase as any).from('price_tiers').select('*').eq('shop_id', shopId);
     setPriceTiers(data ? data.map(mapPriceTier) : []);
     setIsLoading(false);
   }, [shopId, supabase]);
@@ -410,7 +410,7 @@ export function useSales(shopId?: number) {
   const createSale = useCallback(async (saleData: any) => {
     if (!shopId) return null;
     const now = new Date().toISOString();
-    const { data: sale } = await supabase
+    const { data: sale } = await (supabase as any)
       .from('sales')
       .insert({
         shop_id: shopId,
@@ -437,7 +437,7 @@ export function useSales(shopId?: number) {
     if (saleData.items && saleData.items.length > 0) {
       const itemsToInsert = saleData.items.map((item: any) => ({
         shop_id: shopId,
-        sale_id: sale.id,
+        sale_id: (sale as any).id,
         item_id: item.itemId,
         item_name: item.itemName,
         quantity: item.quantity,
@@ -452,19 +452,19 @@ export function useSales(shopId?: number) {
         created_at: now,
       }));
 
-      await supabase.from('sale_items').insert(itemsToInsert);
+      await (supabase as any).from('sale_items').insert(itemsToInsert);
     }
 
     // Refresh sales
     await loadSales();
 
-    return sale.id;
+    return (sale as any).id;
   }, [shopId, loadSales, supabase]);
 
   const updateStockAfterSale = useCallback(async (saleItems: any[]) => {
     if (!shopId) return;
     // First, get current items so we can calculate new quantities
-    const { data: currentItems } = await supabase
+    const { data: currentItems } = await (supabase as any)
       .from('items')
       .select('*')
       .eq('shop_id', shopId);
@@ -480,10 +480,10 @@ export function useSales(shopId?: number) {
 
     // Update each item
     for (const [itemId, qtyToSubtract] of quantityChanges) {
-      const currentItem = currentItems.find(i => i.id === itemId);
+      const currentItem = (currentItems as any[]).find((i: any) => i.id === itemId);
       if (!currentItem) continue;
 
-      await supabase
+      await (supabase as any)
         .from('items')
         .update({
           quantity: currentItem.quantity - qtyToSubtract,
@@ -495,7 +495,7 @@ export function useSales(shopId?: number) {
     // Also create stock history entries
     const historyEntries: any[] = [];
     for (const saleItem of saleItems) {
-      const currentItem = currentItems.find(i => i.id === saleItem.itemId);
+      const currentItem = (currentItems as any[]).find((i: any) => i.id === saleItem.itemId);
       if (!currentItem) continue;
       historyEntries.push({
         shop_id: shopId,
@@ -511,7 +511,7 @@ export function useSales(shopId?: number) {
     }
 
     if (historyEntries.length > 0) {
-      await supabase.from('stock_history').insert(historyEntries);
+      await (supabase as any).from('stock_history').insert(historyEntries);
     }
 
     // Refresh items
@@ -562,7 +562,7 @@ export function useStockHistory(shopId?: number) {
 
   const loadStockHistory = useCallback(async () => {
     if (!shopId) return;
-    const { data } = await supabase.from('stock_history').select('*').eq('shop_id', shopId).order('created_at', { ascending: false });
+    const { data } = await (supabase as any).from('stock_history').select('*').eq('shop_id', shopId).order('created_at', { ascending: false });
     setStockHistory(data ? data.map(mapStockHistory) : []);
     setIsLoading(false);
   }, [shopId, supabase]);
@@ -600,7 +600,7 @@ export function useBatches(shopId?: number) {
 
   const loadBatches = useCallback(async () => {
     if (!shopId) return;
-    const { data } = await supabase.from('batches').select('*').eq('shop_id', shopId).order('created_at', { ascending: false });
+    const { data } = await (supabase as any).from('batches').select('*').eq('shop_id', shopId).order('created_at', { ascending: false });
     setBatches(data ? data.map(mapBatch) : []);
     setIsLoading(false);
   }, [shopId, supabase]);
@@ -612,7 +612,7 @@ export function useBatches(shopId?: number) {
   const createBatch = useCallback(async (batchData: any) => {
     if (!shopId) return;
     const now = new Date().toISOString();
-    const { data } = await supabase.from('batches').insert({
+    const { data } = await (supabase as any).from('batches').insert({
       shop_id: shopId,
       item_id: batchData.itemId,
       item_name: batchData.itemName,
@@ -634,7 +634,7 @@ export function useBatches(shopId?: number) {
 
   const deleteBatch = useCallback(async (batchId: number) => {
     if (!shopId) return;
-    await supabase.from('batches').delete().eq('id', batchId);
+    await (supabase as any).from('batches').delete().eq('id', batchId);
     await loadBatches();
   }, [shopId, loadBatches, supabase]);
 
@@ -666,7 +666,7 @@ export function useAlerts(shopId?: number) {
 
   const loadAlerts = useCallback(async () => {
     if (!shopId) return;
-    const { data } = await supabase.from('alerts').select('*').eq('shop_id', shopId).order('created_at', { ascending: false });
+    const { data } = await (supabase as any).from('alerts').select('*').eq('shop_id', shopId).order('created_at', { ascending: false });
     setAlerts(data ? data.map(mapAlert) : []);
     setIsLoading(false);
   }, [shopId, supabase]);
@@ -677,7 +677,7 @@ export function useAlerts(shopId?: number) {
 
   const markRead = async (id: number) => {
     if (!shopId) return;
-    await supabase.from('alerts').update({ read: true }).eq('id', id);
+    await (supabase as any).from('alerts').update({ read: true }).eq('id', id);
     setAlerts(prev => prev.map(a => a.id === id ? { ...a, read: true } : a));
   };
 
@@ -737,7 +737,7 @@ export function useUdhari(shopId?: number) {
   const addCustomer = useCallback(async (customerData: any) => {
     if (!shopId) return null;
     const now = new Date().toISOString();
-    const { data } = await supabase
+    const { data } = await (supabase as any)
       .from('credit_customers')
       .insert({
         shop_id: shopId,
@@ -751,7 +751,7 @@ export function useUdhari(shopId?: number) {
       .single();
     if (data) {
       await loadUdhari();
-      return data.id;
+      return (data as any).id;
     }
     return null;
   }, [shopId, loadUdhari, supabase]);
@@ -761,7 +761,7 @@ export function useUdhari(shopId?: number) {
     const now = new Date().toISOString();
     const today = new Date().toISOString().split('T')[0];
     // First add the credit entry
-    await supabase.from('credit_entries').insert({
+    await (supabase as any).from('credit_entries').insert({
       shop_id: shopId,
       customer_id: customerId,
       customer_name: customers.find(c => c.id === customerId)?.name || '',
@@ -777,7 +777,7 @@ export function useUdhari(shopId?: number) {
     // Then update the customer balance
     const customer = customers.find(c => c.id === customerId);
     if (customer) {
-      await supabase.from('credit_customers').update({
+      await (supabase as any).from('credit_customers').update({
         balance: customer.balance + amount,
         updated_at: now,
       }).eq('id', customerId);
@@ -790,7 +790,7 @@ export function useUdhari(shopId?: number) {
     const now = new Date().toISOString();
     const today = new Date().toISOString().split('T')[0];
     // First add the payment entry
-    await supabase.from('credit_entries').insert({
+    await (supabase as any).from('credit_entries').insert({
       shop_id: shopId,
       customer_id: customerId,
       customer_name: customers.find(c => c.id === customerId)?.name || '',
@@ -804,7 +804,7 @@ export function useUdhari(shopId?: number) {
     // Then update the customer balance
     const customer = customers.find(c => c.id === customerId);
     if (customer) {
-      await supabase.from('credit_customers').update({
+      await (supabase as any).from('credit_customers').update({
         balance: customer.balance - amount,
         updated_at: now,
       }).eq('id', customerId);
