@@ -57,7 +57,7 @@ export function ItemsManagement() {
   const { units } = useSupabaseUnits(currentShopId);
 
   // Placeholders for price tiers (we'll implement this later)
-  const priceTiers = [];
+  const priceTiers: any[] = [];
   const addPriceTier = async () => {};
   const deletePriceTier = async () => {};
 

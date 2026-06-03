@@ -2,6 +2,7 @@
 
 import { useLanguage } from '@/providers/language-provider';
 import { useAuth } from '@/providers/auth-provider';
+import type { User } from '@/providers/auth-provider';
 import { PageContainer, PageHeader } from '@/components/page-shell';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -109,7 +110,7 @@ function WorkersManagement() {
 
   const loadWorkers = async () => {
     if (!currentShopId) return;
-    const { data } = await supabase
+    const { data } = await (supabase as any)
       .from('users')
       .select('*')
       .eq('shop_id', currentShopId)
@@ -127,7 +128,7 @@ function WorkersManagement() {
 
     const now = new Date().toISOString();
     if (editingWorker) {
-      await supabase
+      await (supabase as any)
         .from('users')
         .update({
           username: formData.username,
@@ -137,7 +138,7 @@ function WorkersManagement() {
         .eq('id', editingWorker.id);
       toast({ title: 'Success', description: 'Worker updated!' });
     } else {
-      await supabase
+      await (supabase as any)
         .from('users')
         .insert({
           shop_id: currentShopId,
@@ -157,7 +158,7 @@ function WorkersManagement() {
 
   const deleteWorker = async (worker: any) => {
     if (!confirm(`Are you sure you want to delete ${worker.username}?`)) return;
-    await supabase.from('users').delete().eq('id', worker.id);
+    await (supabase as any).from('users').delete().eq('id', worker.id);
     toast({ title: 'Success', description: 'Worker deleted!' });
     loadWorkers();
   };

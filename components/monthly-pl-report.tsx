@@ -51,8 +51,15 @@ export function MonthlyPLReport() {
         s.date.startsWith(selectedMonth),
       );
 
+      type DailyData = {
+        date: string;
+        revenue: number;
+        cost: number;
+        profit: number;
+      };
+
       const dailyDataCalc = monthSalesData.reduce((acc, sale) => {
-        const existing = acc.find((d) => d.date === sale.date);
+        const existing = acc.find((d: DailyData) => d.date === sale.date);
         if (existing) {
           existing.revenue += sale.subtotal;
           existing.cost += sale.totalCost;
@@ -66,7 +73,7 @@ export function MonthlyPLReport() {
           });
         }
         return acc;
-      }, [] as any[]);
+      }, [] as DailyData[]);
 
       const totalRevenueCalc = monthSalesData.reduce(
         (sum, s) => sum + s.subtotal,

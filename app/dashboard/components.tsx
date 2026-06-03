@@ -77,7 +77,7 @@ const paymentBadgeStyles: Record<string, string> = {
 
 export function Dashboard() {
   const router = useRouter();
-  const { user, isLoading: authLoading, isAuthenticated, currentShopId } = useAuth();
+  const { user, isLoading: authLoading, isAuthenticated, currentShopId, currentShop } = useAuth();
   const { t, language } = useLanguage();
   const stats = useDashboardStats(currentShopId);
   const { items } = useItems(currentShopId);
@@ -158,7 +158,7 @@ export function Dashboard() {
       (sum, s) =>
         sum +
         (s.items || []).reduce(
-          (isum, item) => isum + Number(item.quantity || 0),
+          (isum: number, item: any) => isum + Number(item.quantity || 0),
           0,
         ),
       0,
@@ -311,7 +311,7 @@ export function Dashboard() {
 
     downloadSimplePdf({
       title: `Dukan ${report.label} Report`,
-      subtitle: user?.shopName || "Shop report",
+      subtitle: currentShop?.shopName || "Shop report",
       sections,
       fileName: `dukan-${report.key}-report.pdf`,
     });
@@ -344,7 +344,7 @@ export function Dashboard() {
       <div>
         <h1 className="text-3xl font-bold tracking-tight">{t("home")}</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          {user?.shopName || "Shop"}
+          {currentShop?.shopName || "Shop"}
         </p>
       </div>
 
@@ -407,7 +407,7 @@ export function Dashboard() {
           <CardContent>
             <div className="text-2xl font-bold">{lowStockItems.length}</div>
             <p className="mt-1 text-xs text-muted-foreground">
-              {stats.totalItems} {t("products")}
+              {items.length} {t("products")}
             </p>
           </CardContent>
         </Card>
@@ -573,7 +573,7 @@ export function Dashboard() {
                 {isExpanded && (
                   <div className="border-t bg-muted/20 px-3 pb-3 pt-2">
                     <div className="space-y-2">
-                      {saleItems.map((saleItem, idx) => {
+                      {saleItems.map((saleItem: any, idx: number) => {
                         const currentStock = saleItem.itemId
                           ? itemMap.get(saleItem.itemId)
                           : null;

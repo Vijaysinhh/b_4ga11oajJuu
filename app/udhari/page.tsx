@@ -219,7 +219,7 @@ export default function UdhariPage() {
                             </div>
                             {entry.billItems && entry.billItems.length > 0 && (
                               <div className="mt-2 space-y-1 border-t pt-2">
-                                {entry.billItems.map((item, itemIndex) => (
+                                {entry.billItems.map((item: any, itemIndex: number) => (
                                   <div key={`${entry.id}-${item.itemName}-${itemIndex}`} className="flex justify-between gap-2">
                                     <span className="min-w-0 truncate">
                                       {item.itemName} x {formatWholeNumber(item.quantity)}{item.unitShortForm}

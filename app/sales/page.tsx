@@ -102,7 +102,7 @@ export default function SalesPage() {
       (sum, s) =>
         sum +
         (s.items || []).reduce(
-          (isum, item) => isum + Number(item.quantity || 0),
+          (isum: number, item: any) => isum + Number(item.quantity || 0),
           0,
         ),
       0,
@@ -312,7 +312,7 @@ export default function SalesPage() {
                     {isExpanded && (
                       <div className="border-t bg-muted/20 px-3 pb-3 pt-2">
                         <div className="space-y-2">
-                          {saleItems.map((saleItem, idx) => {
+                          {saleItems.map((saleItem: any, idx: number) => {
                             const currentStock = saleItem.itemId
                               ? itemMap.get(saleItem.itemId)
                               : null;

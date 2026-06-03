@@ -387,8 +387,8 @@ export function useSales(shopId?: number) {
   const loadSales = useCallback(async () => {
     if (!shopId) return;
     const [{ data: salesData }, { data: itemsData }] = await Promise.all([
-      supabase.from('sales').select('*').eq('shop_id', shopId).order('timestamp', { ascending: false }),
-      supabase.from('sale_items').select('*').eq('shop_id', shopId),
+      (supabase as any).from('sales').select('*').eq('shop_id', shopId).order('timestamp', { ascending: false }),
+      (supabase as any).from('sale_items').select('*').eq('shop_id', shopId),
     ]);
     setSales(salesData ? salesData.map(mapSale) : []);
     setSaleItems(itemsData ? itemsData.map(mapSaleItem) : []);
@@ -720,8 +720,8 @@ export function useUdhari(shopId?: number) {
   const loadUdhari = useCallback(async () => {
     if (!shopId) return;
     const [{ data: customersData }, { data: entriesData }] = await Promise.all([
-      supabase.from('credit_customers').select('*').eq('shop_id', shopId).order('name'),
-      supabase.from('credit_entries').select('*').eq('shop_id', shopId).order('timestamp', { ascending: false }),
+      (supabase as any).from('credit_customers').select('*').eq('shop_id', shopId).order('name'),
+      (supabase as any).from('credit_entries').select('*').eq('shop_id', shopId).order('timestamp', { ascending: false }),
     ]);
     setCustomers(customersData ? customersData.map(mapCreditCustomer) : []);
     setEntries(entriesData ? entriesData.map(mapCreditEntry) : []);

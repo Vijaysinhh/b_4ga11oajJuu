@@ -83,10 +83,10 @@ export default function AlertsPage() {
                       variant="outline"
                       className={cn(
                         "capitalize",
-                        severityClassNames[alert.severity],
+                        severityClassNames[alert.severity as keyof typeof severityClassNames],
                       )}
                     >
-                      {severityLabel(alert.severity)}
+                      {severityLabel(alert.severity as keyof typeof severityClassNames)}
                     </Badge>
                   </div>
                   <p className="mt-1 text-sm text-muted-foreground">

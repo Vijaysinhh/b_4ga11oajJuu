@@ -53,7 +53,7 @@ export default function SuperAdminPage() {
   }, [user, router]);
 
   const loadShops = async () => {
-    const { data } = await supabase
+    const { data } = await (supabase as any)
       .from('shops')
       .select('*')
       .order('updated_at', { ascending: false });
@@ -70,7 +70,7 @@ export default function SuperAdminPage() {
 
     const now = new Date().toISOString();
     if (editingShop) {
-      await supabase
+      await (supabase as any)
         .from('shops')
         .update({
           owner_name: formData.ownerName,
@@ -84,7 +84,7 @@ export default function SuperAdminPage() {
       toast({ title: 'Success', description: 'Shop updated!' });
     } else {
       // Create shop
-      const { data: newShop } = await supabase
+      const { data: newShop } = await (supabase as any)
         .from('shops')
         .insert({
           owner_name: formData.ownerName,
@@ -101,7 +101,7 @@ export default function SuperAdminPage() {
 
       if (newShop) {
         // Create owner user
-        await supabase.from('users').insert({
+        await (supabase as any).from('users').insert({
           shop_id: newShop.id,
           username: formData.ownerName,
           password: formData.password,
@@ -118,7 +118,7 @@ export default function SuperAdminPage() {
           { name: 'Personal Care', name_marathi: 'व्यक्तिगत', color: '#ec4899' },
         ];
 
-        await supabase.from('categories').insert(
+        await (supabase as any).from('categories').insert(
           defaultCategories.map(cat => ({
             shop_id: newShop.id,
             ...cat,
@@ -137,7 +137,7 @@ export default function SuperAdminPage() {
           { name: 'Box', name_marathi: 'डिब्बा', short_form: 'box' },
         ];
 
-        await supabase.from('units').insert(
+        await (supabase as any).from('units').insert(
           defaultUnits.map(unit => ({
             shop_id: newShop.id,
             ...unit,
@@ -156,7 +156,7 @@ export default function SuperAdminPage() {
   };
 
   const togglePause = async (shop: Shop) => {
-    await supabase
+    await (supabase as any)
       .from('shops')
       .update({
         is_paused: !shop.isPaused,
@@ -170,8 +170,8 @@ export default function SuperAdminPage() {
   const deleteShop = async (shop: Shop) => {
     if (!confirm(`Are you sure you want to delete ${shop.shopName}?`)) return;
     // Delete users first (because of foreign key constraint)
-    await supabase.from('users').delete().eq('shop_id', shop.id);
-    await supabase.from('shops').delete().eq('id', shop.id);
+    await (supabase as any).from('users').delete().eq('shop_id', shop.id);
+    await (supabase as any).from('shops').delete().eq('id', shop.id);
     toast({ title: 'Success', description: 'Shop deleted!' });
     loadShops();
   };
