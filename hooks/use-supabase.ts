@@ -451,7 +451,6 @@ export function useSales(shopId?: number) {
   }, [sales, saleItems]);
 
   const createSale = useCallback(async (saleData: any) => {
-    console.log("Creating sale with data:", saleData);
     if (!shopId) return null;
     const now = new Date().toISOString();
     const { data: sale, error } = await (supabase as any)
@@ -466,16 +465,14 @@ export function useSales(shopId?: number) {
         total_profit: saleData.totalProfit,
         profit_margin_percent: saleData.profitMarginPercent,
         payment_method: saleData.paymentMethod,
-        credit_customer_id: saleData.creditCustomerId || null,
-        credit_customer_name: saleData.creditCustomerName || null,
-        notes: saleData.notes || null,
+        credit_customer_id: saleData.creditCustomerId,
+        credit_customer_name: saleData.creditCustomerName,
+        notes: saleData.notes,
         created_at: now,
         updated_at: now,
       })
       .select('id')
       .single();
-    
-    console.log("Supabase sale insert response:", { data: sale, error });
     
     if (error) {
       console.error("[Supabase] Error inserting sale:", error);
@@ -494,7 +491,7 @@ export function useSales(shopId?: number) {
         quantity: item.quantity,
         unit_id: item.unitId,
         unit_short_form: item.unitShortForm,
-        price_tier_id: item.priceTierId || null,
+        price_tier_id: item.priceTierId,
         price_per_unit: item.pricePerUnit,
         total_price: item.totalPrice,
         cost_per_unit: item.costPerUnit,
@@ -503,9 +500,7 @@ export function useSales(shopId?: number) {
         created_at: now,
       }));
 
-      const { data: insertedItems, error: itemsError } = await (supabase as any).from('sale_items').insert(itemsToInsert).select();
-      console.log("Supabase sale items insert response:", { data: insertedItems, error: itemsError });
-      
+      const { error: itemsError } = await (supabase as any).from('sale_items').insert(itemsToInsert);
       if (itemsError) {
         console.error("[Supabase] Error inserting sale items:", itemsError);
         throw itemsError;
