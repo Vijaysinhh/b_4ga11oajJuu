@@ -214,6 +214,7 @@ export function SalesTransaction() {
 
       toast.success(t("success"));
       resetSale();
+      window.dispatchEvent(new Event('refresh-dukan-data'));
     } catch (error) {
       console.error("Error completing sale:", error);
       toast.error(t("error"));

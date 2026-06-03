@@ -216,7 +216,13 @@ export function useItems(shopId?: number) {
 
   useEffect(() => {
     loadItems();
+    
+    const handleRefresh = () => loadItems();
+    window.addEventListener('refresh-dukan-data', handleRefresh);
+    return () => window.removeEventListener('refresh-dukan-data', handleRefresh);
   }, [loadItems]);
+
+  const refreshItems = loadItems;
 
   const calculateMargins = (buyPrice: number, sellPrice: number) => {
     const marginAmount = sellPrice - buyPrice;
@@ -308,6 +314,7 @@ export function useItems(shopId?: number) {
     addItem,
     updateItem,
     deleteItem,
+    refresh: refreshItems,
   };
 }
 
@@ -395,7 +402,7 @@ const mapSale = (row: any) => ({
   totalCost: row.total_cost,
   totalProfit: row.total_profit,
   profitMarginPercent: row.profit_margin_percent,
-  paymentMethod: row.payment_method,
+  paymentMethod: row.payment_method === 'udhari' ? 'udhar' : row.payment_method,
   creditCustomerId: row.credit_customer_id,
   creditCustomerName: row.credit_customer_name,
   notes: row.notes,
@@ -440,6 +447,10 @@ export function useSales(shopId?: number) {
 
   useEffect(() => {
     loadSales();
+    
+    const handleRefresh = () => loadSales();
+    window.addEventListener('refresh-dukan-data', handleRefresh);
+    return () => window.removeEventListener('refresh-dukan-data', handleRefresh);
   }, [loadSales]);
 
   // Now we need to map the old format (with `items` as a property) – let's make a combined format:
@@ -453,18 +464,24 @@ export function useSales(shopId?: number) {
   const createSale = useCallback(async (saleData: any) => {
     if (!shopId) return null;
     const now = new Date().toISOString();
+    // Convert timestamp to ISO string for TIMESTAMP WITH TIME ZONE column
+    const saleTimestamp = typeof saleData.timestamp === 'number'
+      ? new Date(saleData.timestamp).toISOString()
+      : saleData.timestamp || now;
+    // Map 'udhar' -> 'udhari' to match DB CHECK constraint
+    const paymentMethod = saleData.paymentMethod === 'udhar' ? 'udhari' : saleData.paymentMethod;
     const { data: sale, error } = await (supabase as any)
       .from('sales')
       .insert({
         shop_id: shopId,
         date: saleData.date,
-        timestamp: saleData.timestamp,
+        timestamp: saleTimestamp,
         total_quantity_items: saleData.totalQuantityItems,
         subtotal: saleData.subtotal,
         total_cost: saleData.totalCost,
         total_profit: saleData.totalProfit,
         profit_margin_percent: saleData.profitMarginPercent,
-        payment_method: saleData.paymentMethod,
+        payment_method: paymentMethod,
         credit_customer_id: saleData.creditCustomerId,
         credit_customer_name: saleData.creditCustomerName,
         notes: saleData.notes,
@@ -782,6 +799,10 @@ export function useUdhari(shopId?: number) {
 
   useEffect(() => {
     loadUdhari();
+    
+    const handleRefresh = () => loadUdhari();
+    window.addEventListener('refresh-dukan-data', handleRefresh);
+    return () => window.removeEventListener('refresh-dukan-data', handleRefresh);
   }, [loadUdhari]);
 
   const totalPending = customers.reduce((sum, c) => sum + c.balance, 0);
@@ -829,7 +850,7 @@ export function useUdhari(shopId?: number) {
       bill_items: billItems || null,
       sale_id: saleId || null,
       date: today,
-      timestamp: Date.now(),
+      timestamp: now,
       created_at: now,
     });
     
@@ -852,6 +873,7 @@ export function useUdhari(shopId?: number) {
       }
     }
     await loadUdhari();
+    window.dispatchEvent(new Event('refresh-dukan-data'));
   }, [shopId, customers, loadUdhari, supabase]);
 
   const receivePayment = useCallback(async (customerId: number, amount: number, note?: string) => {
@@ -867,7 +889,7 @@ export function useUdhari(shopId?: number) {
       amount: amount,
       note: note || null,
       date: today,
-      timestamp: Date.now(),
+      timestamp: now,
       created_at: now,
     });
     
@@ -890,6 +912,7 @@ export function useUdhari(shopId?: number) {
       }
     }
     await loadUdhari();
+    window.dispatchEvent(new Event('refresh-dukan-data'));
   }, [shopId, customers, loadUdhari, supabase]);
 
   const getCustomerEntries = useCallback((customerId: number) => {
