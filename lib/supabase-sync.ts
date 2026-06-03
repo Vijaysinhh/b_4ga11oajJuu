@@ -7,7 +7,7 @@ const supabaseAnonKey =
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
   process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
   '';
-const SUPABASE_REQUEST_TIMEOUT_MS = 4000;
+const SUPABASE_REQUEST_TIMEOUT_MS = 30000;
 
 export const SUPABASE_UNAVAILABLE_MESSAGE =
   'Unable to reach Supabase. Check the project URL, project status, or network/DNS access.';
