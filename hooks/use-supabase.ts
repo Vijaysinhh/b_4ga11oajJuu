@@ -552,10 +552,11 @@ export function useSales(shopId?: number) {
       const currentItem = (currentItems as any[]).find((i: any) => i.id === itemId);
       if (!currentItem) continue;
 
+      const newQuantity = Number((currentItem.quantity - qtyToSubtract).toFixed(4));
       await (supabase as any)
         .from('items')
         .update({
-          quantity: currentItem.quantity - qtyToSubtract,
+          quantity: newQuantity,
           updated_at: new Date().toISOString(),
         })
         .eq('id', itemId);
@@ -566,14 +567,16 @@ export function useSales(shopId?: number) {
     for (const saleItem of saleItems) {
       const currentItem = (currentItems as any[]).find((i: any) => i.id === saleItem.itemId);
       if (!currentItem) continue;
+      const beforeQty = Number(currentItem.quantity.toFixed(4));
+      const afterQty = Number((currentItem.quantity - saleItem.quantity).toFixed(4));
       historyEntries.push({
         shop_id: shopId,
         item_id: saleItem.itemId,
         item_name: saleItem.itemName,
         type: 'sale',
-        quantity_changed: -saleItem.quantity,
-        quantity_before: currentItem.quantity,
-        quantity_after: currentItem.quantity - saleItem.quantity,
+        quantity_changed: -Number(saleItem.quantity.toFixed(4)),
+        quantity_before: beforeQty,
+        quantity_after: afterQty,
         cost_per_unit: saleItem.costPerUnit,
         created_at: new Date().toISOString(),
       });

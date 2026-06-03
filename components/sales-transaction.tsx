@@ -19,6 +19,7 @@ import {
 import {
   cleanWholeNumberInput,
   formatMoney,
+  formatNumber,
   formatPercent,
   formatWholeNumber,
 } from "@/lib/number-format";
@@ -137,7 +138,7 @@ export function SalesTransaction() {
       if (!currentItem || currentItem.quantity < requestedQty) {
         const availableQty = currentItem?.quantity || 0;
         stockErrors.push(
-          `${lineItem?.itemName || "Item"}: Only ${formatWholeNumber(availableQty)} ${lineItem?.unitShortForm || ""} available (tried to sell ${formatWholeNumber(requestedQty)})`,
+          `${lineItem?.itemName || "Item"}: Only ${formatNumber(availableQty)} ${lineItem?.unitShortForm || ""} available (tried to sell ${formatNumber(requestedQty)})`,
         );
       }
     }

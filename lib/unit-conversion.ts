@@ -46,7 +46,9 @@ export function convertUnit(
     return quantity;
   }
 
-  return quantity * conversions[to];
+  // Avoid JavaScript floating point errors by rounding to 4 decimal places
+  const result = quantity * conversions[to];
+  return Number(result.toFixed(4));
 }
 
 /**

@@ -17,7 +17,7 @@ import {
 import { Plus, AlertTriangle, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Batch } from '@/lib/db';
-import { cleanWholeNumberInput, formatMoney, formatWholeNumber, parseWholeNumberInput } from '@/lib/number-format';
+import { cleanWholeNumberInput, formatMoney, formatNumber, parseWholeNumberInput } from '@/lib/number-format';
 
 export function BatchesManager() {
   const { t } = useLanguage();
@@ -87,7 +87,7 @@ export function BatchesManager() {
                 <div key={batch.id} className="flex justify-between items-center p-2 bg-white rounded border border-orange-200">
                   <div>
                     <p className="font-semibold">{batch.itemName}</p>
-                    <p className="text-xs text-muted-foreground">Available: {formatWholeNumber(batch.quantityAvailable)}</p>
+                    <p className="text-xs text-muted-foreground">Available: {formatNumber(batch.quantityAvailable)}</p>
                   </div>
                   <p className="text-sm font-bold text-orange-600">
                     {batch.expiryDate ? new Date(batch.expiryDate).toLocaleDateString() : 'No date'}
@@ -192,7 +192,7 @@ export function BatchesManager() {
                     </div>
                     <div>
                       <p className="text-muted-foreground">Available</p>
-                      <p className="font-semibold">{formatWholeNumber(batch.quantityAvailable)}</p>
+                      <p className="font-semibold">{formatNumber(batch.quantityAvailable)}</p>
                     </div>
                     <div>
                       <p className="text-muted-foreground">Cost/Unit</p>

@@ -15,6 +15,7 @@ import { downloadSimplePdf, type PdfSection } from "@/lib/simple-pdf";
 import {
   formatMoney,
   formatPercent,
+  formatNumber,
   formatWholeNumber,
 } from "@/lib/number-format";
 import { dateKey, monthKey } from "@/lib/utils";
@@ -292,7 +293,7 @@ export function Dashboard() {
         rows: report.topItems.length
           ? report.topItems.map((item) => [
               item.name,
-              `${formatWholeNumber(item.quantity)} sold, Rs. ${formatMoney(item.revenue)} sales`,
+              `${formatNumber(item.quantity)} sold, Rs. ${formatMoney(item.revenue)} sales`,
             ])
           : [["Items", "No sales in this period"]],
       },
@@ -616,7 +617,7 @@ export function Dashboard() {
                               {currentStock && (
                                 <span className="text-blue-600 dark:text-blue-400">
                                   {t("stock_left")}:{" "}
-                                  {formatWholeNumber(currentStock.quantity)}
+                                  {formatNumber(currentStock.quantity)}
                                 </span>
                               )}
                             </div>

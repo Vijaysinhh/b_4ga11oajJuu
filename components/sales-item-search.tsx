@@ -12,10 +12,11 @@ import { HelpTooltip } from "@/components/help-tooltip";
 import { calculatePriceTierCost, convertUnit } from "@/lib/unit-conversion";
 import { toast } from "sonner";
 import {
-  cleanWholeNumberInput,
+  cleanNumberInput,
   formatMoney,
+  formatNumber,
   formatWholeNumber,
-  parseWholeNumberInput,
+  parseNumberInput,
 } from "@/lib/number-format";
 import type { Item, PriceTier } from "@/lib/db";
 
@@ -111,13 +112,13 @@ export function SalesItemSearch({
   };
 
   const handleAddToCart = () => {
-    const qty = parseWholeNumberInput(quantity);
+    const qty = parseNumberInput(quantity);
     if (!selectedItem || !quantity || qty <= 0) return;
 
     // Calculate actual quantity to be sold in item's base unit
     let totalQuantityToSell = qty;
     const availableQuantity = getRemainingStock(selectedItem);
-    let quantityDisplay = `${formatWholeNumber(qty)} ${units.find((u) => u.id === selectedItem.unitId)?.shortForm}`;
+    let quantityDisplay = `${formatNumber(qty)} ${units.find((u) => u.id === selectedItem.unitId)?.shortForm}`;
 
     if (selectedPriceTier) {
       const priceTierUnit = units.find(
@@ -134,7 +135,7 @@ export function SalesItemSearch({
 
       // Total quantity to sell = number of price tiers * converted quantity per tier
       totalQuantityToSell = qty * tierQtyInItemUnit;
-      quantityDisplay = `${formatWholeNumber(qty)} x ${formatWholeNumber(selectedPriceTier.quantity)} ${priceTierUnit?.shortForm}`;
+      quantityDisplay = `${formatNumber(qty)} x ${formatNumber(selectedPriceTier.quantity)} ${priceTierUnit?.shortForm}`;
     }
 
     // Check if quantity exceeds available stock (in same unit)
@@ -143,7 +144,7 @@ export function SalesItemSearch({
         (u) => u.id === selectedItem.unitId,
       )?.shortForm;
       toast.error(
-        `Not enough stock. Available: ${formatWholeNumber(availableQuantity)} ${itemUnit}. Trying to sell: ${quantityDisplay}`,
+        `Not enough stock. Available: ${formatNumber(availableQuantity)} ${itemUnit}. Trying to sell: ${quantityDisplay}`,
       );
       return;
     }
@@ -240,7 +241,7 @@ export function SalesItemSearch({
                   : item.name}
               </div>
               <div className="text-xs text-gray-600">
-                {t("stock")}: {formatWholeNumber(item.quantity)}
+                {t("stock")}: {formatNumber(item.quantity)}
                 {units.find((u) => u.id === item.unitId)?.shortForm}
               </div>
             </button>
@@ -258,7 +259,7 @@ export function SalesItemSearch({
                   : selectedItem.name}
               </div>
               <div className="text-xs text-gray-600">
-                {t("stock")}: {formatWholeNumber(getRemainingStock(selectedItem))}
+                {t("stock")}: {formatNumber(getRemainingStock(selectedItem))}
                 {units.find((u) => u.id === selectedItem.unitId)?.shortForm}
               </div>
             </div>
@@ -279,12 +280,12 @@ export function SalesItemSearch({
               <HelpTooltip
                 text={
                   language === "mr"
-                    ? "फक्त पूर्ण संख्या प्रविष्ट करा. दशांशांऐवजी ग्रॅम/मिली एकके वापरा."
-                    : "Enter whole quantity only. Use grams/ml units instead of decimals."
+                    ? "तुम्ही आता दशांश (उदा. १.५) प्रविष्ट करू शकता."
+                    : "You can enter fractional quantities (e.g. 1.5)."
                 }
               />
               <span className="text-xs text-orange-600 font-semibold">
-                (Max: {formatWholeNumber(getRemainingStock(selectedItem))}{" "}
+                (Max: {formatNumber(getRemainingStock(selectedItem))}{" "}
                 {units.find((u) => u.id === selectedItem.unitId)?.shortForm})
               </span>
             </div>
@@ -294,13 +295,13 @@ export function SalesItemSearch({
               pattern="[0-9]*"
               value={quantity}
               onChange={(event) =>
-                setQuantity(cleanWholeNumberInput(event.target.value))
+                setQuantity(cleanNumberInput(event.target.value))
               }
               placeholder={t("enter_quantity")}
               className={`h-9 text-sm ${
                 quantity &&
                 calculateActualQuantity(
-                  parseWholeNumberInput(quantity),
+                  parseNumberInput(quantity),
                   selectedPriceTier,
                 ) > getRemainingStock(selectedItem)
                   ? "border-red-500 bg-red-50"
@@ -309,11 +310,11 @@ export function SalesItemSearch({
             />
             {quantity &&
               calculateActualQuantity(
-                parseWholeNumberInput(quantity),
+                parseNumberInput(quantity),
                 selectedPriceTier,
               ) > getRemainingStock(selectedItem) && (
                 <p className="text-xs text-red-600 mt-1 font-semibold">
-                  ❌ Only {formatWholeNumber(getRemainingStock(selectedItem))}{" "}
+                  ❌ Only {formatNumber(getRemainingStock(selectedItem))}{" "}
                   {units.find((u) => u.id === selectedItem.unitId)?.shortForm}{" "}
                   available
                 </p>
@@ -357,7 +358,7 @@ export function SalesItemSearch({
                           : "border-gray-300 bg-white"
                       }`}
                     >
-                      {formatWholeNumber(tier.quantity)}
+                      {formatNumber(tier.quantity)}
                       {tierUnit?.shortForm} @ Rs. {formatMoney(tier.price)}
                     </button>
                   );
@@ -366,7 +367,7 @@ export function SalesItemSearch({
             </div>
           )}
 
-          {quantity && parseWholeNumberInput(quantity) > 0 && (
+          {quantity && parseNumberInput(quantity) > 0 && (
             <div className="mb-3 rounded border border-blue-100 bg-white p-2">
               <div className="text-xs text-gray-700">
                 <div className="flex justify-between">
@@ -374,7 +375,7 @@ export function SalesItemSearch({
                   <span className="font-bold text-green-700">
                     Rs.{" "}
                     {formatMoney(
-                      parseWholeNumberInput(quantity) *
+                      parseNumberInput(quantity) *
                         (selectedPriceTier?.price || selectedItem.sellPrice),
                     )}
                   </span>
@@ -387,9 +388,9 @@ export function SalesItemSearch({
             onClick={handleAddToCart}
             disabled={
               !quantity ||
-              parseWholeNumberInput(quantity) <= 0 ||
+              parseNumberInput(quantity) <= 0 ||
               calculateActualQuantity(
-                parseWholeNumberInput(quantity),
+                parseNumberInput(quantity),
                 selectedPriceTier,
               ) > getRemainingStock(selectedItem)
             }
