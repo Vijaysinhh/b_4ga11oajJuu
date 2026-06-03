@@ -5,6 +5,7 @@ import { useSales, useUdhari, useItems } from "@/hooks/use-supabase";
 import { useAuth } from "@/providers/auth-provider";
 import { useLanguage } from "@/providers/language-provider";
 import { dateKey } from "@/lib/utils";
+import { formatSaleLineSubtitle } from "@/lib/sale-item-display";
 import { SalesItemSearch } from "./sales-item-search";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -45,6 +46,9 @@ interface LineItem {
   unitId: number;
   unitShortForm: string;
   priceTierId?: number;
+  packCount?: number;
+  priceTierQuantity?: number;
+  priceTierUnitShortForm?: string;
   pricePerUnit: number;
   totalPrice: number;
   costPerUnit: number;
@@ -139,7 +143,7 @@ export function SalesTransaction() {
       if (!currentItem || currentItem.quantity < requestedQty) {
         const availableQty = currentItem?.quantity || 0;
         stockErrors.push(
-          `${lineItem?.itemName || "Item"}: Only ${formatNumber(availableQty)} ${lineItem?.unitShortForm || ""} available (tried to sell ${formatNumber(requestedQty)})`,
+          `${lineItem?.itemName || "Item"}: Only ${formatNumber(availableQty)} ${lineItem?.unitShortForm || ""} available (tried to sell ${lineItem?.displayQuantity || formatNumber(requestedQty)})`,
         );
       }
     }
@@ -156,9 +160,13 @@ export function SalesTransaction() {
         itemId: item.itemId,
         itemName: item.itemName,
         quantity: item.quantity,
+        displayQuantity: item.displayQuantity,
         unitId: item.unitId,
         unitShortForm: item.unitShortForm,
         priceTierId: item.priceTierId,
+        packCount: item.packCount,
+        priceTierQuantity: item.priceTierQuantity,
+        priceTierUnitShortForm: item.priceTierUnitShortForm,
         pricePerUnit: item.pricePerUnit,
         totalPrice: item.totalPrice,
         costPerUnit: item.costPerUnit,
@@ -208,6 +216,10 @@ export function SalesTransaction() {
             quantity: item.quantity,
             displayQuantity: item.displayQuantity,
             unitShortForm: item.unitShortForm,
+            priceTierId: item.priceTierId,
+            packCount: item.packCount,
+            priceTierQuantity: item.priceTierQuantity,
+            priceTierUnitShortForm: item.priceTierUnitShortForm,
             pricePerUnit: item.pricePerUnit,
             totalPrice: item.totalPrice,
           })),
@@ -267,20 +279,15 @@ export function SalesTransaction() {
                         <div className="text-sm font-semibold">
                           {item.itemName} - {item.displayQuantity}
                         </div>
-                        <div className="mt-1 space-y-1 text-xs text-gray-600">
+                        <div className="mt-1 space-y-1 text-xs text-muted-foreground">
                           <div>
-                            {t("selling")}: {formatNumber(item.quantity)} x Rs.{" "}
-                            {formatMoney(item.pricePerUnit)} ={" "}
+                            {t("selling")}: {formatSaleLineSubtitle(item)} ={" "}
                             <span className="font-semibold text-blue-600">
                               Rs. {formatMoney(item.totalPrice)}
                             </span>
                           </div>
                           <div>
-                            {t("cost")}: {formatNumber(item.quantity)} x Rs.{" "}
-                            {formatMoney(item.costPerUnit)} ={" "}
-                            <span className="font-semibold text-red-600">
-                              Rs. {formatMoney(item.totalCost)}
-                            </span>
+                            {t("cost")}: Rs. {formatMoney(item.totalCost)}
                           </div>
                         </div>
                         <div className="mt-1 text-xs font-semibold">

@@ -6,7 +6,7 @@ import { PageContainer, PageHeader } from "@/components/page-shell";
 import { useLanguage } from "@/providers/language-provider";
 import { useAuth } from "@/providers/auth-provider";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useSales, useItems, useUnits } from "@/hooks/use-supabase";
+import { useSales, useItems, useUnits, usePriceTiers } from "@/hooks/use-supabase";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -19,6 +19,10 @@ import {
 } from "lucide-react";
 import { dateKey } from "@/lib/utils";
 import { formatMoney, formatPercent, formatWholeNumber } from "@/lib/number-format";
+import {
+  formatSaleLineSubtitle,
+  inferSaleLineDisplayFields,
+} from "@/lib/sale-item-display";
 
 const paymentBadgeStyles: Record<string, string> = {
   cash: "bg-green-100 text-green-800",
@@ -61,6 +65,7 @@ export default function SalesPage() {
   const { sales } = useSales(currentShopId);
   const { items } = useItems(currentShopId);
   const { units } = useUnits(currentShopId);
+  const { priceTiers } = usePriceTiers(currentShopId);
 
   // --- Date navigation state ---
   const [selectedDate, setSelectedDate] = useState(() => new Date());
@@ -313,6 +318,12 @@ export default function SalesPage() {
                       <div className="border-t bg-muted/20 px-3 pb-3 pt-2">
                         <div className="space-y-2">
                           {saleItems.map((saleItem: any, idx: number) => {
+                            const displayItem = inferSaleLineDisplayFields(
+                              saleItem,
+                              priceTiers,
+                              units,
+                              saleItem.itemId,
+                            );
                             const currentStock = saleItem.itemId
                               ? itemMap.get(saleItem.itemId)
                               : null;
@@ -336,8 +347,7 @@ export default function SalesPage() {
                                         : saleItem.itemName}
                                     </p>
                                     <p className="text-xs text-muted-foreground">
-                                      {saleItem.quantity} {saleItem.unitShortForm} ×
-                                      ₹{formatMoney(saleItem.pricePerUnit)}
+                                      {formatSaleLineSubtitle(displayItem)}
                                     </p>
                                   </div>
                                   <p className="shrink-0 text-sm font-bold">

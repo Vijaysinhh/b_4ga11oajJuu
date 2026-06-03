@@ -28,6 +28,9 @@ interface SaleLineItem {
   unitId: number;
   unitShortForm: string;
   priceTierId?: number;
+  packCount?: number;
+  priceTierQuantity?: number;
+  priceTierUnitShortForm?: string;
   pricePerUnit: number;
   totalPrice: number;
   costPerUnit: number;
@@ -193,6 +196,10 @@ export function SalesItemSearch({
           : selectedItem.buyPrice;
     }
 
+    const priceTierUnit = selectedPriceTier
+      ? units.find((u) => u.id === selectedPriceTier.unitId)
+      : undefined;
+
     onItemAdded({
       itemId: selectedItem.id || 0,
       itemName:
@@ -204,6 +211,9 @@ export function SalesItemSearch({
       unitId: selectedItem.unitId,
       unitShortForm: itemUnit?.shortForm || "unit",
       priceTierId,
+      packCount: selectedPriceTier ? qty : undefined,
+      priceTierQuantity: selectedPriceTier?.quantity,
+      priceTierUnitShortForm: priceTierUnit?.shortForm,
       pricePerUnit,
       totalPrice: totalQuantityToSell * pricePerUnit,
       costPerUnit: costPerUnit || selectedItem.buyPrice,

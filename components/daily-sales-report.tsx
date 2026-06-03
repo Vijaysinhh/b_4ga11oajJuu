@@ -16,6 +16,7 @@ import { ArrowLeft, TrendingUp, DollarSign, Zap } from "lucide-react";
 import Link from "next/link";
 import { formatMoney, formatPercent, formatWholeNumber } from "@/lib/number-format";
 import { dateKey } from "@/lib/utils";
+import { formatSaleLineSubtitle } from "@/lib/sale-item-display";
 import { Input } from "@/components/ui/input";
 
 export function DailySalesReport() {
@@ -193,8 +194,7 @@ export function DailySalesReport() {
                         <div className="flex-1">
                           <span className="font-medium">{item.itemName}</span>
                           <span className="text-muted-foreground ml-1">
-                            {formatWholeNumber(item.quantity)}
-                            {item.unitShortForm} x Rs. {formatMoney(item.pricePerUnit)}
+                            {formatSaleLineSubtitle(item)}
                           </span>
                         </div>
                         <div className="text-right">

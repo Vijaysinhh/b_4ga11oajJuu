@@ -26,6 +26,7 @@ import {
 import { DollarSign, TrendingUp, TrendingDown } from "lucide-react";
 import { formatMoney, formatPercent, formatWholeNumber } from "@/lib/number-format";
 import { monthKey } from "@/lib/utils";
+import { formatSaleLineSubtitle } from "@/lib/sale-item-display";
 import { Input } from "@/components/ui/input";
 
 export function MonthlyPLReport() {
@@ -282,8 +283,7 @@ export function MonthlyPLReport() {
                                   {item.itemName}
                                 </span>
                                 <span className="text-muted-foreground ml-1">
-                                  {formatWholeNumber(item.quantity)}
-                                  {item.unitShortForm} x Rs. {formatMoney(item.pricePerUnit)}
+                                  {formatSaleLineSubtitle(item)}
                                 </span>
                               </div>
                               <div className="text-right">

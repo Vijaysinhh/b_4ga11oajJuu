@@ -60,10 +60,16 @@ export interface SaleItem {
   saleId: number;
   itemId: number;
   itemName: string;
+  /** Total quantity in item's stock unit (for inventory math). */
   quantity: number;
+  /** How the sale was shown at checkout, e.g. "2 x 200 g". */
+  displayQuantity?: string;
   unitId: number;
   unitShortForm: string;
   priceTierId?: number; // Which price tier was used
+  packCount?: number;
+  priceTierQuantity?: number;
+  priceTierUnitShortForm?: string;
   pricePerUnit: number; // Actual selling price used
   totalPrice: number; // quantity * pricePerUnit
   costPerUnit: number; // For profit calculation
@@ -169,9 +175,14 @@ export interface CreditCustomer {
 export interface CreditBillItem {
   itemName: string;
   quantity: number;
+  displayQuantity?: string;
   unitShortForm: string;
   pricePerUnit: number;
   totalPrice: number;
+  priceTierId?: number;
+  packCount?: number;
+  priceTierQuantity?: number;
+  priceTierUnitShortForm?: string;
 }
 
 export interface CreditEntry {

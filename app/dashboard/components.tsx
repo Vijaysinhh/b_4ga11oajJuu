@@ -10,6 +10,7 @@ import {
   useUnits,
   useSales,
   useUdhari,
+  usePriceTiers,
 } from "@/hooks/use-supabase";
 import { downloadSimplePdf, type PdfSection } from "@/lib/simple-pdf";
 import {
@@ -19,6 +20,10 @@ import {
   formatWholeNumber,
 } from "@/lib/number-format";
 import { dateKey, monthKey } from "@/lib/utils";
+import {
+  formatSaleLineSubtitle,
+  inferSaleLineDisplayFields,
+} from "@/lib/sale-item-display";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -84,6 +89,7 @@ export function Dashboard() {
   const { items } = useItems(currentShopId);
   const { units } = useUnits(currentShopId);
   const { sales } = useSales(currentShopId);
+  const { priceTiers } = usePriceTiers(currentShopId);
   const { totalPending } = useUdhari(currentShopId);
   const [isClientReady, setIsClientReady] = useState(false);
 
@@ -575,6 +581,12 @@ export function Dashboard() {
                   <div className="border-t bg-muted/20 px-3 pb-3 pt-2">
                     <div className="space-y-2">
                       {saleItems.map((saleItem: any, idx: number) => {
+                        const displayItem = inferSaleLineDisplayFields(
+                          saleItem,
+                          priceTiers,
+                          units,
+                          saleItem.itemId,
+                        );
                         const currentStock = saleItem.itemId
                           ? itemMap.get(saleItem.itemId)
                           : null;
@@ -598,8 +610,7 @@ export function Dashboard() {
                                     : saleItem.itemName}
                                 </p>
                                 <p className="text-xs text-muted-foreground">
-                                  {saleItem.quantity} {saleItem.unitShortForm} ×
-                                  ₹{formatMoney(saleItem.pricePerUnit)}
+                                  {formatSaleLineSubtitle(displayItem)}
                                 </p>
                               </div>
                               <p className="shrink-0 text-sm font-bold">

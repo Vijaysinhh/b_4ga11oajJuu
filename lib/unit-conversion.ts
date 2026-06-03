@@ -28,15 +28,42 @@ const UNIT_CONVERSIONS: Record<string, Record<string, number>> = {
  * Convert a quantity from one unit to another
  * E.g., 1 kg to grams = 1000 g
  */
+const UNIT_ALIASES: Record<string, string> = {
+  gram: "g",
+  grams: "g",
+  gm: "g",
+  gms: "g",
+  kilogram: "kg",
+  kilograms: "kg",
+  kilo: "kg",
+  liter: "l",
+  litre: "l",
+  liters: "l",
+  litres: "l",
+  milliliter: "ml",
+  millilitre: "ml",
+  milliliters: "ml",
+  millilitres: "ml",
+  piece: "pcs",
+  pieces: "pcs",
+  pc: "pcs",
+  pkt: "packet",
+};
+
+function normalizeUnit(unit: string): string {
+  const key = (unit || "").toLowerCase().trim();
+  return UNIT_ALIASES[key] || key;
+}
+
 export function convertUnit(
   quantity: number,
   fromUnit: string,
   toUnit: string,
 ): number {
-  if (fromUnit === toUnit) return quantity;
+  const from = normalizeUnit(fromUnit);
+  const to = normalizeUnit(toUnit);
 
-  const from = (fromUnit || "").toLowerCase().trim();
-  const to = (toUnit || "").toLowerCase().trim();
+  if (from === to) return quantity;
 
   const conversions = UNIT_CONVERSIONS[from];
   if (!conversions || conversions[to] === undefined) {
