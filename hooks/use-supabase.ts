@@ -608,7 +608,103 @@ export function useSales(shopId?: number) {
     };
   }, [salesWithItems, shopId]);
 
-  return { sales: salesWithItems, saleItems, isLoading, refresh: loadSales, createSale, updateStockAfterSale, getDailySummary };
+  const deleteSale = useCallback(async (saleId: number) => {
+    if (!shopId) return;
+    
+    // Fetch sale and its items
+    const { data: sale } = await (supabase as any)
+      .from('sales')
+      .select('*')
+      .eq('id', saleId)
+      .single();
+      
+    if (!sale) return;
+
+    const { data: saleItems } = await (supabase as any)
+      .from('sale_items')
+      .select('*')
+      .eq('sale_id', saleId);
+
+    // If udhari sale, revert customer balance and delete credit entry
+    if (sale.payment_method === 'udhari' && sale.credit_customer_id) {
+      const { data: customer } = await (supabase as any)
+        .from('credit_customers')
+        .select('*')
+        .eq('id', sale.credit_customer_id)
+        .single();
+        
+      if (customer) {
+        await (supabase as any)
+          .from('credit_customers')
+          .update({
+            balance: customer.balance - sale.subtotal,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', sale.credit_customer_id);
+      }
+      
+      // Delete the specific credit entry created for this sale
+      await (supabase as any)
+        .from('credit_entries')
+        .delete()
+        .eq('sale_id', saleId);
+    }
+
+    // Restore stock
+    if (saleItems && saleItems.length > 0) {
+      // Get current items
+      const { data: currentItems } = await (supabase as any)
+        .from('items')
+        .select('*')
+        .in('id', saleItems.map((i: any) => i.item_id).filter(Boolean));
+        
+      if (currentItems) {
+        // Calculate quantity changes
+        const quantityChanges = new Map<number, number>();
+        for (const saleItem of saleItems) {
+          if (!saleItem.item_id) continue;
+          const current = quantityChanges.get(saleItem.item_id) || 0;
+          quantityChanges.set(saleItem.item_id, current + saleItem.quantity);
+        }
+        
+        for (const [itemId, qtyToAdd] of quantityChanges) {
+          const currentItem = currentItems.find((i: any) => i.id === itemId);
+          if (!currentItem) continue;
+          
+          const newQuantity = Number((currentItem.quantity + qtyToAdd).toFixed(4));
+          await (supabase as any)
+            .from('items')
+            .update({
+              quantity: newQuantity,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', itemId);
+            
+          // Add history for restoration
+          await (supabase as any).from('stock_history').insert({
+            shop_id: shopId,
+            item_id: itemId,
+            item_name: currentItem.name,
+            type: 'adjustment',
+            quantity_changed: Number(qtyToAdd.toFixed(4)),
+            quantity_before: currentItem.quantity,
+            quantity_after: newQuantity,
+            reason: `Restored from deleted sale #${saleId}`,
+            created_at: new Date().toISOString(),
+          });
+        }
+      }
+    }
+
+    // Delete sale (cascading will delete sale_items in Supabase)
+    await (supabase as any).from('sales').delete().eq('id', saleId);
+    
+    // Refresh globally
+    await loadSales();
+    window.dispatchEvent(new Event('refresh-dukan-data'));
+  }, [shopId, supabase, loadSales]);
+
+  return { sales: salesWithItems, saleItems, isLoading, refresh: loadSales, createSale, updateStockAfterSale, getDailySummary, deleteSale };
 }
 
 // --- Stock History ---
