@@ -254,43 +254,253 @@ ALTER TABLE app_settings ENABLE ROW LEVEL SECURITY;
 -- In production, you'd want to integrate with Supabase Auth properly
 
 -- Shops: Allow all operations (adjust as needed)
-CREATE POLICY IF NOT EXISTS "Allow all operations on shops" ON shops FOR ALL USING (true) WITH CHECK (true);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'shops'
+      AND policyname = 'Allow all operations on shops'
+  ) THEN
+    CREATE POLICY "Allow all operations on shops"
+    ON public.shops
+    FOR ALL
+    USING (true)
+    WITH CHECK (true);
+  END IF;
+END $$;
 
 -- Users: Allow all operations
-CREATE POLICY IF NOT EXISTS "Allow all operations on users" ON users FOR ALL USING (true) WITH CHECK (true);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'users'
+      AND policyname = 'Allow all operations on users'
+  ) THEN
+    CREATE POLICY "Allow all operations on users"
+    ON public.users
+    FOR ALL
+    USING (true)
+    WITH CHECK (true);
+  END IF;
+END $$;
 
 -- Categories: Allow all operations
-CREATE POLICY IF NOT EXISTS "Allow all operations on categories" ON categories FOR ALL USING (true) WITH CHECK (true);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'categories'
+      AND policyname = 'Allow all operations on categories'
+  ) THEN
+    CREATE POLICY "Allow all operations on categories"
+    ON public.categories
+    FOR ALL
+    USING (true)
+    WITH CHECK (true);
+  END IF;
+END $$;
 
 -- Units: Allow all operations
-CREATE POLICY IF NOT EXISTS "Allow all operations on units" ON units FOR ALL USING (true) WITH CHECK (true);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'units'
+      AND policyname = 'Allow all operations on units'
+  ) THEN
+    CREATE POLICY "Allow all operations on units"
+    ON public.units
+    FOR ALL
+    USING (true)
+    WITH CHECK (true);
+  END IF;
+END $$;
 
 -- Items: Allow all operations
-CREATE POLICY IF NOT EXISTS "Allow all operations on items" ON items FOR ALL USING (true) WITH CHECK (true);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'items'
+      AND policyname = 'Allow all operations on items'
+  ) THEN
+    CREATE POLICY "Allow all operations on items"
+    ON public.items
+    FOR ALL
+    USING (true)
+    WITH CHECK (true);
+  END IF;
+END $$;
 
 -- Price Tiers: Allow all operations
-CREATE POLICY IF NOT EXISTS "Allow all operations on price_tiers" ON price_tiers FOR ALL USING (true) WITH CHECK (true);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'price_tiers'
+      AND policyname = 'Allow all operations on price_tiers'
+  ) THEN
+    CREATE POLICY "Allow all operations on price_tiers"
+    ON public.price_tiers
+    FOR ALL
+    USING (true)
+    WITH CHECK (true);
+  END IF;
+END $$;
 
 -- Sales: Allow all operations
-CREATE POLICY IF NOT EXISTS "Allow all operations on sales" ON sales FOR ALL USING (true) WITH CHECK (true);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'sales'
+      AND policyname = 'Allow all operations on sales'
+  ) THEN
+    CREATE POLICY "Allow all operations on sales"
+    ON public.sales
+    FOR ALL
+    USING (true)
+    WITH CHECK (true);
+  END IF;
+END $$;
 
 -- Sale Items: Allow all operations
-CREATE POLICY IF NOT EXISTS "Allow all operations on sale_items" ON sale_items FOR ALL USING (true) WITH CHECK (true);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'sale_items'
+      AND policyname = 'Allow all operations on sale_items'
+  ) THEN
+    CREATE POLICY "Allow all operations on sale_items"
+    ON public.sale_items
+    FOR ALL
+    USING (true)
+    WITH CHECK (true);
+  END IF;
+END $$;
 
 -- Stock History: Allow all operations
-CREATE POLICY IF NOT EXISTS "Allow all operations on stock_history" ON stock_history FOR ALL USING (true) WITH CHECK (true);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'stock_history'
+      AND policyname = 'Allow all operations on stock_history'
+  ) THEN
+    CREATE POLICY "Allow all operations on stock_history"
+    ON public.stock_history
+    FOR ALL
+    USING (true)
+    WITH CHECK (true);
+  END IF;
+END $$;
 
 -- Batches: Allow all operations
-CREATE POLICY IF NOT EXISTS "Allow all operations on batches" ON batches FOR ALL USING (true) WITH CHECK (true);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'batches'
+      AND policyname = 'Allow all operations on batches'
+  ) THEN
+    CREATE POLICY "Allow all operations on batches"
+    ON public.batches
+    FOR ALL
+    USING (true)
+    WITH CHECK (true);
+  END IF;
+END $$;
 
 -- Alerts: Allow all operations
-CREATE POLICY IF NOT EXISTS "Allow all operations on alerts" ON alerts FOR ALL USING (true) WITH CHECK (true);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'alerts'
+      AND policyname = 'Allow all operations on alerts'
+  ) THEN
+    CREATE POLICY "Allow all operations on alerts"
+    ON public.alerts
+    FOR ALL
+    USING (true)
+    WITH CHECK (true);
+  END IF;
+END $$;
 
 -- Credit Customers: Allow all operations
-CREATE POLICY IF NOT EXISTS "Allow all operations on credit_customers" ON credit_customers FOR ALL USING (true) WITH CHECK (true);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'credit_customers'
+      AND policyname = 'Allow all operations on credit_customers'
+  ) THEN
+    CREATE POLICY "Allow all operations on credit_customers"
+    ON public.credit_customers
+    FOR ALL
+    USING (true)
+    WITH CHECK (true);
+  END IF;
+END $$;
 
 -- Credit Entries: Allow all operations
-CREATE POLICY IF NOT EXISTS "Allow all operations on credit_entries" ON credit_entries FOR ALL USING (true) WITH CHECK (true);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'credit_entries'
+      AND policyname = 'Allow all operations on credit_entries'
+  ) THEN
+    CREATE POLICY "Allow all operations on credit_entries"
+    ON public.credit_entries
+    FOR ALL
+    USING (true)
+    WITH CHECK (true);
+  END IF;
+END $$;
 
 -- App Settings: Allow all operations
-CREATE POLICY IF NOT EXISTS "Allow all operations on app_settings" ON app_settings FOR ALL USING (true) WITH CHECK (true);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'app_settings'
+      AND policyname = 'Allow all operations on app_settings'
+  ) THEN
+    CREATE POLICY "Allow all operations on app_settings"
+    ON public.app_settings
+    FOR ALL
+    USING (true)
+    WITH CHECK (true);
+  END IF;
+END $$;

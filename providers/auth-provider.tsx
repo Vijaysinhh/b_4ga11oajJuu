@@ -81,7 +81,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           // Super admin
           setUser(parsedUser);
         } else {
-          const { data } = await supabase
+          const { data } = await (supabase as any)
             .from('users')
             .select('*')
             .eq('id', parsedUser.id)
@@ -92,7 +92,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setUser(mappedUser);
             
             if (data.shop_id) {
-              const { data: shop } = await supabase
+              const { data: shop } = await (supabase as any)
                 .from('shops')
                 .select('*')
                 .eq('id', data.shop_id)
@@ -133,7 +133,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       // Check if it's a shop owner (login via shop phone and password)
-      const { data: shops } = await supabase
+      const { data: shops } = await (supabase as any)
         .from('shops')
         .select('*')
         .eq('phone_number', username)
@@ -142,7 +142,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const shop = shops?.[0];
       if (shop) {
         // Check if owner user exists, if not create one
-        const { data: existingUsers } = await supabase
+        const { data: existingUsers } = await (supabase as any)
           .from('users')
           .select('*')
           .eq('shop_id', shop.id)
@@ -151,7 +151,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         let ownerUser = existingUsers?.[0];
         
         if (!ownerUser) {
-          const { data: newUser } = await supabase
+          const { data: newUser } = await (supabase as any)
             .from('users')
             .insert({
               shop_id: shop.id,
@@ -161,7 +161,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             })
             .select('*')
             .single();
-          ownerUser = newUser;
+          ownerUser = newUser || undefined;
         }
         
         if (ownerUser) {
@@ -175,7 +175,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       // Check for workers
-      const { data: users } = await supabase
+      const { data: users } = await (supabase as any)
         .from('users')
         .select('*')
         .eq('username', username)
@@ -188,7 +188,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(mappedUser);
         
         if (worker.shop_id) {
-          const { data: shop } = await supabase
+          const { data: shop } = await (supabase as any)
             .from('shops')
             .select('*')
             .eq('id', worker.shop_id)
