@@ -338,7 +338,49 @@ export function usePriceTiers(shopId?: number) {
     loadPriceTiers();
   }, [loadPriceTiers]);
 
-  return { priceTiers, isLoading };
+  const addPriceTier = useCallback(async (tierData: any) => {
+    if (!shopId) return null;
+    const now = new Date().toISOString();
+    const { data, error } = await (supabase as any)
+      .from('price_tiers')
+      .insert({
+        shop_id: shopId,
+        item_id: tierData.itemId,
+        quantity: tierData.quantity,
+        unit_id: tierData.unitId,
+        price: tierData.price,
+        created_at: now,
+        updated_at: now,
+      })
+      .select('*')
+      .single();
+    
+    if (error) {
+      console.error('[Supabase] Error adding price tier:', error);
+      throw error;
+    }
+    
+    if (data) {
+      const newTier = mapPriceTier(data);
+      setPriceTiers(prev => [...prev, newTier]);
+      return newTier.id;
+    }
+    return null;
+  }, [shopId, supabase]);
+
+  const deletePriceTier = useCallback(async (tierId: number) => {
+    if (!shopId) return;
+    const { error } = await (supabase as any).from('price_tiers').delete().eq('id', tierId).eq('shop_id', shopId);
+    
+    if (error) {
+      console.error('[Supabase] Error deleting price tier:', error);
+      throw error;
+    }
+    
+    setPriceTiers(prev => prev.filter(tier => tier.id !== tierId));
+  }, [shopId, supabase]);
+
+  return { priceTiers, isLoading, addPriceTier, deletePriceTier };
 }
 
 // --- Sales & Sale Items ---

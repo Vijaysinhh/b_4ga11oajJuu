@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from 'react';
 import { useLanguage } from '@/providers/language-provider';
-import { useItems as useSupabaseItems, useCategories as useSupabaseCategories, useUnits as useSupabaseUnits } from '@/hooks/use-supabase';
+import { useItems as useSupabaseItems, useCategories as useSupabaseCategories, useUnits as useSupabaseUnits, usePriceTiers } from '@/hooks/use-supabase';
 import { useAuth } from '@/providers/auth-provider';
 import { PriceTierManager } from '@/components/price-tier-manager';
 import { toast } from 'sonner';
@@ -55,11 +55,27 @@ export function ItemsManagement() {
   const { items, addItem, updateItem, deleteItem } = useSupabaseItems(currentShopId);
   const { categories } = useSupabaseCategories(currentShopId);
   const { units } = useSupabaseUnits(currentShopId);
+  const { priceTiers, addPriceTier: addPriceTierSupabase, deletePriceTier: deletePriceTierSupabase } = usePriceTiers(currentShopId);
 
-  // Placeholders for price tiers (we'll implement this later)
-  const priceTiers: any[] = [];
-  const addPriceTier = async () => {};
-  const deletePriceTier = async () => {};
+  const handleAddPriceTier = async (tierData: any) => {
+    try {
+      await addPriceTierSupabase(tierData);
+      toast.success('Price tier added successfully!');
+    } catch (error) {
+      console.error('Error adding price tier:', error);
+      toast.error('Failed to add price tier');
+    }
+  };
+
+  const handleDeletePriceTier = async (tierId: number) => {
+    try {
+      await deletePriceTierSupabase(tierId);
+      toast.success('Price tier deleted successfully!');
+    } catch (error) {
+      console.error('Error deleting price tier:', error);
+      toast.error('Failed to delete price tier');
+    }
+  };
 
   const [isOpen, setIsOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -450,8 +466,8 @@ export function ItemsManagement() {
                   wholesaleCost={formData.buyPrice}
                   wholesaleQty={formData.quantity}
                   wholesaleUnitId={formData.unitId}
-                  onAdd={addPriceTier}
-                  onDelete={deletePriceTier}
+                  onAdd={handleAddPriceTier}
+                  onDelete={handleDeletePriceTier}
                 />
               )}
             </TabsContent>
