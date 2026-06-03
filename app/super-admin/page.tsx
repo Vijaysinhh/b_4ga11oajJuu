@@ -69,111 +69,181 @@ export default function SuperAdminPage() {
     }
 
     const now = new Date().toISOString();
-    if (editingShop) {
-      await (supabase as any)
-        .from('shops')
-        .update({
-          owner_name: formData.ownerName,
-          shop_name: formData.shopName,
-          address: formData.address,
-          phone_number: formData.phoneNumber,
-          password: formData.password,
-          updated_at: now,
-        })
-        .eq('id', editingShop.id);
-      toast({ title: 'Success', description: 'Shop updated!' });
-    } else {
-      // Create shop
-      const { data: newShop } = await (supabase as any)
-        .from('shops')
-        .insert({
-          owner_name: formData.ownerName,
-          shop_name: formData.shopName,
-          address: formData.address,
-          phone_number: formData.phoneNumber,
-          password: formData.password,
-          is_paused: false,
-          created_at: now,
-          updated_at: now,
-        })
-        .select('*')
-        .single();
-
-      if (newShop) {
-        // Create owner user
-        await (supabase as any).from('users').insert({
-          shop_id: newShop.id,
-          username: formData.ownerName,
-          password: formData.password,
-          role: 'owner',
-        });
-
-        // Create default categories
-        const defaultCategories = [
-          { name: 'Grocery', name_marathi: 'किराणा', color: '#3b82f6' },
-          { name: 'Dairy & Milk', name_marathi: 'दुग्ध', color: '#f59e0b' },
-          { name: 'Beverages', name_marathi: 'पेय पदार्थ', color: '#ef4444' },
-          { name: 'Snacks & Sweets', name_marathi: 'स्नॅक्स', color: '#8b5cf6' },
-          { name: 'Household Items', name_marathi: 'घरेलू', color: '#06b6d4' },
-          { name: 'Personal Care', name_marathi: 'व्यक्तिगत', color: '#ec4899' },
-        ];
-
-        await (supabase as any).from('categories').insert(
-          defaultCategories.map(cat => ({
-            shop_id: newShop.id,
-            ...cat,
+    try {
+      if (editingShop) {
+        const { error } = await (supabase as any)
+          .from('shops')
+          .update({
+            owner_name: formData.ownerName,
+            shop_name: formData.shopName,
+            address: formData.address,
+            phone_number: formData.phoneNumber,
+            password: formData.password,
+            updated_at: now,
+          })
+          .eq('id', editingShop.id);
+        
+        if (error) {
+          console.error('Update shop error:', error);
+          toast({ title: 'Error', description: `Failed to update shop: ${error.message}` });
+          return;
+        }
+        
+        toast({ title: 'Success', description: 'Shop updated!' });
+      } else {
+        // Create shop
+        const { data: newShop, error: shopError } = await (supabase as any)
+          .from('shops')
+          .insert({
+            owner_name: formData.ownerName,
+            shop_name: formData.shopName,
+            address: formData.address,
+            phone_number: formData.phoneNumber,
+            password: formData.password,
+            is_paused: false,
             created_at: now,
             updated_at: now,
-          }))
-        );
+          })
+          .select('*')
+          .single();
 
-        // Create default units
-        const defaultUnits = [
-          { name: 'Kilogram', name_marathi: 'किलोग्राम', short_form: 'kg' },
-          { name: 'Gram', name_marathi: 'ग्राम', short_form: 'g' },
-          { name: 'Liter', name_marathi: 'लिटर', short_form: 'L' },
-          { name: 'Milliliter', name_marathi: 'मिली लिटर', short_form: 'ml' },
-          { name: 'Piece', name_marathi: 'तुकडे', short_form: 'pcs' },
-          { name: 'Box', name_marathi: 'डिब्बा', short_form: 'box' },
-        ];
+        if (shopError) {
+          console.error('Create shop error:', shopError);
+          toast({ title: 'Error', description: `Failed to create shop: ${shopError.message}` });
+          return;
+        }
 
-        await (supabase as any).from('units').insert(
-          defaultUnits.map(unit => ({
+        if (newShop) {
+          // Create owner user
+          const { error: userError } = await (supabase as any).from('users').insert({
             shop_id: newShop.id,
-            ...unit,
+            username: formData.ownerName,
+            password: formData.password,
+            role: 'owner',
             created_at: now,
             updated_at: now,
-          }))
-        );
+          });
+          
+          if (userError) {
+            console.error('Create user error:', userError);
+            toast({ title: 'Error', description: `Failed to create user: ${userError.message}` });
+            return;
+          }
 
-        toast({ title: 'Success', description: 'Shop created with default categories and units!' });
+          // Create default categories
+          const defaultCategories = [
+            { name: 'Grocery', name_marathi: 'किराणा', color: '#3b82f6' },
+            { name: 'Dairy & Milk', name_marathi: 'दुग्ध', color: '#f59e0b' },
+            { name: 'Beverages', name_marathi: 'पेय पदార్థ', color: '#ef4444' },
+            { name: 'Snacks & Sweets', name_marathi: 'स्नॅक्स', color: '#8b5cf6' },
+            { name: 'Household Items', name_marathi: 'घरेलू', color: '#06b6d4' },
+            { name: 'Personal Care', name_marathi: 'व्यक्तिगत', color: '#ec4899' },
+          ];
+
+          const { error: categoryError } = await (supabase as any).from('categories').insert(
+            defaultCategories.map(cat => ({
+              shop_id: newShop.id,
+              ...cat,
+              created_at: now,
+              updated_at: now,
+            }))
+          );
+          
+          if (categoryError) {
+            console.error('Create categories error:', categoryError);
+            toast({ title: 'Error', description: `Failed to create categories: ${categoryError.message}` });
+            return;
+          }
+
+          // Create default units
+          const defaultUnits = [
+            { name: 'Kilogram', name_marathi: 'किलोग्राम', short_form: 'kg' },
+            { name: 'Gram', name_marathi: 'ग्राम', short_form: 'g' },
+            { name: 'Liter', name_marathi: 'लिटर', short_form: 'L' },
+            { name: 'Milliliter', name_marathi: 'मिली लिटर', short_form: 'ml' },
+            { name: 'Piece', name_marathi: 'तुकडे', short_form: 'pcs' },
+            { name: 'Box', name_marathi: 'डिब्बा', short_form: 'box' },
+          ];
+
+          const { error: unitError } = await (supabase as any).from('units').insert(
+            defaultUnits.map(unit => ({
+              shop_id: newShop.id,
+              ...unit,
+              created_at: now,
+              updated_at: now,
+            }))
+          );
+          
+          if (unitError) {
+            console.error('Create units error:', unitError);
+            toast({ title: 'Error', description: `Failed to create units: ${unitError.message}` });
+            return;
+          }
+
+          toast({ title: 'Success', description: 'Shop created with default categories and units!' });
+        }
       }
-    }
 
-    setIsDialogOpen(false);
-    resetForm();
-    loadShops();
+      setIsDialogOpen(false);
+      resetForm();
+      loadShops();
+    } catch (e) {
+      console.error('Unexpected error:', e);
+      toast({ title: 'Error', description: 'An unexpected error occurred' });
+    }
   };
 
   const togglePause = async (shop: Shop) => {
-    await (supabase as any)
-      .from('shops')
-      .update({
-        is_paused: !shop.isPaused,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', shop.id);
-    toast({ title: 'Success', description: shop.isPaused ? 'Shop unpaused!' : 'Shop paused!' });
-    loadShops();
+    try {
+      const { error } = await (supabase as any)
+        .from('shops')
+        .update({
+          is_paused: !shop.isPaused,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', shop.id);
+        
+      if (error) {
+        console.error('Toggle pause error:', error);
+        toast({ title: 'Error', description: `Failed to update shop: ${error.message}` });
+        return;
+      }
+      
+      toast({ title: 'Success', description: shop.isPaused ? 'Shop unpaused!' : 'Shop paused!' });
+      loadShops();
+    } catch (e) {
+      console.error('Unexpected error:', e);
+      toast({ title: 'Error', description: 'An unexpected error occurred' });
+    }
   };
 
   const deleteShop = async (shop: Shop) => {
     if (!confirm(`Are you sure you want to delete ${shop.shopName}?`)) return;
-    // Delete users first (because of foreign key constraint)
-    await (supabase as any).from('users').delete().eq('shop_id', shop.id);
-    await (supabase as any).from('shops').delete().eq('id', shop.id);
-    toast({ title: 'Success', description: 'Shop deleted!' });
-    loadShops();
+    
+    try {
+      // Delete users first (because of foreign key constraint)
+      const { error: userDeleteError } = await (supabase as any).from('users').delete().eq('shop_id', shop.id);
+      
+      if (userDeleteError) {
+        console.error('Delete users error:', userDeleteError);
+        toast({ title: 'Error', description: `Failed to delete users: ${userDeleteError.message}` });
+        return;
+      }
+      
+      const { error: shopDeleteError } = await (supabase as any).from('shops').delete().eq('id', shop.id);
+      
+      if (shopDeleteError) {
+        console.error('Delete shop error:', shopDeleteError);
+        toast({ title: 'Error', description: `Failed to delete shop: ${shopDeleteError.message}` });
+        return;
+      }
+      
+      toast({ title: 'Success', description: 'Shop deleted!' });
+      loadShops();
+    } catch (e) {
+      console.error('Unexpected error:', e);
+      toast({ title: 'Error', description: 'An unexpected error occurred' });
+    }
   };
 
   const resetForm = () => {
