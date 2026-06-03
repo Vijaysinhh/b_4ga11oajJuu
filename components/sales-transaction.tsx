@@ -41,6 +41,7 @@ interface LineItem {
   itemId: number;
   itemName: string;
   quantity: number;
+  displayQuantity: string;
   unitId: number;
   unitShortForm: string;
   priceTierId?: number;
@@ -205,6 +206,7 @@ export function SalesTransaction() {
           items.map((item) => ({
             itemName: item.itemName,
             quantity: item.quantity,
+            displayQuantity: item.displayQuantity,
             unitShortForm: item.unitShortForm,
             pricePerUnit: item.pricePerUnit,
             totalPrice: item.totalPrice,
@@ -263,19 +265,18 @@ export function SalesTransaction() {
                     >
                       <div className="min-w-0 flex-1">
                         <div className="text-sm font-semibold">
-                          {item.itemName} x {item.quantity}
-                          {item.unitShortForm}
+                          {item.itemName} - {item.displayQuantity}
                         </div>
                         <div className="mt-1 space-y-1 text-xs text-gray-600">
                           <div>
-                            {t("selling")}: {formatMoney(item.quantity)} x Rs.{" "}
+                            {t("selling")}: {formatNumber(item.quantity)} x Rs.{" "}
                             {formatMoney(item.pricePerUnit)} ={" "}
                             <span className="font-semibold text-blue-600">
                               Rs. {formatMoney(item.totalPrice)}
                             </span>
                           </div>
                           <div>
-                            {t("cost")}: {formatMoney(item.quantity)} x Rs.{" "}
+                            {t("cost")}: {formatNumber(item.quantity)} x Rs.{" "}
                             {formatMoney(item.costPerUnit)} ={" "}
                             <span className="font-semibold text-red-600">
                               Rs. {formatMoney(item.totalCost)}

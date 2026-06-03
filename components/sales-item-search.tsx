@@ -24,6 +24,7 @@ interface SaleLineItem {
   itemId: number;
   itemName: string;
   quantity: number;
+  displayQuantity: string;
   unitId: number;
   unitShortForm: string;
   priceTierId?: number;
@@ -199,6 +200,7 @@ export function SalesItemSearch({
           ? selectedItem.nameMarathi
           : selectedItem.name,
       quantity: totalQuantityToSell,
+      displayQuantity: quantityDisplay,
       unitId: selectedItem.unitId,
       unitShortForm: itemUnit?.shortForm || "unit",
       priceTierId,

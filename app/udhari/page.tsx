@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { cleanWholeNumberInput, formatMoney, formatWholeNumber, parseWholeNumberInput } from '@/lib/number-format';
+import { cleanWholeNumberInput, formatMoney, formatWholeNumber, parseWholeNumberInput, formatNumber } from '@/lib/number-format';
 import { Plus, Phone, ReceiptText, WalletCards } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -222,7 +222,7 @@ export default function UdhariPage() {
                                 {entry.billItems.map((item: any, itemIndex: number) => (
                                   <div key={`${entry.id}-${item.itemName}-${itemIndex}`} className="flex justify-between gap-2">
                                     <span className="min-w-0 truncate">
-                                      {item.itemName} x {formatWholeNumber(item.quantity)}{item.unitShortForm}
+                                      {item.itemName} - {item.displayQuantity || `${formatNumber(item.quantity)}${item.unitShortForm}`}
                                     </span>
                                     <span className="font-semibold">
                                       Rs. {formatMoney(item.totalPrice)}
