@@ -254,43 +254,43 @@ ALTER TABLE app_settings ENABLE ROW LEVEL SECURITY;
 -- In production, you'd want to integrate with Supabase Auth properly
 
 -- Shops: Allow all operations (adjust as needed)
-CREATE POLICY "Allow all operations on shops" ON shops FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY IF NOT EXISTS "Allow all operations on shops" ON shops FOR ALL USING (true) WITH CHECK (true);
 
 -- Users: Allow all operations
-CREATE POLICY "Allow all operations on users" ON users FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY IF NOT EXISTS "Allow all operations on users" ON users FOR ALL USING (true) WITH CHECK (true);
 
 -- Categories: Allow all operations
-CREATE POLICY "Allow all operations on categories" ON categories FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY IF NOT EXISTS "Allow all operations on categories" ON categories FOR ALL USING (true) WITH CHECK (true);
 
 -- Units: Allow all operations
-CREATE POLICY "Allow all operations on units" ON units FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY IF NOT EXISTS "Allow all operations on units" ON units FOR ALL USING (true) WITH CHECK (true);
 
 -- Items: Allow all operations
-CREATE POLICY "Allow all operations on items" ON items FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY IF NOT EXISTS "Allow all operations on items" ON items FOR ALL USING (true) WITH CHECK (true);
 
 -- Price Tiers: Allow all operations
-CREATE POLICY "Allow all operations on price_tiers" ON price_tiers FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY IF NOT EXISTS "Allow all operations on price_tiers" ON price_tiers FOR ALL USING (true) WITH CHECK (true);
 
 -- Sales: Allow all operations
-CREATE POLICY "Allow all operations on sales" ON sales FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY IF NOT EXISTS "Allow all operations on sales" ON sales FOR ALL USING (true) WITH CHECK (true);
 
 -- Sale Items: Allow all operations
-CREATE POLICY "Allow all operations on sale_items" ON sale_items FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY IF NOT EXISTS "Allow all operations on sale_items" ON sale_items FOR ALL USING (true) WITH CHECK (true);
 
 -- Stock History: Allow all operations
-CREATE POLICY "Allow all operations on stock_history" ON stock_history FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY IF NOT EXISTS "Allow all operations on stock_history" ON stock_history FOR ALL USING (true) WITH CHECK (true);
 
 -- Batches: Allow all operations
-CREATE POLICY "Allow all operations on batches" ON batches FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY IF NOT EXISTS "Allow all operations on batches" ON batches FOR ALL USING (true) WITH CHECK (true);
 
 -- Alerts: Allow all operations
-CREATE POLICY "Allow all operations on alerts" ON alerts FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY IF NOT EXISTS "Allow all operations on alerts" ON alerts FOR ALL USING (true) WITH CHECK (true);
 
 -- Credit Customers: Allow all operations
-CREATE POLICY "Allow all operations on credit_customers" ON credit_customers FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY IF NOT EXISTS "Allow all operations on credit_customers" ON credit_customers FOR ALL USING (true) WITH CHECK (true);
 
 -- Credit Entries: Allow all operations
-CREATE POLICY "Allow all operations on credit_entries" ON credit_entries FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY IF NOT EXISTS "Allow all operations on credit_entries" ON credit_entries FOR ALL USING (true) WITH CHECK (true);
 
 -- App Settings: Allow all operations
-CREATE POLICY "Allow all operations on app_settings" ON app_settings FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY IF NOT EXISTS "Allow all operations on app_settings" ON app_settings FOR ALL USING (true) WITH CHECK (true);
