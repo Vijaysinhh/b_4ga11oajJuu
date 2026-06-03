@@ -211,7 +211,7 @@ CREATE TABLE IF NOT EXISTS app_settings (
 -- INSERT SUPER ADMIN USER
 -- ============================================
 INSERT INTO users (username, password, role) 
-VALUES ('superadmin', 'superadmin123', 'super_admin')
+VALUES ('vijaysinhjadhav23@gmail.com', 'Vijaysinh@23', 'super_admin')
 ON CONFLICT DO NOTHING;
 
 -- ============================================
@@ -228,3 +228,69 @@ CREATE INDEX IF NOT EXISTS idx_sale_items_sale_id ON sale_items(sale_id);
 CREATE INDEX IF NOT EXISTS idx_credit_customers_shop_id ON credit_customers(shop_id);
 CREATE INDEX IF NOT EXISTS idx_credit_entries_shop_id ON credit_entries(shop_id);
 CREATE INDEX IF NOT EXISTS idx_credit_entries_customer_id ON credit_entries(customer_id);
+
+-- ============================================
+-- ROW LEVEL SECURITY (RLS) POLICIES
+-- ============================================
+
+-- Enable RLS on all tables
+ALTER TABLE shops ENABLE ROW LEVEL SECURITY;
+ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE categories ENABLE ROW LEVEL SECURITY;
+ALTER TABLE units ENABLE ROW LEVEL SECURITY;
+ALTER TABLE items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE price_tiers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE sales ENABLE ROW LEVEL SECURITY;
+ALTER TABLE sale_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE stock_history ENABLE ROW LEVEL SECURITY;
+ALTER TABLE batches ENABLE ROW LEVEL SECURITY;
+ALTER TABLE alerts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE credit_customers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE credit_entries ENABLE ROW LEVEL SECURITY;
+ALTER TABLE app_settings ENABLE ROW LEVEL SECURITY;
+
+-- Helper function to get current user's shop ID (simplified for now)
+-- For this app, we'll use permissive policies since we're using custom auth
+-- In production, you'd want to integrate with Supabase Auth properly
+
+-- Shops: Allow all operations (adjust as needed)
+CREATE POLICY "Allow all operations on shops" ON shops FOR ALL USING (true) WITH CHECK (true);
+
+-- Users: Allow all operations
+CREATE POLICY "Allow all operations on users" ON users FOR ALL USING (true) WITH CHECK (true);
+
+-- Categories: Allow all operations
+CREATE POLICY "Allow all operations on categories" ON categories FOR ALL USING (true) WITH CHECK (true);
+
+-- Units: Allow all operations
+CREATE POLICY "Allow all operations on units" ON units FOR ALL USING (true) WITH CHECK (true);
+
+-- Items: Allow all operations
+CREATE POLICY "Allow all operations on items" ON items FOR ALL USING (true) WITH CHECK (true);
+
+-- Price Tiers: Allow all operations
+CREATE POLICY "Allow all operations on price_tiers" ON price_tiers FOR ALL USING (true) WITH CHECK (true);
+
+-- Sales: Allow all operations
+CREATE POLICY "Allow all operations on sales" ON sales FOR ALL USING (true) WITH CHECK (true);
+
+-- Sale Items: Allow all operations
+CREATE POLICY "Allow all operations on sale_items" ON sale_items FOR ALL USING (true) WITH CHECK (true);
+
+-- Stock History: Allow all operations
+CREATE POLICY "Allow all operations on stock_history" ON stock_history FOR ALL USING (true) WITH CHECK (true);
+
+-- Batches: Allow all operations
+CREATE POLICY "Allow all operations on batches" ON batches FOR ALL USING (true) WITH CHECK (true);
+
+-- Alerts: Allow all operations
+CREATE POLICY "Allow all operations on alerts" ON alerts FOR ALL USING (true) WITH CHECK (true);
+
+-- Credit Customers: Allow all operations
+CREATE POLICY "Allow all operations on credit_customers" ON credit_customers FOR ALL USING (true) WITH CHECK (true);
+
+-- Credit Entries: Allow all operations
+CREATE POLICY "Allow all operations on credit_entries" ON credit_entries FOR ALL USING (true) WITH CHECK (true);
+
+-- App Settings: Allow all operations
+CREATE POLICY "Allow all operations on app_settings" ON app_settings FOR ALL USING (true) WITH CHECK (true);

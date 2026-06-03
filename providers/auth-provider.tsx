@@ -115,18 +115,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const login = useCallback(async (username: string, password: string) => {
     try {
       // First, check if it's a super admin
-      if (username === 'superadmin' && password === 'superadmin123') {
-        const superAdminUser: User = {
-          id: 0,
-          shop_id: null,
-          username: 'superadmin',
-          password: 'superadmin123',
-          role: 'super_admin',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        };
+    if (username === 'vijaysinhjadhav23@gmail.com' && password === 'Vijaysinh@23') {
+      const superAdminUser: User = {
+        id: 0,
+        shop_id: null,
+        username: 'vijaysinhjadhav23@gmail.com',
+        password: 'Vijaysinh@23',
+        role: 'super_admin',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
         setUser(superAdminUser);
         localStorage.setItem('auth_user', JSON.stringify(superAdminUser));
         return { success: true };

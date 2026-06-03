@@ -80,7 +80,7 @@ export default function LoginPage() {
 
   const handleQuickBypass = async () => {
     hasNavigated.current = true;
-    const result = await login('superadmin', 'superadmin123');
+    const result = await login('vijaysinhjadhav23@gmail.com', 'Vijaysinh@23');
     if (result.success) {
       router.push('/super-admin');
     }
@@ -108,7 +108,7 @@ export default function LoginPage() {
             <div className="p-3 bg-blue-50 text-blue-700 rounded-lg text-sm">
               <Shield className="h-4 w-4 inline mr-1" />
               Multi-Role System:
-              <br />• Super Admin: <code>superadmin</code> / <code>superadmin123</code>
+              <br />• Super Admin: <code>vijaysinhjadhav23@gmail.com</code> / <code>Vijaysinh@23</code>
               <br />• Shop Owner: Create from Super Admin
               <br />• Worker: Add from Owner's Settings
             </div>
