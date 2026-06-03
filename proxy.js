@@ -7,7 +7,7 @@ export function proxy(request) {
 export function handleAuthRedirect(request, label = "[Proxy]") {
   const pathname = request.nextUrl.pathname;
 
-  const publicRoutes = ["/login", "/api/auth"];
+  const publicRoutes = ["/login", "/login/superadmin", "/api/auth"];
   const publicFiles = [
     "/sw.js",
     "/manifest.json",

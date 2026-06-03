@@ -80,6 +80,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (parsedUser.id === 0) {
           // Super admin
           setUser(parsedUser);
+          // Set auth cookie if not present
+          document.cookie = `authToken=token-super-${Date.now()}; path=/; max-age=${60 * 60 * 24 * 7}`;
         } else {
           const { data } = await (supabase as any)
             .from('users')
@@ -90,6 +92,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (data) {
             const mappedUser = mapUser(data);
             setUser(mappedUser);
+            // Set auth cookie if not present
+            document.cookie = `authToken=token-${data.id}-${Date.now()}; path=/; max-age=${60 * 60 * 24 * 7}`;
             
             if (data.shop_id) {
               const { data: shop } = await (supabase as any)
@@ -129,6 +133,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       };
         setUser(superAdminUser);
         localStorage.setItem('auth_user', JSON.stringify(superAdminUser));
+        // Set auth cookie
+        document.cookie = `authToken=token-super-${Date.now()}; path=/; max-age=${60 * 60 * 24 * 7}`;
         return { success: true };
       }
 
@@ -170,6 +176,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setUser(mappedUser);
           setCurrentShop(mappedShop);
           localStorage.setItem('auth_user', JSON.stringify(mappedUser));
+          // Set auth cookie
+          document.cookie = `authToken=token-${ownerUser.id}-${Date.now()}; path=/; max-age=${60 * 60 * 24 * 7}`;
           return { success: true };
         }
       }
@@ -200,6 +208,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         
         localStorage.setItem('auth_user', JSON.stringify(mappedUser));
+        // Set auth cookie
+        document.cookie = `authToken=token-${worker.id}-${Date.now()}; path=/; max-age=${60 * 60 * 24 * 7}`;
         return { success: true };
       }
 
@@ -214,6 +224,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
     setCurrentShop(null);
     localStorage.removeItem('auth_user');
+    // Clear auth cookie
+    document.cookie = "authToken=; path=/; max-age=0";
   }, []);
 
   return (
