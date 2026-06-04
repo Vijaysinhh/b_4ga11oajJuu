@@ -206,27 +206,6 @@ export function SalesTransaction() {
 
       await updateStockAfterSale(saleItems);
 
-      if (isUdharSale && finalCreditCustomerId) {
-        await addCredit(
-          finalCreditCustomerId,
-          totals.subtotal,
-          `Sale bill - ${items.length} item${items.length === 1 ? "" : "s"}`,
-          items.map((item) => ({
-            itemName: item.itemName,
-            quantity: item.quantity,
-            displayQuantity: item.displayQuantity,
-            unitShortForm: item.unitShortForm,
-            priceTierId: item.priceTierId,
-            packCount: item.packCount,
-            priceTierQuantity: item.priceTierQuantity,
-            priceTierUnitShortForm: item.priceTierUnitShortForm,
-            pricePerUnit: item.pricePerUnit,
-            totalPrice: item.totalPrice,
-          })),
-          Number(saleId),
-        );
-      }
-
       toast.success(t("success"));
       resetSale();
       window.dispatchEvent(new Event('refresh-dukan-data'));

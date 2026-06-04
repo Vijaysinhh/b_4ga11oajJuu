@@ -6,7 +6,7 @@ import { PageContainer, PageHeader } from "@/components/page-shell";
 import { useLanguage } from "@/providers/language-provider";
 import { useAuth } from "@/providers/auth-provider";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useSales, useItems, useUnits, usePriceTiers } from "@/hooks/use-supabase";
+import { useSales, useItems, useUnits, usePriceTiers, useUdhari } from "@/hooks/use-supabase";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -16,13 +16,450 @@ import {
   ChevronRight,
   ChevronDown,
   ChevronUp,
+  Edit,
+  Trash2,
+  X,
 } from "lucide-react";
 import { dateKey } from "@/lib/utils";
-import { formatMoney, formatPercent, formatWholeNumber } from "@/lib/number-format";
+import { formatMoney, formatPercent, formatWholeNumber, cleanWholeNumberInput } from "@/lib/number-format";
 import {
   formatSaleLineSubtitle,
   inferSaleLineDisplayFields,
 } from "@/lib/sale-item-display";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { SalesItemSearch } from "@/components/sales-item-search";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { toast } from "sonner";
+
+// Let's make a modified version of SalesTransaction that can edit an existing sale
+function EditSaleDialog({ 
+  sale, 
+  open, 
+  onClose 
+}: { 
+  sale: any; 
+  open: boolean; 
+  onClose: () => void; 
+}) {
+  const { currentShopId } = useAuth();
+  const { updateSale, updateStockAfterSale } = useSales(currentShopId);
+  const { customers, addCustomer, addCredit } = useUdhari(currentShopId);
+  const { items: allItems } = useItems(currentShopId);
+  const { t } = useLanguage();
+  
+  // Initialize state from the existing sale
+  const [items, setItems] = useState<any[]>([]);
+  const [paymentMethod, setPaymentMethod] = useState<string>("cash");
+  const [creditCustomerId, setCreditCustomerId] = useState<number | null>(null);
+  const [newCustomerName, setNewCustomerName] = useState("");
+  const [newCustomerPhone, setNewCustomerPhone] = useState("");
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [editingItemIndex, setEditingItemIndex] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (sale) {
+      setItems(sale.items || []);
+      setPaymentMethod(sale.paymentMethod);
+      setCreditCustomerId(sale.creditCustomerId || null);
+    }
+  }, [sale]);
+
+  const totals = {
+    subtotal: items.reduce((sum, item) => sum + (item.totalPrice || 0), 0),
+    totalCost: items.reduce((sum, item) => sum + (item.totalCost || 0), 0),
+    totalProfit: items.reduce(
+      (sum, item) => sum + ((item.totalPrice || 0) - (item.totalCost || 0)),
+      0,
+    ),
+  };
+
+  const isUdharSale = paymentMethod === "udhar";
+  const selectedCreditCustomer =
+    customers.find((customer) => customer.id === creditCustomerId) || null;
+  const profitMarginPercent =
+    totals.subtotal > 0 ? (totals.totalProfit / totals.subtotal) * 100 : 0;
+
+  const handleItemAdded = (item: any) => {
+    setItems([...items, item]);
+    toast.success(`${item.itemName} ${t("success")}`);
+  };
+
+  const handleRemoveItem = (index: number) => {
+    setItems(items.filter((_, i) => i !== index));
+  };
+
+  const handleEditItem = (index: number) => {
+    setEditingItemIndex(index);
+  };
+
+  const handleItemEdited = (newItem: any) => {
+    if (editingItemIndex === null) return;
+    const updatedItems = [...items];
+    updatedItems[editingItemIndex] = newItem;
+    setItems(updatedItems);
+    setEditingItemIndex(null);
+  };
+
+  const handlePaymentChange = (value: string) => {
+    const nextPaymentMethod = value;
+    setPaymentMethod(nextPaymentMethod);
+    if (nextPaymentMethod !== "udhar") {
+      setCreditCustomerId(null);
+      setNewCustomerName("");
+      setNewCustomerPhone("");
+    }
+  };
+
+  const handleUpdateSale = async () => {
+    if (items.length === 0) {
+      toast.error(t("error"));
+      return;
+    }
+
+    if (isUdharSale && !selectedCreditCustomer && !newCustomerName.trim()) {
+      toast.error(t("error"));
+      return;
+    }
+
+    setIsProcessing(true);
+    try {
+      const saleItems: any[] = items.map((item) => ({
+        itemId: item.itemId,
+        itemName: item.itemName,
+        quantity: item.quantity,
+        displayQuantity: item.displayQuantity,
+        unitId: item.unitId,
+        unitShortForm: item.unitShortForm,
+        priceTierId: item.priceTierId,
+        packCount: item.packCount,
+        priceTierQuantity: item.priceTierQuantity,
+        priceTierUnitShortForm: item.priceTierUnitShortForm,
+        pricePerUnit: item.pricePerUnit,
+        totalPrice: item.totalPrice,
+        costPerUnit: item.costPerUnit,
+        totalCost: item.totalCost,
+        profit: item.totalPrice - item.totalCost,
+      }));
+
+      let finalCreditCustomerId = creditCustomerId;
+      let finalCreditCustomerName = selectedCreditCustomer?.name || "";
+
+      if (isUdharSale && !finalCreditCustomerId) {
+        const createdCustomerId = await addCustomer({
+          name: newCustomerName.trim(),
+          phone: newCustomerPhone.trim() || undefined,
+        });
+        finalCreditCustomerId = Number(createdCustomerId);
+        finalCreditCustomerName = newCustomerName.trim();
+      }
+
+      await updateSale(sale.id, {
+        date: sale.date,
+        timestamp: sale.timestamp,
+        items: saleItems,
+        totalQuantityItems: items.length,
+        subtotal: totals.subtotal,
+        totalCost: totals.totalCost,
+        totalProfit: totals.totalProfit,
+        profitMarginPercent,
+        paymentMethod,
+        creditCustomerId: isUdharSale
+          ? finalCreditCustomerId || undefined
+          : undefined,
+        creditCustomerName: isUdharSale ? finalCreditCustomerName : undefined,
+      });
+
+      toast.success("Sale updated successfully!");
+      onClose();
+    } catch (error) {
+      console.error("Error updating sale:", error);
+      toast.error(t("error"));
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  if (!sale) return null;
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Edit Sale</DialogTitle>
+        </DialogHeader>
+        {/* Reuse the sales transaction UI for editing */}
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+          <div className="lg:col-span-1">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">{t("add_items")}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {editingItemIndex !== null && (
+                  <Button
+                    variant="outline"
+                    className="mb-2 w-full"
+                    onClick={() => setEditingItemIndex(null)}
+                  >
+                    <X className="mr-2 h-4 w-4" />
+                    Cancel Edit Item
+                  </Button>
+                )}
+                <SalesItemSearch 
+                  onItemAdded={handleItemAdded} 
+                  addedItems={items} 
+                  itemToEdit={editingItemIndex !== null ? items[editingItemIndex] : undefined} 
+                  onItemEdited={handleItemEdited} 
+                />
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="space-y-3 lg:col-span-2">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">
+                  {t("sale_items")} ({items.length})
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {items.length === 0 ? (
+                  <div className="py-8 text-center text-gray-500">
+                    <p>{t("no_items_added")}</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {items.map((item, index) => {
+                      const profit = item.totalPrice - item.totalCost;
+                      const marginPct =
+                        item.totalPrice > 0 ? (profit / item.totalPrice) * 100 : 0;
+                      return (
+                        <div
+                          key={`${item.itemId}-${index}`}
+                          className="flex items-start justify-between rounded border bg-gray-50 p-3 transition hover:bg-gray-100"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="text-sm font-semibold">
+                              {item.itemName} - {item.displayQuantity}
+                            </div>
+                            <div className="mt-1 space-y-1 text-xs text-muted-foreground">
+                              <div>
+                                {t("selling")}: {formatSaleLineSubtitle(item)} ={" "}
+                                <span className="font-semibold text-blue-600">
+                                  Rs. {formatMoney(item.totalPrice)}
+                                </span>
+                              </div>
+                              <div>
+                                {t("cost")}: Rs. {formatMoney(item.totalCost)}
+                              </div>
+                            </div>
+                            <div className="mt-1 text-xs font-semibold">
+                              <span
+                                className={
+                                  profit > 0 ? "text-green-700" : "text-red-700"
+                                }
+                              >
+                                {t("profit_amount")}: Rs. {formatMoney(profit)} (
+                                {formatPercent(marginPct)}%)
+                              </span>
+                            </div>
+                          </div>
+                          <div className="flex gap-1">
+                            <button
+                              onClick={() => handleEditItem(index)}
+                              className="flex-shrink-0 text-blue-600 hover:text-blue-800"
+                              aria-label={`Edit ${item.itemName}`}
+                            >
+                              <Edit className="h-4 w-4" />
+                            </button>
+                            <button
+                              onClick={() => handleRemoveItem(index)}
+                              className="flex-shrink-0 text-red-600 hover:text-red-800"
+                              aria-label={`Remove ${item.itemName}`}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {items.length > 0 && (
+              <>
+                <Card className="border-green-200 bg-green-50">
+                  <CardContent className="pt-4">
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span>{t("total_revenue")}:</span>
+                        <span className="font-bold">
+                          Rs. {formatMoney(totals.subtotal)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>{t("total_cost")}:</span>
+                        <span className="font-bold">
+                          Rs. {formatMoney(totals.totalCost)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between border-t pt-2 text-base">
+                        <span>{t("total_profit")}:</span>
+                        <span
+                          className={`font-bold ${totals.totalProfit >= 0 ? "text-green-700" : "text-red-700"}`}
+                        >
+                          Rs. {formatMoney(totals.totalProfit)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-xs text-gray-600">
+                        <span>{t("margin")} %:</span>
+                        <span className="font-semibold">
+                          {formatPercent(profitMarginPercent)}%
+                        </span>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardContent className="space-y-3 pt-4">
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold text-gray-700">
+                        {t("payment_method")}
+                      </label>
+                      <Select
+                        value={paymentMethod}
+                        onValueChange={handlePaymentChange}
+                      >
+                        <SelectTrigger className="h-9">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="cash">{t("cash")}</SelectItem>
+                          <SelectItem value="card">{t("card")}</SelectItem>
+                          <SelectItem value="partial">{t("partial")}</SelectItem>
+                          <SelectItem value="udhar">{t("udhar")}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {isUdharSale && (
+                      <div className="space-y-3 rounded-md border border-orange-200 bg-orange-50 p-3">
+                        <div>
+                          <label className="mb-1 block text-xs font-semibold text-orange-900">
+                            {t("udhari_customer")}
+                          </label>
+                          <Select
+                            value={
+                              creditCustomerId ? creditCustomerId.toString() : "new"
+                            }
+                            onValueChange={(value) =>
+                              setCreditCustomerId(
+                                value === "new" ? null : Number(value),
+                              )
+                            }
+                          >
+                            <SelectTrigger className="h-9 bg-white">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="new">
+                                {t("new_customer")}
+                              </SelectItem>
+                              {customers.map((customer) => (
+                                <SelectItem
+                                  key={customer.id}
+                                  value={customer.id!.toString()}
+                                >
+                                  {customer.name} - Rs.{" "}
+                                  {formatMoney(customer.balance)}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        {!creditCustomerId && (
+                          <div className="grid gap-2 sm:grid-cols-2">
+                            <div>
+                              <label className="mb-1 block text-xs font-semibold text-orange-900">
+                                {t("customer_name")}
+                              </label>
+                              <Input
+                                value={newCustomerName}
+                                onChange={(event) =>
+                                  setNewCustomerName(event.target.value)
+                                }
+                                placeholder={t("name")}
+                                className="h-9 bg-white"
+                              />
+                            </div>
+                            <div>
+                              <label className="mb-1 block text-xs font-semibold text-orange-900">
+                                {t("mobile")}
+                              </label>
+                              <Input
+                                value={newCustomerPhone}
+                                onChange={(event) =>
+                                  setNewCustomerPhone(
+                                    cleanWholeNumberInput(event.target.value),
+                                  )
+                                }
+                                placeholder={t("optional")}
+                                inputMode="tel"
+                                className="h-9 bg-white"
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="flex gap-2">
+                      <Button onClick={onClose} variant="outline" className="flex-1">
+                        Cancel
+                      </Button>
+                      <Button
+                        onClick={handleUpdateSale}
+                        disabled={isProcessing}
+                        className="flex-1 bg-blue-600 hover:bg-blue-700"
+                      >
+                        {isProcessing ? "Updating..." : "Update Sale"}
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              </>
+            )}
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 const paymentBadgeStyles: Record<string, string> = {
   cash: "bg-green-100 text-green-800",
@@ -62,7 +499,7 @@ export default function SalesPage() {
   const { t } = useLanguage();
   const { user, currentShopId } = useAuth();
   const isWorker = user?.role === "worker";
-  const { sales } = useSales(currentShopId);
+  const { sales, deleteSale } = useSales(currentShopId);
   const { items } = useItems(currentShopId);
   const { units } = useUnits(currentShopId);
   const { priceTiers } = usePriceTiers(currentShopId);
@@ -70,6 +507,8 @@ export default function SalesPage() {
   // --- Date navigation state ---
   const [selectedDate, setSelectedDate] = useState(() => new Date());
   const [expandedSaleId, setExpandedSaleId] = useState<number | null>(null);
+  const [editingSale, setEditingSale] = useState<any | null>(null);
+  const [deleteSaleId, setDeleteSaleId] = useState<number | null>(null);
 
   const isToday = dateKey(selectedDate) === dateKey(new Date());
   const selectedDayKey = dateKey(selectedDate);
@@ -143,6 +582,18 @@ export default function SalesPage() {
     setExpandedSaleId(null);
   }, []);
 
+  const handleDeleteSale = async () => {
+    if (!deleteSaleId) return;
+    try {
+      await deleteSale(deleteSaleId);
+      toast.success("Sale deleted successfully!");
+      setDeleteSaleId(null);
+    } catch (error) {
+      console.error("Error deleting sale:", error);
+      toast.error("Failed to delete sale");
+    }
+  };
+
   return (
     <PageContainer size="wide">
       <PageHeader
@@ -154,9 +605,8 @@ export default function SalesPage() {
       <div className="space-y-6">
         <SalesTransaction />
 
-        {/* Show recent sales only for workers */}
-        {isWorker && (
-          <section className="space-y-3">
+        {/* Recent sales section for everyone */}
+        <section className="space-y-3">
             <div className="flex items-center justify-between gap-2">
               <Button
                 variant="ghost"
@@ -257,14 +707,14 @@ export default function SalesPage() {
                     }`}
                   >
                     {/* Collapsed header – always visible */}
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setExpandedSaleId(isExpanded ? null : (sale.id ?? null))
-                      }
-                      className="flex w-full items-center justify-between gap-3 px-3 py-3 text-left transition-colors hover:bg-muted/40"
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="flex w-full items-center justify-between gap-3 px-3 py-3">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setExpandedSaleId(isExpanded ? null : (sale.id ?? null))
+                        }
+                        className="flex items-center gap-2.5 min-w-0 flex-1 text-left transition-colors hover:bg-muted/40 -mx-3 -my-3 px-3 py-3"
+                      >
                         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-bold text-muted-foreground">
                           <Clock className="h-3.5 w-3.5" />
                         </div>
@@ -294,10 +744,32 @@ export default function SalesPage() {
                             {formatMoney(sale.subtotal)}
                           </p>
                         </div>
-                      </div>
+                      </button>
 
                       <div className="flex items-center gap-2 shrink-0">
-                        <div className="text-right">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-blue-600"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingSale(sale);
+                          }}
+                        >
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-red-600"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDeleteSaleId(sale.id);
+                          }}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                        <div className="text-right mr-2">
                           <p className="text-sm font-bold">
                             ₹{formatMoney(sale.subtotal)}
                           </p>
@@ -305,13 +777,20 @@ export default function SalesPage() {
                             +₹{formatMoney(sale.totalProfit)}
                           </p>
                         </div>
-                        {isExpanded ? (
-                          <ChevronUp className="h-4 w-4 text-muted-foreground" />
-                        ) : (
-                          <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                        )}
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setExpandedSaleId(isExpanded ? null : (sale.id ?? null))
+                          }
+                        >
+                          {isExpanded ? (
+                            <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                          ) : (
+                            <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                          )}
+                        </button>
                       </div>
-                    </button>
+                    </div>
 
                     {/* Expanded detail – per-item breakdown */}
                     {isExpanded && (
@@ -374,25 +853,49 @@ export default function SalesPage() {
                           })}
                         </div>
 
-                        {/* Transaction-level footer */}
-                        <div className="mt-2 flex items-center justify-between rounded-md bg-muted/60 px-2.5 py-2 text-xs">
-                          <div className="flex gap-3">
-                            <span>
-                              {t("cost")}:{" "}
-                              <span className="font-semibold">
-                                ₹{formatMoney(sale.totalCost)}
+                        {/* Transaction-level footer with Edit/Delete buttons */}
+                        <div className="mt-2 space-y-2">
+                          <div className="flex items-center justify-between rounded-md bg-muted/60 px-2.5 py-2 text-xs">
+                            <div className="flex gap-3">
+                              <span>
+                                {t("cost")}:{" "}
+                                <span className="font-semibold">
+                                  ₹{formatMoney(sale.totalCost)}
+                                </span>
                               </span>
-                            </span>
-                            <span className="text-green-700">
-                              {t("profit_amount")}:{" "}
-                              <span className="font-semibold">
-                                ₹{formatMoney(sale.totalProfit)}
+                              <span className="text-green-700">
+                                {t("profit_amount")}:{" "}
+                                <span className="font-semibold">
+                                  ₹{formatMoney(sale.totalProfit)}
+                                </span>
                               </span>
+                            </div>
+                            <span className="font-semibold">
+                              {formatPercent(sale.profitMarginPercent)}%
                             </span>
                           </div>
-                          <span className="font-semibold">
-                            {formatPercent(sale.profitMarginPercent)}%
-                          </span>
+                          
+                          {/* Edit and Delete buttons */}
+                          <div className="flex gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="flex-1"
+                              onClick={() => setEditingSale(sale)}
+                            >
+                              <Edit className="h-4 w-4 mr-1" />
+                              Edit
+                            </Button>
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              className="flex-1"
+                              onClick={() => setDeleteSaleId(sale.id)}
+                            >
+                              <Trash2 className="h-4 w-4 mr-1" />
+                              Delete
+                            </Button>
+                          </div>
                         </div>
                       </div>
                     )}
@@ -401,8 +904,32 @@ export default function SalesPage() {
               })}
             </div>
           </section>
-        )}
       </div>
+
+      {editingSale && (
+        <EditSaleDialog
+          sale={editingSale}
+          open={!!editingSale}
+          onClose={() => setEditingSale(null)}
+        />
+      )}
+
+      <AlertDialog open={!!deleteSaleId} onOpenChange={(open) => !open && setDeleteSaleId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you sure you want to delete this sale?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will restore the stock and reverse any udhari entries.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="flex justify-end gap-2">
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteSale} className="bg-red-600 hover:bg-red-700">
+              Delete
+            </AlertDialogAction>
+          </div>
+        </AlertDialogContent>
+      </AlertDialog>
     </PageContainer>
   );
 }

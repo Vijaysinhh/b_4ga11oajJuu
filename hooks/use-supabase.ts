@@ -467,6 +467,7 @@ export function useSales(shopId?: number) {
   }, [sales, saleItems]);
 
   const createSale = useCallback(async (saleData: any) => {
+    console.log("[Supabase] createSale called with:", saleData);
     if (!shopId) return null;
     const now = new Date().toISOString();
     // Convert timestamp to ISO string for TIMESTAMP WITH TIME ZONE column
@@ -496,6 +497,7 @@ export function useSales(shopId?: number) {
       .select('id')
       .single();
     
+    console.log("[Supabase] Inserted sale:", sale);
     if (error) {
       console.error("[Supabase] Error inserting sale:", error);
       throw error;
@@ -505,36 +507,78 @@ export function useSales(shopId?: number) {
 
     // Now insert sale items
     if (saleData.items && saleData.items.length > 0) {
-      const itemsToInsert = saleData.items.map((item: any) => ({
-        shop_id: shopId,
-        sale_id: (sale as any).id,
-        item_id: item.itemId,
-        item_name: item.itemName,
-        quantity: item.quantity,
-        display_quantity: item.displayQuantity ?? null,
-        unit_id: item.unitId,
-        unit_short_form: item.unitShortForm,
-        price_tier_id: item.priceTierId ?? null,
-        pack_count: item.packCount ?? null,
-        price_tier_quantity: item.priceTierQuantity ?? null,
-        price_tier_unit_short_form: item.priceTierUnitShortForm ?? null,
-        price_per_unit: item.pricePerUnit,
-        total_price: item.totalPrice,
-        cost_per_unit: item.costPerUnit,
-        total_cost: item.totalCost,
-        profit: item.profit,
-        created_at: now,
-      }));
-
+      const itemsToInsert = saleData.items.map((item: any) => {
+        const calculatedProfit = item.profit ?? (Number(item.totalPrice) - Number(item.totalCost));
+        return {
+          shop_id: shopId,
+          sale_id: (sale as any).id,
+          item_id: item.itemId ?? null,
+          item_name: item.itemName,
+          quantity: Number(item.quantity),
+          unit_id: item.unitId ?? null,
+          unit_short_form: item.unitShortForm ?? null,
+          price_per_unit: Number(item.pricePerUnit),
+          total_price: Number(item.totalPrice),
+          cost_per_unit: Number(item.costPerUnit),
+          total_cost: Number(item.totalCost),
+          profit: calculatedProfit,
+          created_at: now,
+        };
+      });
+      
       const { error: itemsError } = await (supabase as any).from('sale_items').insert(itemsToInsert);
       if (itemsError) {
-        console.error("[Supabase] Error inserting sale items:", itemsError);
+        console.error("[Supabase] Error inserting sale items - full error:", itemsError);
         throw itemsError;
       }
     }
 
-    // Refresh sales
+    // If it's an udhari sale, update customer balance and add credit entry!
+    if (paymentMethod === 'udhari' && saleData.creditCustomerId) {
+      // Update customer's balance
+      const { data: customer } = await (supabase as any)
+        .from('credit_customers')
+        .select('*')
+        .eq('id', saleData.creditCustomerId)
+        .single();
+        
+      if (customer) {
+        await (supabase as any)
+          .from('credit_customers')
+          .update({
+            balance: Math.max(customer.balance + saleData.subtotal, 0),
+            updated_at: now
+          })
+          .eq('id', saleData.creditCustomerId);
+          
+        // Insert credit entry
+        const entryDate = saleData.date;
+        const entryTimestamp = saleTimestamp;
+        await (supabase as any).from('credit_entries').insert({
+          shop_id: shopId,
+          customer_id: saleData.creditCustomerId,
+          customer_name: saleData.creditCustomerName,
+          type: 'credit',
+          amount: saleData.subtotal,
+          sale_id: (sale as any).id,
+          bill_items: saleData.items?.map((i: any) => ({
+            itemName: i.itemName,
+            quantity: i.quantity,
+            displayQuantity: i.displayQuantity,
+            unitShortForm: i.unitShortForm,
+            pricePerUnit: i.pricePerUnit,
+            totalPrice: i.totalPrice
+          })) || null,
+          date: entryDate,
+          timestamp: entryTimestamp,
+          created_at: now
+        });
+      }
+    }
+
+    // Refresh sales and udhari
     await loadSales();
+    window.dispatchEvent(new Event('refresh-dukan-data'));
 
     return (sale as any).id;
   }, [shopId, loadSales, supabase]);
@@ -617,6 +661,288 @@ export function useSales(shopId?: number) {
     };
   }, [salesWithItems, shopId]);
 
+  const updateSale = useCallback(async (saleId: number, updatedSaleData: any) => {
+    if (!shopId) return;
+    
+    // First get the original sale and items
+    const { data: originalSale } = await (supabase as any)
+      .from('sales')
+      .select('*')
+      .eq('id', saleId)
+      .single();
+    if (!originalSale) return;
+
+    const { data: originalItems } = await (supabase as any)
+      .from('sale_items')
+      .select('*')
+      .eq('sale_id', saleId);
+
+    // Step 1: Restore original stock first
+    if (originalItems && originalItems.length > 0) {
+      const { data: currentItems } = await (supabase as any)
+        .from('items')
+        .select('*')
+        .in('id', originalItems.map((i: any) => i.item_id).filter(Boolean));
+      if (currentItems) {
+        const quantityChanges = new Map<number, number>();
+        for (const item of originalItems) {
+          if (!item.item_id) continue;
+          quantityChanges.set(item.item_id, (quantityChanges.get(item.item_id) || 0) + item.quantity);
+        }
+        const historyEntries: any[] = [];
+        for (const [itemId, qtyToAdd] of quantityChanges) {
+          const currentItem = currentItems.find((i: any) => i.id === itemId);
+          if (currentItem) {
+            const newQty = Number((currentItem.quantity + qtyToAdd).toFixed(4));
+            await (supabase as any)
+              .from('items')
+              .update({ quantity: newQty, updated_at: new Date().toISOString() })
+              .eq('id', itemId);
+            historyEntries.push({
+              shop_id: shopId,
+              item_id: itemId,
+              item_name: currentItem.name,
+              type: 'adjustment',
+              quantity_changed: Number(qtyToAdd.toFixed(4)),
+              quantity_before: Number(currentItem.quantity.toFixed(4)),
+              quantity_after: newQty,
+              reason: `Restoring original stock from sale #${saleId}`,
+              cost_per_unit: originalItems.find((i: any) => i.item_id === itemId)?.cost_per_unit,
+              created_at: new Date().toISOString()
+            });
+          }
+        }
+        if (historyEntries.length > 0) {
+          await (supabase as any).from('stock_history').insert(historyEntries);
+        }
+      }
+    }
+
+    // Step 2: Update the sale in Supabase
+    const now = new Date().toISOString();
+    const paymentMethod = updatedSaleData.paymentMethod === 'udhar' ? 'udhari' : updatedSaleData.paymentMethod;
+    const saleTimestamp = typeof updatedSaleData.timestamp === 'number'
+      ? new Date(updatedSaleData.timestamp).toISOString()
+      : updatedSaleData.timestamp || now;
+
+    const { data: updatedSale } = await (supabase as any)
+      .from('sales')
+      .update({
+        date: updatedSaleData.date,
+        timestamp: saleTimestamp,
+        total_quantity_items: updatedSaleData.totalQuantityItems,
+        subtotal: updatedSaleData.subtotal,
+        total_cost: updatedSaleData.totalCost,
+        total_profit: updatedSaleData.totalProfit,
+        profit_margin_percent: updatedSaleData.profitMarginPercent,
+        payment_method: paymentMethod,
+        credit_customer_id: updatedSaleData.creditCustomerId,
+        credit_customer_name: updatedSaleData.creditCustomerName,
+        notes: updatedSaleData.notes,
+        updated_at: now
+      })
+      .eq('id', saleId)
+      .select('*')
+      .single();
+
+    // Step 3: Delete old sale items and insert new ones
+    await (supabase as any).from('sale_items').delete().eq('sale_id', saleId);
+    if (updatedSaleData.items && updatedSaleData.items.length > 0) {
+      const newItems = updatedSaleData.items.map((item: any) => {
+        const calculatedProfit = item.profit ?? (Number(item.totalPrice) - Number(item.totalCost));
+        return {
+          shop_id: shopId,
+          sale_id: saleId,
+          item_id: item.itemId ?? null,
+          item_name: item.itemName,
+          quantity: Number(item.quantity),
+          unit_id: item.unitId ?? null,
+          unit_short_form: item.unitShortForm ?? null,
+          price_per_unit: Number(item.pricePerUnit),
+          total_price: Number(item.totalPrice),
+          cost_per_unit: Number(item.costPerUnit),
+          total_cost: Number(item.totalCost),
+          profit: calculatedProfit,
+          created_at: now,
+        };
+      });
+      await (supabase as any).from('sale_items').insert(newItems);
+    }
+
+    // Step 4: Apply new stock changes
+    if (updatedSaleData.items && updatedSaleData.items.length > 0) {
+      const { data: currentItems2 } = await (supabase as any)
+        .from('items')
+        .select('*')
+        .eq('shop_id', shopId);
+      if (currentItems2) {
+        const quantityChanges2 = new Map<number, number>();
+        for (const item of updatedSaleData.items) {
+          quantityChanges2.set(item.itemId, (quantityChanges2.get(item.itemId) || 0) + item.quantity);
+        }
+        const historyEntries: any[] = [];
+        for (const [itemId, qtyToSubtract] of quantityChanges2) {
+          const currentItem = (currentItems2 as any[]).find(i => i.id === itemId);
+          if (!currentItem) continue;
+          const newQty = Number((currentItem.quantity - qtyToSubtract).toFixed(4));
+          await (supabase as any)
+            .from('items')
+            .update({ quantity: newQty, updated_at: new Date().toISOString() })
+            .eq('id', itemId);
+          historyEntries.push({
+            shop_id: shopId,
+            item_id: itemId,
+            item_name: currentItem.name,
+            type: 'sale',
+            quantity_changed: -Number(qtyToSubtract.toFixed(4)),
+            quantity_before: Number(currentItem.quantity.toFixed(4)),
+            quantity_after: newQty,
+            cost_per_unit: updatedSaleData.items.find((i: any) => i.itemId === itemId)?.costPerUnit,
+            created_at: new Date().toISOString()
+          });
+        }
+        if (historyEntries.length > 0) {
+          await (supabase as any).from('stock_history').insert(historyEntries);
+        }
+      }
+    }
+
+    // Step 5: Handle udhari balance changes if payment method or amount changed
+    const originalSubtotal = originalSale.subtotal;
+    const newSubtotal = updatedSaleData.subtotal;
+    const originalWasUdhari = originalSale.payment_method === 'udhari';
+    const newIsUdhari = paymentMethod === 'udhari';
+
+    // First, fetch the original credit entry to preserve original date and timestamp
+    let originalCreditEntry = null;
+    if (originalWasUdhari && originalSale.credit_customer_id) {
+      const { data: entry } = await (supabase as any)
+        .from('credit_entries')
+        .select('*')
+        .eq('sale_id', saleId)
+        .single();
+      originalCreditEntry = entry;
+    }
+
+    if (originalWasUdhari && originalSale.credit_customer_id) {
+      // Revert original balance first
+      const { data: originalCustomer } = await (supabase as any)
+        .from('credit_customers')
+        .select('*')
+        .eq('id', originalSale.credit_customer_id)
+        .single();
+      if (originalCustomer) {
+        let newBalance = originalCustomer.balance - originalSubtotal;
+        if (newIsUdhari && updatedSaleData.creditCustomerId === originalSale.credit_customer_id) {
+          newBalance += newSubtotal;
+        }
+        newBalance = Math.max(newBalance, 0);
+        await (supabase as any)
+          .from('credit_customers')
+          .update({ balance: newBalance, updated_at: now })
+          .eq('id', originalSale.credit_customer_id);
+      }
+      // Delete old credit entry
+      await (supabase as any).from('credit_entries').delete().eq('sale_id', saleId);
+      
+      // If still udhari and same customer, re-insert new credit entry with original date/timestamp
+      if (newIsUdhari && updatedSaleData.creditCustomerId === originalSale.credit_customer_id) {
+        const entryDate = originalCreditEntry?.date ?? dateKey(new Date(originalSale.timestamp));
+        const entryTimestamp = originalCreditEntry?.timestamp ?? originalSale.timestamp;
+        await (supabase as any).from('credit_entries').insert({
+          shop_id: shopId,
+          customer_id: updatedSaleData.creditCustomerId,
+          customer_name: updatedSaleData.creditCustomerName,
+          type: 'credit',
+          amount: newSubtotal,
+          sale_id: saleId,
+          bill_items: updatedSaleData.items?.map((i: any) => ({
+            itemName: i.itemName,
+            quantity: i.quantity,
+            displayQuantity: i.displayQuantity,
+            unitShortForm: i.unitShortForm,
+            pricePerUnit: i.pricePerUnit,
+            totalPrice: i.totalPrice
+          })) || null,
+          date: entryDate,
+          timestamp: entryTimestamp,
+          created_at: now
+        });
+      } else if (newIsUdhari && updatedSaleData.creditCustomerId !== originalSale.credit_customer_id) {
+        // If switched to new customer, insert new entry for new customer
+        const { data: newCustomer } = await (supabase as any)
+          .from('credit_customers')
+          .select('*')
+          .eq('id', updatedSaleData.creditCustomerId)
+          .single();
+        if (newCustomer) {
+          await (supabase as any)
+            .from('credit_customers')
+            .update({ balance: Math.max(newCustomer.balance + newSubtotal, 0), updated_at: now })
+            .eq('id', updatedSaleData.creditCustomerId);
+          const entryDate = dateKey(new Date(originalSale.timestamp));
+          const entryTimestamp = originalSale.timestamp;
+          await (supabase as any).from('credit_entries').insert({
+            shop_id: shopId,
+            customer_id: updatedSaleData.creditCustomerId,
+            customer_name: updatedSaleData.creditCustomerName,
+            type: 'credit',
+            amount: newSubtotal,
+            sale_id: saleId,
+            bill_items: updatedSaleData.items?.map((i: any) => ({
+              itemName: i.itemName,
+              quantity: i.quantity,
+              displayQuantity: i.displayQuantity,
+              unitShortForm: i.unitShortForm,
+              pricePerUnit: i.pricePerUnit,
+              totalPrice: i.totalPrice
+            })) || null,
+            date: entryDate,
+            timestamp: entryTimestamp,
+            created_at: now
+          });
+        }
+      }
+    } else if (!originalWasUdhari && newIsUdhari && updatedSaleData.creditCustomerId) {
+      // New udhari now
+      const { data: newCustomer } = await (supabase as any)
+        .from('credit_customers')
+        .select('*')
+        .eq('id', updatedSaleData.creditCustomerId)
+        .single();
+      if (newCustomer) {
+        await (supabase as any)
+          .from('credit_customers')
+          .update({ balance: Math.max(newCustomer.balance + newSubtotal, 0), updated_at: now })
+          .eq('id', updatedSaleData.creditCustomerId);
+        const entryDate = dateKey(new Date(originalSale.timestamp));
+        const entryTimestamp = originalSale.timestamp;
+        await (supabase as any).from('credit_entries').insert({
+          shop_id: shopId,
+          customer_id: updatedSaleData.creditCustomerId,
+          customer_name: updatedSaleData.creditCustomerName,
+          type: 'credit',
+          amount: newSubtotal,
+          sale_id: saleId,
+          bill_items: updatedSaleData.items?.map((i: any) => ({
+            itemName: i.itemName,
+            quantity: i.quantity,
+            displayQuantity: i.displayQuantity,
+            unitShortForm: i.unitShortForm,
+            pricePerUnit: i.pricePerUnit,
+            totalPrice: i.totalPrice
+          })) || null,
+          date: entryDate,
+          timestamp: entryTimestamp,
+          created_at: now
+        });
+      }
+    }
+
+    await loadSales();
+    window.dispatchEvent(new Event('refresh-dukan-data'));
+  }, [shopId, supabase, loadSales]);
+
   const deleteSale = useCallback(async (saleId: number) => {
     if (!shopId) return;
     
@@ -646,7 +972,7 @@ export function useSales(shopId?: number) {
         await (supabase as any)
           .from('credit_customers')
           .update({
-            balance: customer.balance - sale.subtotal,
+            balance: Math.max(customer.balance - sale.subtotal, 0),
             updated_at: new Date().toISOString()
           })
           .eq('id', sale.credit_customer_id);
@@ -713,7 +1039,7 @@ export function useSales(shopId?: number) {
     window.dispatchEvent(new Event('refresh-dukan-data'));
   }, [shopId, supabase, loadSales]);
 
-  return { sales: salesWithItems, saleItems, isLoading, refresh: loadSales, createSale, updateStockAfterSale, getDailySummary, deleteSale };
+  return { sales: salesWithItems, saleItems, isLoading, refresh: loadSales, createSale, updateSale, updateStockAfterSale, getDailySummary, deleteSale };
 }
 
 // --- Stock History ---
@@ -1010,7 +1336,7 @@ export function useUdhari(shopId?: number) {
     const customer = customers.find(c => c.id === customerId);
     if (customer) {
       const { error: customerError } = await (supabase as any).from('credit_customers').update({
-        balance: customer.balance - amount,
+        balance: Math.max(customer.balance - amount, 0),
         updated_at: now,
       }).eq('id', customerId);
       
@@ -1023,11 +1349,142 @@ export function useUdhari(shopId?: number) {
     window.dispatchEvent(new Event('refresh-dukan-data'));
   }, [shopId, customers, loadUdhari, supabase]);
 
+  const updateCustomer = useCallback(async (customerId: number, updates: any) => {
+    if (!shopId) return;
+    const now = new Date().toISOString();
+    const { data } = await (supabase as any)
+      .from('credit_customers')
+      .update({
+        name: updates.name,
+        phone: updates.phone || null,
+        notes: updates.notes || null,
+        updated_at: now
+      })
+      .eq('id', customerId)
+      .select('*')
+      .single();
+    if (data) {
+      await loadUdhari();
+    }
+  }, [shopId, supabase, loadUdhari]);
+
+  const deleteCustomer = useCallback(async (customerId: number) => {
+    if (!shopId) return;
+    // Check if customer has balance
+    const customer = customers.find(c => c.id === customerId);
+    if (customer && customer.balance !== 0) {
+      throw new Error("Cannot delete customer with non-zero balance");
+    }
+    await (supabase as any).from('credit_entries').delete().eq('customer_id', customerId);
+    await (supabase as any).from('credit_customers').delete().eq('id', customerId);
+    await loadUdhari();
+    window.dispatchEvent(new Event('refresh-dukan-data'));
+  }, [shopId, customers, supabase, loadUdhari]);
+
+  const updateCreditEntry = useCallback(async (entryId: number, updates: any) => {
+    if (!shopId) return;
+    const now = new Date().toISOString();
+    // Get original entry
+    const { data: originalEntry } = await (supabase as any)
+      .from('credit_entries')
+      .select('*')
+      .eq('id', entryId)
+      .single();
+    if (!originalEntry) return;
+
+    // Update customer balance first
+    const customer = customers.find(c => c.id === originalEntry.customer_id);
+    if (customer) {
+      let newBalance = customer.balance;
+      // Revert original change
+      if (originalEntry.type === 'credit') {
+        newBalance -= originalEntry.amount;
+      } else {
+        newBalance += originalEntry.amount;
+      }
+      // Apply new change
+      const newAmount = updates.amount ?? originalEntry.amount;
+      const newType = updates.type ?? originalEntry.type;
+      if (newType === 'credit') {
+        newBalance += newAmount;
+      } else {
+        newBalance -= newAmount;
+      }
+      newBalance = Math.max(newBalance, 0);
+      await (supabase as any)
+        .from('credit_customers')
+        .update({ balance: newBalance, updated_at: now })
+        .eq('id', originalEntry.customer_id);
+    }
+
+    // Update the entry itself
+    await (supabase as any)
+      .from('credit_entries')
+      .update({
+        amount: updates.amount ?? originalEntry.amount,
+        type: updates.type ?? originalEntry.type,
+        note: updates.note ?? originalEntry.note,
+        bill_items: updates.billItems ?? originalEntry.bill_items,
+        date: updates.date ?? originalEntry.date,
+        timestamp: updates.timestamp ? new Date(updates.timestamp).toISOString() : originalEntry.timestamp
+      })
+      .eq('id', entryId);
+
+    await loadUdhari();
+    window.dispatchEvent(new Event('refresh-dukan-data'));
+  }, [shopId, customers, supabase, loadUdhari]);
+
+  const deleteCreditEntry = useCallback(async (entryId: number) => {
+    if (!shopId) return;
+    const { data: entry } = await (supabase as any)
+      .from('credit_entries')
+      .select('*')
+      .eq('id', entryId)
+      .single();
+    if (!entry) return;
+
+    // Update customer balance
+    const customer = customers.find(c => c.id === entry.customer_id);
+    if (customer) {
+      let newBalance = customer.balance;
+      if (entry.type === 'credit') {
+        newBalance -= entry.amount;
+      } else {
+        newBalance += entry.amount;
+      }
+      newBalance = Math.max(newBalance, 0);
+      await (supabase as any)
+        .from('credit_customers')
+        .update({ balance: newBalance, updated_at: new Date().toISOString() })
+        .eq('id', entry.customer_id);
+    }
+
+    // Delete the entry
+    await (supabase as any).from('credit_entries').delete().eq('id', entryId);
+
+    await loadUdhari();
+    window.dispatchEvent(new Event('refresh-dukan-data'));
+  }, [shopId, customers, supabase, loadUdhari]);
+
   const getCustomerEntries = useCallback((customerId: number) => {
     return entries.filter(e => e.customerId === customerId);
   }, [entries]);
 
-  return { customers, entries, totalPending, isLoading, refresh: loadUdhari, addCustomer, addCredit, receivePayment, getCustomerEntries };
+  return { 
+    customers, 
+    entries, 
+    totalPending, 
+    isLoading, 
+    refresh: loadUdhari, 
+    addCustomer, 
+    updateCustomer,
+    deleteCustomer,
+    addCredit, 
+    receivePayment, 
+    updateCreditEntry,
+    deleteCreditEntry,
+    getCustomerEntries 
+  };
 }
 
 // --- Dashboard Stats ---

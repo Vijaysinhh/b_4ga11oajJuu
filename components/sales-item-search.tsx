@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useItems, useUnits, usePriceTiers } from "@/hooks/use-supabase";
 import { useAuth } from "@/providers/auth-provider";
 import { useLanguage } from "@/providers/language-provider";
@@ -40,11 +40,15 @@ interface SaleLineItem {
 interface SalesItemSearchProps {
   onItemAdded: (item: SaleLineItem) => void;
   addedItems: SaleLineItem[];
+  itemToEdit?: SaleLineItem;
+  onItemEdited?: (item: SaleLineItem) => void;
 }
 
 export function SalesItemSearch({
   onItemAdded,
   addedItems,
+  itemToEdit,
+  onItemEdited,
 }: SalesItemSearchProps) {
   const { currentShopId } = useAuth();
   const { items } = useItems(currentShopId);
@@ -58,6 +62,29 @@ export function SalesItemSearch({
   const [selectedPriceTier, setSelectedPriceTier] = useState<PriceTier | null>(
     null,
   );
+
+  // Initialize from itemToEdit if provided
+  useEffect(() => {
+    if (itemToEdit) {
+      const originalItem = items.find(i => i.id === itemToEdit.itemId);
+      if (originalItem) {
+        setSelectedItem(originalItem);
+        // Try to guess original quantity and price tier
+        setQuantity(itemToEdit.packCount ? itemToEdit.packCount.toString() : itemToEdit.quantity.toString());
+        if (itemToEdit.priceTierId) {
+          const tier = priceTiers.find(t => t.id === itemToEdit.priceTierId);
+          setSelectedPriceTier(tier || null);
+        } else {
+          setSelectedPriceTier(null);
+        }
+      }
+    } else {
+      // Reset if no item to edit
+      setSelectedItem(null);
+      setQuantity("");
+      setSelectedPriceTier(null);
+    }
+  }, [itemToEdit, items, priceTiers]);
 
   // Helper function to calculate actual quantity in item's base unit
   const calculateActualQuantity = (
@@ -102,10 +129,17 @@ export function SalesItemSearch({
   }, [selectedItem, priceTiers]);
 
   const getRemainingStock = (item: Item) => {
-    const inCart = addedItems
+    // Calculate total quantity in cart, but exclude the item we're currently editing
+    let inCart = addedItems
       .filter((line) => line.itemId === item.id)
       .reduce((sum, line) => sum + line.quantity, 0);
-    return item.quantity - inCart;
+    // If editing an item, subtract its original quantity from inCart since we are replacing it
+    if (itemToEdit && itemToEdit.itemId === item.id) {
+      inCart -= itemToEdit.quantity;
+    }
+    // Now calculate remaining stock: current stock minus (other items in cart)
+    const remaining = item.quantity - inCart + (itemToEdit && itemToEdit.itemId === item.id ? itemToEdit.quantity : 0);
+    return remaining;
   };
 
   const handleItemSelect = (item: Item) => {
@@ -121,7 +155,7 @@ export function SalesItemSearch({
 
     // Calculate actual quantity to be sold in item's base unit
     let totalQuantityToSell = qty;
-    const availableQuantity = getRemainingStock(selectedItem);
+    let availableQuantity = getRemainingStock(selectedItem);
     let quantityDisplay = `${formatNumber(qty)} ${units.find((u) => u.id === selectedItem.unitId)?.shortForm}`;
 
     if (selectedPriceTier) {
@@ -200,7 +234,7 @@ export function SalesItemSearch({
       ? units.find((u) => u.id === selectedPriceTier.unitId)
       : undefined;
 
-    onItemAdded({
+    const newItem = {
       itemId: selectedItem.id || 0,
       itemName:
         language === "mr" && selectedItem.nameMarathi
@@ -218,7 +252,13 @@ export function SalesItemSearch({
       totalPrice: totalQuantityToSell * pricePerUnit,
       costPerUnit: costPerUnit || selectedItem.buyPrice,
       totalCost: totalQuantityToSell * (costPerUnit || selectedItem.buyPrice),
-    });
+    };
+
+    if (itemToEdit && onItemEdited) {
+      onItemEdited(newItem);
+    } else {
+      onItemAdded(newItem);
+    }
 
     setSelectedItem(null);
     setQuantity("");
