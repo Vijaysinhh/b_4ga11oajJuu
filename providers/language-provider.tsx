@@ -85,6 +85,7 @@ const translations: Record<string, Record<'en' | 'mr', string>> = {
   'this_year': { en: 'This Year', mr: 'या वर्षी' },
   'pdf_report': { en: 'PDF', mr: 'पीडीएफ' },
   'left_limit': { en: 'left, limit', mr: 'शिल्लक, मर्यादा' },
+  'highest_udhar': { en: 'Highest Udhar', mr: 'सर्वाधिक उधार' },
 
   // Udhari Page
   'customer': { en: 'Customer', mr: 'ग्राहक' },

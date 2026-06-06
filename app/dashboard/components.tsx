@@ -820,7 +820,7 @@ export function Dashboard() {
         </p>
       </div>
 
-      {/* ─── Top 4 Summary Cards (unchanged) ─── */}
+      {/* ─── Top 4 Summary Cards ─── */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Card className="border-2">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -1294,6 +1294,32 @@ export function Dashboard() {
           </CardContent>
         </Card>
       </section>
+
+      {/* ─── Highest Udhar Customer ─── */}
+      {highestUdharCustomer && (
+        <section className="space-y-3">
+          <h2 className="text-xl font-bold">{t("highest_udhar")}</h2>
+          <Card 
+            className="border-2 cursor-pointer hover:border-orange-400 transition-all"
+            onClick={() => router.push('/udhari')}
+          >
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">
+                {highestUdharCustomer.name}
+              </CardTitle>
+              <CreditCard className="h-4 w-4 text-orange-600" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-orange-600">
+                Rs. {formatMoney(highestUdharCustomer.balance)}
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {t("pending")}
+              </p>
+            </CardContent>
+          </Card>
+        </section>
+      )}
 
       {/* ─── High Margin Items (unchanged) ─── */}
       {topMarginItems.length > 0 && (
