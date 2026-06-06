@@ -16,6 +16,8 @@ export interface Item {
   id?: number;
   name: string;
   nameMarathi: string;
+  brand?: string;
+  brandMarathi?: string;
   categoryId: number;
   unitId: number;
   quantity: number;

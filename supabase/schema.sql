@@ -57,6 +57,8 @@ CREATE TABLE IF NOT EXISTS items (
     shop_id BIGINT REFERENCES shops(id) ON DELETE CASCADE,
     name VARCHAR(255) NOT NULL,
     name_marathi VARCHAR(255),
+    brand VARCHAR(255),
+    brand_marathi VARCHAR(255),
     category_id BIGINT REFERENCES categories(id) ON DELETE SET NULL,
     unit_id BIGINT REFERENCES units(id) ON DELETE SET NULL,
     quantity NUMERIC NOT NULL DEFAULT 0 CHECK (quantity >= 0),

@@ -118,7 +118,11 @@ export function SalesItemSearch({
         const matchesNameMr = item.nameMarathi
           ? item.nameMarathi.toLowerCase().includes(term)
           : false;
-        return matchesName || matchesNameMr;
+        const matchesBrand = item.brand ? item.brand.toLowerCase().includes(term) : false;
+        const matchesBrandMr = item.brandMarathi
+          ? item.brandMarathi.toLowerCase().includes(term)
+          : false;
+        return matchesName || matchesNameMr || matchesBrand || matchesBrandMr;
       })
       .slice(0, 10);
   }, [searchTerm, items]);
@@ -236,10 +240,17 @@ export function SalesItemSearch({
 
     const newItem = {
       itemId: selectedItem.id || 0,
-      itemName:
-        language === "mr" && selectedItem.nameMarathi
-          ? selectedItem.nameMarathi
-          : selectedItem.name,
+      itemName: (() => {
+        const baseName =
+          language === "mr" && selectedItem.nameMarathi
+            ? selectedItem.nameMarathi
+            : selectedItem.name;
+        const brandName =
+          language === "mr" && selectedItem.brandMarathi
+            ? selectedItem.brandMarathi
+            : selectedItem.brand;
+        return brandName ? `${baseName} (${brandName})` : baseName;
+      })(),
       quantity: totalQuantityToSell,
       displayQuantity: quantityDisplay,
       unitId: selectedItem.unitId,
@@ -288,9 +299,13 @@ export function SalesItemSearch({
               className="h-auto min-h-12 w-full border-b p-3 text-left last:border-b-0 hover:bg-gray-100 sm:p-2"
             >
               <div className="text-sm font-semibold">
-                {language === "mr" && item.nameMarathi
-                  ? item.nameMarathi
-                  : item.name}
+                {(() => {
+                  const baseName =
+                    language === "mr" && item.nameMarathi ? item.nameMarathi : item.name;
+                  const brandName =
+                    language === "mr" && item.brandMarathi ? item.brandMarathi : item.brand;
+                  return brandName ? `${baseName} (${brandName})` : baseName;
+                })()}
               </div>
               <div className="text-xs text-gray-600">
                 {t("stock")}: {formatNumber(item.quantity)}
@@ -306,9 +321,17 @@ export function SalesItemSearch({
           <div className="mb-2 flex items-start justify-between">
             <div>
               <div className="text-sm font-bold">
-                {language === "mr" && selectedItem.nameMarathi
-                  ? selectedItem.nameMarathi
-                  : selectedItem.name}
+                {(() => {
+                  const baseName =
+                    language === "mr" && selectedItem.nameMarathi
+                      ? selectedItem.nameMarathi
+                      : selectedItem.name;
+                  const brandName =
+                    language === "mr" && selectedItem.brandMarathi
+                      ? selectedItem.brandMarathi
+                      : selectedItem.brand;
+                  return brandName ? `${baseName} (${brandName})` : baseName;
+                })()}
               </div>
               <div className="text-xs text-gray-600">
                 {t("stock")}: {formatNumber(getRemainingStock(selectedItem))}

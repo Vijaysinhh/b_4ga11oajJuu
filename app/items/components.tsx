@@ -41,6 +41,8 @@ import { formatMoney, formatPercent, formatWholeNumber, parseWholeNumberInput } 
 interface ItemFormData {
   name: string;
   nameMarathi: string;
+  brand: string;
+  brandMarathi: string;
   categoryId: number;
   unitId: number;
   quantity: number;
@@ -88,6 +90,8 @@ export function ItemsManagement() {
   const [formData, setFormData] = useState<ItemFormData>({
     name: '',
     nameMarathi: '',
+    brand: '',
+    brandMarathi: '',
     categoryId: categories[0]?.id || 1,
     unitId: units[0]?.id || 1,
     quantity: 0,
@@ -104,12 +108,22 @@ export function ItemsManagement() {
     });
   }, [items, searchTerm, selectedCategoryId]);
 
+  const totalStockValue = useMemo(() => {
+    return items.reduce((sum, item) => {
+      const qty = Number(item.quantity || 0);
+      const cost = Number(item.buyPrice || 0);
+      return sum + qty * cost;
+    }, 0);
+  }, [items]);
+
   const handleOpenDialog = (item?: (typeof items)[0]) => {
     if (item) {
       setEditingId(item.id || null);
       setFormData({
         name: item.name,
         nameMarathi: item.nameMarathi || '',
+        brand: item.brand || '',
+        brandMarathi: item.brandMarathi || '',
         categoryId: item.categoryId,
         unitId: item.unitId,
         quantity: item.quantity,
@@ -122,6 +136,8 @@ export function ItemsManagement() {
       setFormData({
         name: '',
         nameMarathi: '',
+        brand: '',
+        brandMarathi: '',
         categoryId: categories[0]?.id || 1,
         unitId: units[0]?.id || 1,
         quantity: 0,
@@ -137,6 +153,8 @@ export function ItemsManagement() {
     setFormData({
       name: '',
       nameMarathi: '',
+      brand: '',
+      brandMarathi: '',
       categoryId: categories[0]?.id || 1,
       unitId: units[0]?.id || 1,
       quantity: 0,
@@ -149,16 +167,43 @@ export function ItemsManagement() {
   };
 
   const handleSave = async () => {
-    if (
-      !formData.name.trim() ||
-      formData.categoryId === 0 ||
-      formData.unitId === 0 ||
-      formData.quantity < 0 ||
-      formData.buyPrice <= 0 ||
-      formData.sellPrice <= 0 ||
-      formData.sellPrice < formData.buyPrice
-    ) {
-      toast.error('Please fill all fields correctly. Selling price must be greater than buying price.');
+    if (categories.length === 0) {
+      toast.error('Please add a category first.');
+      return;
+    }
+    if (units.length === 0) {
+      toast.error('Please add a unit first.');
+      return;
+    }
+    if (!categories.some((c) => c.id === formData.categoryId)) {
+      toast.error('Please select a valid category.');
+      return;
+    }
+    if (!units.some((u) => u.id === formData.unitId)) {
+      toast.error('Please select a valid unit.');
+      return;
+    }
+    const name = formData.name.trim();
+    if (!name) {
+      toast.error('Please enter item name.');
+      return;
+    }
+    if (!Number.isFinite(formData.quantity) || formData.quantity < 0) {
+      toast.error('Please enter a valid quantity.');
+      return;
+    }
+    if (!Number.isFinite(formData.buyPrice) || formData.buyPrice <= 0) {
+      toast.error(`Please enter a valid buying price. Current: Rs. ${formData.buyPrice || 0}`);
+      return;
+    }
+    if (!Number.isFinite(formData.sellPrice) || formData.sellPrice <= 0) {
+      toast.error(`Please enter a valid selling price. Current: Rs. ${formData.sellPrice || 0}`);
+      return;
+    }
+    if (formData.sellPrice < formData.buyPrice) {
+      toast.error(
+        `Selling price must be greater than buying price. Buying: Rs. ${formData.buyPrice}, Selling: Rs. ${formData.sellPrice}`,
+      );
       return;
     }
 
@@ -167,6 +212,8 @@ export function ItemsManagement() {
         await updateItem(editingId, {
           name: formData.name,
           nameMarathi: formData.nameMarathi,
+          brand: formData.brand,
+          brandMarathi: formData.brandMarathi,
           categoryId: formData.categoryId,
           unitId: formData.unitId,
           quantity: formData.quantity,
@@ -176,9 +223,11 @@ export function ItemsManagement() {
         });
         toast.success('Item updated successfully');
       } else {
-        await addItem({
+        const newId = await addItem({
           name: formData.name,
           nameMarathi: formData.nameMarathi,
+          brand: formData.brand,
+          brandMarathi: formData.brandMarathi,
           categoryId: formData.categoryId,
           unitId: formData.unitId,
           quantity: formData.quantity,
@@ -186,12 +235,20 @@ export function ItemsManagement() {
           sellPrice: formData.sellPrice,
           lowStockLimit: formData.lowStockLimit,
         });
+        if (!newId) {
+          throw new Error('Item saved but could not be loaded');
+        }
         toast.success('Item added successfully');
       }
       resetForm();
     } catch (error) {
       console.error('[v0] Error saving item:', error);
-      toast.error('Error saving item. Please try again.');
+      const message =
+        (error as any)?.message ||
+        (error as any)?.details ||
+        (error as any)?.hint ||
+        (error as any)?.error_description;
+      toast.error(message ? `Error saving item: ${message}` : 'Error saving item. Please try again.');
     }
   };
 
@@ -272,6 +329,18 @@ export function ItemsManagement() {
         <p className="text-muted-foreground text-sm sm:text-base">Manage your product inventory</p>
       </div>
 
+      <Card className="border-2">
+        <CardContent className="p-4 flex items-center justify-between">
+          <div>
+            <p className="text-sm font-semibold">{t('total_value_label')}</p>
+            <p className="text-xs text-muted-foreground">
+              {items.length} {t('products')}
+            </p>
+          </div>
+          <p className="text-xl font-bold text-purple-700">Rs. {formatMoney(totalStockValue)}</p>
+        </CardContent>
+      </Card>
+
       <Dialog open={isOpen} onOpenChange={setIsOpen}>
         <DialogTrigger asChild>
           <Button onClick={() => handleOpenDialog()} className="w-full sm:w-auto gap-2">
@@ -315,6 +384,32 @@ export function ItemsManagement() {
                   value={formData.nameMarathi}
                   onChange={(e) => setFormData({ ...formData, nameMarathi: e.target.value })}
                   placeholder="उदा., तांदूळ, तेल, मीठ"
+                  className="mt-1"
+                />
+              </div>
+
+              <div>
+                <LabelWithTooltip 
+                  label="Brand Name" 
+                  tooltip="Enter the product brand name"
+                />
+                <Input
+                  value={formData.brand}
+                  onChange={(e) => setFormData({ ...formData, brand: e.target.value })}
+                  placeholder="e.g., Parle, Amul, Nestle"
+                  className="mt-1"
+                />
+              </div>
+
+              <div>
+                <LabelWithTooltip 
+                  label="Brand Name (Marathi)" 
+                  tooltip="Enter the product brand name in Marathi"
+                />
+                <Input
+                  value={formData.brandMarathi}
+                  onChange={(e) => setFormData({ ...formData, brandMarathi: e.target.value })}
+                  placeholder="उदा., पार्ले, अमूल, नेस्टले"
                   className="mt-1"
                 />
               </div>
@@ -563,6 +658,11 @@ export function ItemsManagement() {
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
                         <h3 className="font-bold text-base">{language === 'mr' && item.nameMarathi ? item.nameMarathi : item.name}</h3>
+                        {(item.brand || item.brandMarathi) && (
+                          <p className="text-xs text-gray-500">
+                            {language === 'mr' && item.brandMarathi ? item.brandMarathi : item.brand}
+                          </p>
+                        )}
                         <p className="text-xs text-muted-foreground">{getCategoryName(item.categoryId)}</p>
                       </div>
                       <div className="text-right">

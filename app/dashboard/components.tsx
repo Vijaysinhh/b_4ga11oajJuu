@@ -68,6 +68,7 @@ import {
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
+import { BrandComparison } from "@/app/brand-comparison/components";
 
 type ReportKey = "today" | "month" | "sixMonths" | "year";
 
@@ -747,26 +748,89 @@ export function Dashboard() {
 
   const handleDownloadReport = () => {
     const report = currentReport;
+    const averageBill = report.transactions > 0 ? report.revenue / report.transactions : 0;
+    const totalItemsSold = report.sales.reduce((sum, sale) => {
+      return (
+        sum +
+        (sale.items || []).reduce(
+          (innerSum: number, item: any) => innerSum + Number(item.quantity || 0),
+          0,
+        )
+      );
+    }, 0);
+
+    const paymentBreakdown = report.sales.reduce(
+      (acc, sale) => {
+        const key = sale.paymentMethod || "cash";
+        const current = acc[key] || { count: 0, amount: 0 };
+        acc[key] = {
+          count: current.count + 1,
+          amount: current.amount + Number(sale.subtotal || 0),
+        };
+        return acc;
+      },
+      {} as Record<string, { count: number; amount: number }>,
+    );
+
+    const udharCount = paymentBreakdown.udhar?.count || 0;
+    const udharAmount = paymentBreakdown.udhar?.amount || 0;
+
+    const paymentRows: PdfSection["rows"] = [
+      ["Cash", `${paymentBreakdown.cash?.count || 0} bills, Rs. ${formatMoney(paymentBreakdown.cash?.amount || 0)}`],
+      ["Card", `${paymentBreakdown.card?.count || 0} bills, Rs. ${formatMoney(paymentBreakdown.card?.amount || 0)}`],
+      ["Partial", `${paymentBreakdown.partial?.count || 0} bills, Rs. ${formatMoney(paymentBreakdown.partial?.amount || 0)}`],
+      ["Udhari", `${udharCount} bills, Rs. ${formatMoney(udharAmount)}`],
+    ];
+
+    const topItemsRows: PdfSection["rows"] = report.topItems.length
+      ? report.topItems.map((item) => [
+          item.name,
+          `${formatNumber(item.quantity)} sold, Rs. ${formatMoney(item.revenue)} sale, Rs. ${formatMoney(item.profit)} profit`,
+        ])
+      : [["Items", "No sales in this period"]];
+
     const sections: PdfSection[] = [
       {
-        heading: "Summary",
+        heading: "Financial Summary",
         rows: [
+          ["Period", report.label],
           ["Transactions", `${report.transactions}`],
-          ["Sales", `Rs. ${formatMoney(report.revenue)}`],
+          ["Items Sold", formatNumber(totalItemsSold)],
+          ["Sales (Revenue)", `Rs. ${formatMoney(report.revenue)}`],
+          ["Cost", `Rs. ${formatMoney(report.cost)}`],
           ["Profit", `Rs. ${formatMoney(report.profit)}`],
           ["Margin", `${formatPercent(report.margin)}%`],
+          ["Average Bill", `Rs. ${formatMoney(averageBill)}`],
+        ],
+      },
+      {
+        heading: "Payment Summary",
+        rows: paymentRows,
+      },
+      {
+        heading: "Udhari",
+        rows: [
+          ["Udhari Sales", `Rs. ${formatMoney(udharAmount)}`],
           ["Pending Udhari", `Rs. ${formatMoney(totalPending)}`],
+          [
+            "Highest Udhari",
+            highestUdharCustomer
+              ? `${highestUdharCustomer.name} - Rs. ${formatMoney(highestUdharCustomer.balance)}`
+              : "N/A",
+          ],
+        ],
+      },
+      {
+        heading: "Stock Summary",
+        rows: [
+          ["Total Stock Worth", `Rs. ${formatMoney(stats.totalStockValue)}`],
+          ["Products", `${items.length}`],
           ["Low Stock Items", `${lowStockItems.length}`],
         ],
       },
       {
         heading: "Top Items",
-        rows: report.topItems.length
-          ? report.topItems.map((item) => [
-              item.name,
-              `${formatNumber(item.quantity)} sold, Rs. ${formatMoney(item.revenue)} sales`,
-            ])
-          : [["Items", "No sales in this period"]],
+        rows: topItemsRows,
       },
       {
         heading: "Stock Alerts",
@@ -782,8 +846,8 @@ export function Dashboard() {
     ];
 
     downloadSimplePdf({
-      title: `Dukan ${report.label} Report`,
-      subtitle: currentShop?.shopName || "Shop report",
+      title: `Dukan Report`,
+      subtitle: `${currentShop?.shopName || "Shop"} - ${report.label}`,
       sections,
       fileName: `dukan-report-${Date.now()}.pdf`,
     });
@@ -872,12 +936,14 @@ export function Dashboard() {
         <Card className="border-2">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
-              {t("low_stock_label")}
+              {t("total_value_label")}
             </CardTitle>
-            <AlertTriangle className="h-4 w-4 text-red-600" />
+            <Package className="h-4 w-4 text-purple-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{lowStockItems.length}</div>
+            <div className="text-2xl font-bold">
+              Rs. {formatMoney(stats.totalStockValue)}
+            </div>
             <p className="mt-1 text-xs text-muted-foreground">
               {items.length} {t("products")}
             </p>
@@ -1294,6 +1360,15 @@ export function Dashboard() {
           </CardContent>
         </Card>
       </section>
+
+      {/* ─── Brand Comparison Section ─── */}
+      <BrandComparison 
+        showOnlyTop5={true}
+        selectedReportType={selectedReportType}
+        setSelectedReportType={setSelectedReportType}
+        selectedMonth={selectedMonth}
+        setSelectedMonth={setSelectedMonth}
+      />
 
       {/* ─── Highest Udhar Customer ─── */}
       {highestUdharCustomer && (

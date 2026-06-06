@@ -31,11 +31,13 @@ const mapUnit = (row: Unit) => ({
   updatedAt: new Date(row.updated_at).getTime(),
 });
 
-const mapItem = (row: Item) => ({
+const mapItem = (row: any) => ({
   id: row.id,
   shopId: row.shop_id,
   name: row.name,
   nameMarathi: row.name_marathi || '',
+  brand: row.brand || '',
+  brandMarathi: row.brand_marathi || '',
   categoryId: row.category_id,
   unitId: row.unit_id,
   quantity: row.quantity,
@@ -204,12 +206,22 @@ export function useItems(shopId?: number) {
   const supabase = createClient();
 
   const loadItems = useCallback(async () => {
-    if (!shopId) return;
-    const { data } = await (supabase as any)
+    if (!shopId) {
+      setItems([]);
+      setIsLoading(false);
+      return;
+    }
+    const { data, error } = await (supabase as any)
       .from('items')
       .select('*')
       .eq('shop_id', shopId)
       .order('id');
+    if (error) {
+      console.error('[Supabase] Error loading items:', error);
+      setItems([]);
+      setIsLoading(false);
+      return;
+    }
     setItems(data ? data.map(mapItem) : []);
     setIsLoading(false);
   }, [shopId, supabase]);
@@ -231,15 +243,19 @@ export function useItems(shopId?: number) {
   };
 
   const addItem = async (item: any) => {
-    if (!shopId) return;
+    if (!shopId) {
+      throw new Error('Shop not selected');
+    }
     const now = new Date().toISOString();
     const { marginAmount, marginPercent } = calculateMargins(item.buyPrice, item.sellPrice);
-    const { data } = await (supabase as any)
+    const { data, error } = await (supabase as any)
       .from('items')
       .insert({
         shop_id: shopId,
         name: item.name,
         name_marathi: item.nameMarathi || null,
+        brand: item.brand || null,
+        brand_marathi: item.brandMarathi || null,
         category_id: item.categoryId || null,
         unit_id: item.unitId || null,
         quantity: item.quantity,
@@ -253,14 +269,29 @@ export function useItems(shopId?: number) {
       })
       .select('*')
       .single();
+    if (error) {
+      console.error('[Supabase] Error adding item:', {
+        code: (error as any)?.code,
+        message: (error as any)?.message,
+        details: (error as any)?.details,
+        hint: (error as any)?.hint,
+      });
+      throw error;
+    }
     if (data) {
       setItems(prev => [...prev, mapItem(data)]);
+      window.dispatchEvent(new Event('refresh-dukan-data'));
+      return (data as any)?.id;
     }
-    return (data as any)?.id;
+    await loadItems();
+    window.dispatchEvent(new Event('refresh-dukan-data'));
+    return null;
   };
 
   const updateItem = async (id: number, updates: any) => {
-    if (!shopId) return;
+    if (!shopId) {
+      throw new Error('Shop not selected');
+    }
     const now = new Date().toISOString();
     const existingItem = items.find(i => i.id === id);
     let updateData: any = {
@@ -280,6 +311,8 @@ export function useItems(shopId?: number) {
     const supabaseUpdate = {
       name: updateData.name,
       name_marathi: updateData.nameMarathi,
+      brand: updateData.brand,
+      brand_marathi: updateData.brandMarathi,
       category_id: updateData.categoryId,
       unit_id: updateData.unitId,
       quantity: updateData.quantity,
@@ -291,21 +324,36 @@ export function useItems(shopId?: number) {
       updated_at: updateData.updated_at,
     };
 
-    const { data } = await (supabase as any)
+    const { data, error } = await (supabase as any)
       .from('items')
       .update(supabaseUpdate)
       .eq('id', id)
       .select('*')
       .single();
+    if (error) {
+      console.error('[Supabase] Error updating item:', error);
+      throw error;
+    }
     if (data) {
       setItems(prev => prev.map(i => i.id === id ? mapItem(data) : i));
+      window.dispatchEvent(new Event('refresh-dukan-data'));
+      return;
     }
+    await loadItems();
+    window.dispatchEvent(new Event('refresh-dukan-data'));
   };
 
   const deleteItem = async (id: number) => {
-    if (!shopId) return;
-    await (supabase as any).from('items').delete().eq('id', id);
+    if (!shopId) {
+      throw new Error('Shop not selected');
+    }
+    const { error } = await (supabase as any).from('items').delete().eq('id', id);
+    if (error) {
+      console.error('[Supabase] Error deleting item:', error);
+      throw error;
+    }
     setItems(prev => prev.filter(i => i.id !== id));
+    window.dispatchEvent(new Event('refresh-dukan-data'));
   };
 
   return {
