@@ -10,6 +10,7 @@ import { Navigation } from "@/components/navigation";
 import { CommandPalette } from "@/components/command-palette";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/toaster";
+import { SubscriptionCheck } from "@/components/SubscriptionCheck";
 import "./globals.css";
 
 const _geist = Geist({ subsets: ["latin"] });
@@ -68,13 +69,15 @@ export default function RootLayout({
             <AuthProvider>
               <ServiceWorkerProvider>
                 <LanguageProvider>
-                  <Navigation />
-                  <CommandPalette />
-                  <main className="pt-16 sm:pt-20 pb-20 sm:pb-6 px-3 sm:px-4 sm:ml-56 md:px-6 overflow-y-auto overflow-x-hidden min-h-screen transition-all duration-300">
-                    {children}
-                  </main>
-                  <Toaster />
-                  <ToastProvider />
+                  <SubscriptionCheck>
+                    <Navigation />
+                    <CommandPalette />
+                    <main className="pt-16 sm:pt-20 pb-20 sm:pb-6 px-3 sm:px-4 sm:ml-56 md:px-6 overflow-y-auto overflow-x-hidden min-h-screen transition-all duration-300">
+                      {children}
+                    </main>
+                    <Toaster />
+                    <ToastProvider />
+                  </SubscriptionCheck>
                 </LanguageProvider>
               </ServiceWorkerProvider>
             </AuthProvider>

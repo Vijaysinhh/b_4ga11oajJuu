@@ -123,7 +123,7 @@ export interface Alert {
   createdAt: number;
 }
 
-// New Types for Multi-Role System
+// New Types for Multi-Role System & Subscription
 export interface Shop {
   id?: number;
   ownerName: string;
@@ -132,6 +132,33 @@ export interface Shop {
   phoneNumber: string;
   password: string; // Shop owner password
   isPaused: boolean;
+  subscriptionEndDate?: number; // Unix timestamp of when subscription ends
+  lastPaymentDate?: number; // Last payment date
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface Subscription {
+  id?: number;
+  shopId: number;
+  amount: number; // Should be 299
+  startDate: number; // Unix timestamp
+  endDate: number; // Unix timestamp (1 month later)
+  paymentMethod: string; // 'upi', 'cash', 'card', etc.
+  transactionId?: string; // UPI transaction ID
+  status: 'active' | 'pending' | 'failed' | 'cancelled';
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface ShopPaymentInfo {
+  id?: number;
+  shopId: number;
+  upiId?: string;
+  qrCodeUrl?: string;
+  phonePe?: string;
+  gPay?: string;
+  paytm?: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -217,6 +244,9 @@ export class DukanDB extends Dexie {
   // New tables for multi-role system
   shops!: Table<Shop>;
   users!: Table<User>;
+  // New tables for subscription system
+  subscriptions!: Table<Subscription>;
+  shopPaymentInfo!: Table<ShopPaymentInfo>;
 
   constructor() {
     super('DukanDB');
@@ -260,8 +290,27 @@ export class DukanDB extends Dexie {
       alerts: '++id, itemId, alertType, createdAt',
       creditCustomers: '++id, name, updatedAt',
       creditEntries: '++id, customerId, date, timestamp',
-      shops: '++id, shopName, ownerName, isPaused, updatedAt',
+      shops: '++id, shopName, ownerName, isPaused, subscriptionEndDate, updatedAt',
       users: '++id, shopId, username, role, updatedAt',
+    });
+    // New version with subscription tables
+    this.version(4).stores({
+      items: '++id, categoryId, updatedAt',
+      priceTiers: '++id, itemId, updatedAt',
+      categories: '++id, updatedAt',
+      units: '++id, updatedAt',
+      appSettings: '++id',
+      sales: '++id, date, timestamp',
+      saleItems: '++id, saleId, itemId',
+      stockHistory: '++id, itemId, createdAt',
+      batches: '++id, itemId, expiryDate',
+      alerts: '++id, itemId, alertType, createdAt',
+      creditCustomers: '++id, name, updatedAt',
+      creditEntries: '++id, customerId, date, timestamp',
+      shops: '++id, shopName, ownerName, isPaused, subscriptionEndDate, updatedAt',
+      users: '++id, shopId, username, role, updatedAt',
+      subscriptions: '++id, shopId, status, startDate, endDate, updatedAt',
+      shopPaymentInfo: '++id, shopId, updatedAt',
     });
   }
 }

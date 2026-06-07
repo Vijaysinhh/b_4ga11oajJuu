@@ -20,6 +20,8 @@ export interface Database {
           phone_number: string;
           password: string;
           is_paused: boolean;
+          subscription_end_date: string | null;
+          last_payment_date: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -31,6 +33,8 @@ export interface Database {
           phone_number: string;
           password: string;
           is_paused?: boolean;
+          subscription_end_date?: string | null;
+          last_payment_date?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -42,6 +46,8 @@ export interface Database {
           phone_number?: string;
           password?: string;
           is_paused?: boolean;
+          subscription_end_date?: string | null;
+          last_payment_date?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -558,6 +564,79 @@ export interface Database {
           theme?: 'light' | 'dark' | 'system';
           setup_complete?: boolean;
           last_backup?: string | null;
+          updated_at?: string;
+        };
+      };
+      subscriptions: {
+        Row: {
+          id: number;
+          shop_id: number;
+          amount: number;
+          start_date: string;
+          end_date: string;
+          payment_method: string;
+          transaction_id: string | null;
+          status: 'active' | 'pending' | 'failed' | 'cancelled';
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: number;
+          shop_id: number;
+          amount: number;
+          start_date: string;
+          end_date: string;
+          payment_method: string;
+          transaction_id?: string | null;
+          status?: 'active' | 'pending' | 'failed' | 'cancelled';
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: number;
+          shop_id?: number;
+          amount?: number;
+          start_date?: string;
+          end_date?: string;
+          payment_method?: string;
+          transaction_id?: string | null;
+          status?: 'active' | 'pending' | 'failed' | 'cancelled';
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+      shop_payment_info: {
+        Row: {
+          id: number;
+          shop_id: number;
+          upi_id: string | null;
+          qr_code_url: string | null;
+          phone_pe: string | null;
+          g_pay: string | null;
+          paytm: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: number;
+          shop_id: number;
+          upi_id?: string | null;
+          qr_code_url?: string | null;
+          phone_pe?: string | null;
+          g_pay?: string | null;
+          paytm?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: number;
+          shop_id?: number;
+          upi_id?: string | null;
+          qr_code_url?: string | null;
+          phone_pe?: string | null;
+          g_pay?: string | null;
+          paytm?: string | null;
+          created_at?: string;
           updated_at?: string;
         };
       };

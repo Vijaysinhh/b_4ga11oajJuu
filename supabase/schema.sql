@@ -213,6 +213,38 @@ CREATE TABLE IF NOT EXISTS app_settings (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- 15. Subscriptions
+CREATE TABLE IF NOT EXISTS subscriptions (
+    id BIGSERIAL PRIMARY KEY,
+    shop_id BIGINT REFERENCES shops(id) ON DELETE CASCADE,
+    amount NUMERIC NOT NULL,
+    start_date TIMESTAMP WITH TIME ZONE NOT NULL,
+    end_date TIMESTAMP WITH TIME ZONE NOT NULL,
+    payment_method VARCHAR(255) NOT NULL,
+    transaction_id VARCHAR(255),
+    status VARCHAR(50) NOT NULL CHECK (status IN ('active', 'pending', 'failed', 'cancelled')),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 16. Shop Payment Info
+CREATE TABLE IF NOT EXISTS shop_payment_info (
+    id BIGSERIAL PRIMARY KEY,
+    shop_id BIGINT REFERENCES shops(id) ON DELETE CASCADE,
+    upi_id VARCHAR(255),
+    qr_code_url TEXT,
+    phone_pe VARCHAR(255),
+    g_pay VARCHAR(255),
+    paytm VARCHAR(255),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Add missing columns to shops table for subscription info
+ALTER TABLE shops 
+ADD COLUMN IF NOT EXISTS subscription_end_date TIMESTAMP WITH TIME ZONE,
+ADD COLUMN IF NOT EXISTS last_payment_date TIMESTAMP WITH TIME ZONE;
+
 -- ============================================
 -- INSERT SUPER ADMIN USER
 -- ============================================
@@ -234,6 +266,8 @@ CREATE INDEX IF NOT EXISTS idx_sale_items_sale_id ON sale_items(sale_id);
 CREATE INDEX IF NOT EXISTS idx_credit_customers_shop_id ON credit_customers(shop_id);
 CREATE INDEX IF NOT EXISTS idx_credit_entries_shop_id ON credit_entries(shop_id);
 CREATE INDEX IF NOT EXISTS idx_credit_entries_customer_id ON credit_entries(customer_id);
+CREATE INDEX IF NOT EXISTS idx_subscriptions_shop_id ON subscriptions(shop_id);
+CREATE INDEX IF NOT EXISTS idx_shop_payment_info_shop_id ON shop_payment_info(shop_id);
 
 -- ============================================
 -- ROW LEVEL SECURITY (RLS) POLICIES
@@ -254,6 +288,8 @@ ALTER TABLE alerts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE credit_customers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE credit_entries ENABLE ROW LEVEL SECURITY;
 ALTER TABLE app_settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE subscriptions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE shop_payment_info ENABLE ROW LEVEL SECURITY;
 
 -- Helper function to get current user's shop ID (simplified for now)
 -- For this app, we'll use permissive policies since we're using custom auth
@@ -505,6 +541,42 @@ BEGIN
   ) THEN
     CREATE POLICY "Allow all operations on app_settings"
     ON public.app_settings
+    FOR ALL
+    USING (true)
+    WITH CHECK (true);
+  END IF;
+END $$;
+
+-- Subscriptions: Allow all operations
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'subscriptions'
+      AND policyname = 'Allow all operations on subscriptions'
+  ) THEN
+    CREATE POLICY "Allow all operations on subscriptions"
+    ON public.subscriptions
+    FOR ALL
+    USING (true)
+    WITH CHECK (true);
+  END IF;
+END $$;
+
+-- Shop Payment Info: Allow all operations
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'shop_payment_info'
+      AND policyname = 'Allow all operations on shop_payment_info'
+  ) THEN
+    CREATE POLICY "Allow all operations on shop_payment_info"
+    ON public.shop_payment_info
     FOR ALL
     USING (true)
     WITH CHECK (true);

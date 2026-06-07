@@ -18,6 +18,8 @@ type Shop = Database['public']['Tables']['shops']['Row'] & {
   shopName?: string;
   phoneNumber?: string;
   isPaused?: boolean;
+  subscriptionEndDate?: number;
+  lastPaymentDate?: number;
 };
 
 interface AuthContextType {
@@ -38,6 +40,12 @@ const toTimestamp = (dateStr: string | null): number => {
   return new Date(dateStr).getTime();
 };
 
+const toOptionalTimestamp = (dateStr: string | null): number | undefined => {
+  if (!dateStr) return undefined;
+  const t = new Date(dateStr).getTime();
+  return Number.isFinite(t) ? t : undefined;
+};
+
 // Helper to map Supabase shop to local format
 const mapShop = (shop: Database['public']['Tables']['shops']['Row']): Shop => ({
   ...shop,
@@ -47,6 +55,8 @@ const mapShop = (shop: Database['public']['Tables']['shops']['Row']): Shop => ({
   shopName: shop.shop_name,
   phoneNumber: shop.phone_number,
   isPaused: shop.is_paused,
+  subscriptionEndDate: toOptionalTimestamp(shop.subscription_end_date),
+  lastPaymentDate: toOptionalTimestamp(shop.last_payment_date),
 });
 
 // Helper to map Supabase user to local format
