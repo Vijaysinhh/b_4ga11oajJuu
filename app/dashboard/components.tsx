@@ -13,6 +13,7 @@ import {
   usePriceTiers,
 } from "@/hooks/use-supabase";
 import { downloadSimplePdf, type PdfSection } from "@/lib/simple-pdf";
+import { downloadPremiumPdf } from "@/lib/premium-pdf";
 import {
   formatMoney,
   formatPercent,
@@ -746,7 +747,7 @@ export function Dashboard() {
     }, customers[0]);
   }, [customers]);
 
-  const handleDownloadReport = () => {
+  const handleDownloadReport = async () => {
     const report = currentReport;
     const averageBill = report.transactions > 0 ? report.revenue / report.transactions : 0;
     const totalItemsSold = report.sales.reduce((sum, sale) => {
@@ -772,85 +773,78 @@ export function Dashboard() {
       {} as Record<string, { count: number; amount: number }>,
     );
 
-    const udharCount = paymentBreakdown.udhar?.count || 0;
-    const udharAmount = paymentBreakdown.udhar?.amount || 0;
-
-    const paymentRows: PdfSection["rows"] = [
-      ["Cash", `${paymentBreakdown.cash?.count || 0} bills, Rs. ${formatMoney(paymentBreakdown.cash?.amount || 0)}`],
-      ["Card", `${paymentBreakdown.card?.count || 0} bills, Rs. ${formatMoney(paymentBreakdown.card?.amount || 0)}`],
-      ["Partial", `${paymentBreakdown.partial?.count || 0} bills, Rs. ${formatMoney(paymentBreakdown.partial?.amount || 0)}`],
-      ["Udhari", `${udharCount} bills, Rs. ${formatMoney(udharAmount)}`],
-    ];
-
-    const topItemsRows: PdfSection["rows"] = report.topItems.length
-      ? report.topItems.map((item) => [
-          item.name,
-          `${formatNumber(item.quantity)} sold, Rs. ${formatMoney(item.revenue)} sale, Rs. ${formatMoney(item.profit)} profit`,
-        ])
-      : [["Items", "No sales in this period"]];
-
-    const sections: PdfSection[] = [
-      {
-        heading: "Financial Summary",
-        rows: [
-          ["Period", report.label],
-          ["Transactions", `${report.transactions}`],
-          ["Items Sold", formatNumber(totalItemsSold)],
-          ["Sales (Revenue)", `Rs. ${formatMoney(report.revenue)}`],
-          ["Cost", `Rs. ${formatMoney(report.cost)}`],
-          ["Profit", `Rs. ${formatMoney(report.profit)}`],
-          ["Margin", `${formatPercent(report.margin)}%`],
-          ["Average Bill", `Rs. ${formatMoney(averageBill)}`],
-        ],
-      },
-      {
-        heading: "Payment Summary",
-        rows: paymentRows,
-      },
-      {
-        heading: "Udhari",
-        rows: [
-          ["Udhari Sales", `Rs. ${formatMoney(udharAmount)}`],
-          ["Pending Udhari", `Rs. ${formatMoney(totalPending)}`],
-          [
-            "Highest Udhari",
-            highestUdharCustomer
-              ? `${highestUdharCustomer.name} - Rs. ${formatMoney(highestUdharCustomer.balance)}`
-              : "N/A",
-          ],
-        ],
-      },
-      {
-        heading: "Stock Summary",
-        rows: [
-          ["Total Stock Worth", `Rs. ${formatMoney(stats.totalStockValue)}`],
-          ["Products", `${items.length}`],
-          ["Low Stock Items", `${lowStockItems.length}`],
-        ],
-      },
-      {
-        heading: "Top Items",
-        rows: topItemsRows,
-      },
-      {
-        heading: "Stock Alerts",
-        rows: lowStockItems.length
-          ? lowStockItems
-              .slice(0, 8)
-              .map((item) => [
-                item.name,
-                `${item.quantity} left, limit ${item.lowStockLimit}`,
-              ])
-          : [["Low Stock", "No low stock items"]],
-      },
-    ];
-
-    downloadSimplePdf({
-      title: `Dukan Report`,
-      subtitle: `${currentShop?.shopName || "Shop"} - ${report.label}`,
-      sections,
-      fileName: `dukan-report-${Date.now()}.pdf`,
-    });
+    try {
+      await downloadPremiumPdf({
+        label: report.label,
+        sales: report.sales,
+        transactions: report.transactions,
+        revenue: report.revenue,
+        cost: report.cost,
+        profit: report.profit,
+        margin: report.margin,
+        topItems: report.topItems,
+        shopName: currentShop?.shopName || "Dukan",
+        totalStockValue: stats.totalStockValue,
+        productsCount: items.length,
+        lowStockItems: lowStockItems.map(item => ({
+          name: item.name,
+          quantity: item.quantity,
+          lowStockLimit: item.lowStockLimit,
+        })),
+        totalPendingUdhari: totalPending,
+        highestUdharCustomer: highestUdharCustomer ? {
+          name: highestUdharCustomer.name,
+          balance: highestUdharCustomer.balance,
+        } : null,
+        paymentBreakdown,
+        totalItemsSold,
+        averageBill,
+      }, `dukan-report-${Date.now()}.pdf`);
+    } catch (error) {
+      console.error("Failed to download premium PDF, falling back to simple PDF:", error);
+      const udharCount = paymentBreakdown.udhar?.count || 0;
+      const udharAmount = paymentBreakdown.udhar?.amount || 0;
+      const paymentRows: PdfSection["rows"] = [
+        ["Cash", `${paymentBreakdown.cash?.count || 0} bills, Rs. ${formatMoney(paymentBreakdown.cash?.amount || 0)}`],
+        ["Card", `${paymentBreakdown.card?.count || 0} bills, Rs. ${formatMoney(paymentBreakdown.card?.amount || 0)}`],
+        ["Partial", `${paymentBreakdown.partial?.count || 0} bills, Rs. ${formatMoney(paymentBreakdown.partial?.amount || 0)}`],
+        ["Udhari", `${udharCount} bills, Rs. ${formatMoney(udharAmount)}`],
+      ];
+      const topItemsRows: PdfSection["rows"] = report.topItems.length
+        ? report.topItems.map((item) => [
+            item.name,
+            `${formatNumber(item.quantity)} sold, Rs. ${formatMoney(item.revenue)} sale, Rs. ${formatMoney(item.profit)} profit`,
+          ])
+        : [["Items", "No sales in this period"]];
+      const sections: PdfSection[] = [
+        { heading: "Financial Summary", rows: [
+            ["Period", report.label],
+            ["Transactions", `${report.transactions}`],
+            ["Items Sold", formatNumber(totalItemsSold)],
+            ["Sales (Revenue)", `Rs. ${formatMoney(report.revenue)}`],
+            ["Cost", `Rs. ${formatMoney(report.cost)}`],
+            ["Profit", `Rs. ${formatMoney(report.profit)}`],
+            ["Margin", `${formatPercent(report.margin)}%`],
+            ["Average Bill", `Rs. ${formatMoney(averageBill)}`],
+          ] },
+        { heading: "Payment Summary", rows: paymentRows },
+        { heading: "Udhari", rows: [
+            ["Udhari Sales", `Rs. ${formatMoney(udharAmount)}`],
+            ["Pending Udhari", `Rs. ${formatMoney(totalPending)}`],
+            ["Highest Udhari", highestUdharCustomer ? `${highestUdharCustomer.name} - Rs. ${formatMoney(highestUdharCustomer.balance)}` : "N/A"],
+          ] },
+        { heading: "Stock Summary", rows: [
+            ["Total Stock Worth", `Rs. ${formatMoney(stats.totalStockValue)}`],
+            ["Products", `${items.length}`],
+            ["Low Stock Items", `${lowStockItems.length}`],
+          ] },
+        { heading: "Top Items", rows: topItemsRows },
+        { heading: "Stock Alerts", rows: lowStockItems.length
+            ? lowStockItems.slice(0, 8).map(item => [item.name, `${item.quantity} left, limit ${item.lowStockLimit}`])
+            : [["Low Stock", "No low stock items"]] },
+      ];
+      downloadSimplePdf({ title: "Dukan Report", subtitle: `${currentShop?.shopName || "Shop"} - ${report.label}`, sections, fileName: `dukan-report-${Date.now()}.pdf` });
+    }
   };
 
   // --- Loading state ---

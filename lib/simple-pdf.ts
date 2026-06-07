@@ -14,6 +14,44 @@ export interface PdfDocument {
   fileName: string;
 }
 
+export interface PremiumReportData {
+  label: string;
+  sales: any[];
+  transactions: number;
+  revenue: number;
+  cost: number;
+  profit: number;
+  margin: number;
+  topItems: Array<{
+    name: string;
+    quantity: number;
+    revenue: number;
+    profit: number;
+  }>;
+  shopName: string;
+  totalStockValue: number;
+  productsCount: number;
+  lowStockItems: Array<{
+    name: string;
+    quantity: number;
+    lowStockLimit: number;
+  }>;
+  totalPendingUdhari: number;
+  highestUdharCustomer: { name: string; balance: number } | null;
+  paymentBreakdown: Record<
+    string,
+    { count: number; amount: number }
+  >;
+  totalItemsSold: number;
+  averageBill: number;
+  dailyData?: Array<{
+    date: string;
+    revenue: number;
+    cost: number;
+    profit: number;
+  }>;
+}
+
 function cleanText(value: string) {
   return value
     .replace(/₹/g, 'Rs.')

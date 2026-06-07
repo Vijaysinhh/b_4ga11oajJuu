@@ -59,50 +59,20 @@ export function PriceTierManager({
 
   const calculateMargin = (price: number, quantity: number, tierUnitId: number) => {
     if (wholesaleQty === 0 || wholesaleCost === 0) return 0;
-    
-    // Get unit short forms
-    const wholesaleUnit = units.find(u => u.id === wholesaleUnitId)?.shortForm || 'unit';
-    const tierUnit = units.find(u => u.id === tierUnitId)?.shortForm || 'unit';
-    
-    // Convert tier quantity to wholesale unit for consistent calculation
-    const tierQtyInWholesaleUnit = convertUnit(quantity, tierUnit, wholesaleUnit);
-    
-    // Cost per unit in wholesale unit
-    const costPerUnit = wholesaleCost / wholesaleQty;
-    const totalCost = costPerUnit * tierQtyInWholesaleUnit;
-    
-    const margin = price - totalCost;
-    return margin;
+    const metrics = getMetrics(price, quantity, tierUnitId);
+    return metrics.profit;
   };
 
   const calculateMarginPercent = (price: number, quantity: number, tierUnitId: number) => {
     if (wholesaleQty === 0 || wholesaleCost === 0) return 0;
-    
-    const wholesaleUnit = units.find(u => u.id === wholesaleUnitId)?.shortForm || 'unit';
-    const tierUnit = units.find(u => u.id === tierUnitId)?.shortForm || 'unit';
-    
-    const tierQtyInWholesaleUnit = convertUnit(quantity, tierUnit, wholesaleUnit);
-    const costPerUnit = wholesaleCost / wholesaleQty;
-    const totalCost = costPerUnit * tierQtyInWholesaleUnit;
-    
-    if (price === 0) return 0;
-    // Margin % = (profit / selling price) * 100
-    return ((price - totalCost) / price) * 100;
+    const metrics = getMetrics(price, quantity, tierUnitId);
+    return metrics.margin;
   };
 
   const calculateMarkupPercent = (price: number, quantity: number, tierUnitId: number) => {
     if (wholesaleQty === 0 || wholesaleCost === 0) return 0;
-    
-    const wholesaleUnit = units.find(u => u.id === wholesaleUnitId)?.shortForm || 'unit';
-    const tierUnit = units.find(u => u.id === tierUnitId)?.shortForm || 'unit';
-    
-    const tierQtyInWholesaleUnit = convertUnit(quantity, tierUnit, wholesaleUnit);
-    const costPerUnit = wholesaleCost / wholesaleQty;
-    const totalCost = costPerUnit * tierQtyInWholesaleUnit;
-    
-    if (totalCost === 0) return 0;
-    // Markup % = (profit / cost) * 100
-    return ((price - totalCost) / totalCost) * 100;
+    const metrics = getMetrics(price, quantity, tierUnitId);
+    return metrics.markup;
   };
 
   const getUnitName = (unitId: number) => {
@@ -118,12 +88,11 @@ export function PriceTierManager({
     const wholesaleUnit = units.find(u => u.id === wholesaleUnitId)?.shortForm || 'unit';
     const tierUnit = units.find(u => u.id === tierUnitId)?.shortForm || 'unit';
     
-    // wholesaleCost is already per-unit price (e.g., Rs. 100/kg)
-    // No need to divide again
-    const costPerUnit = wholesaleCost;
+    // wholesaleCost is already per-unit price (e.g., Rs. 300 per L)
+    const costPerBaseUnit = wholesaleCost;
 
     return calculatePricingMetrics(
-      costPerUnit,
+      costPerBaseUnit,
       wholesaleUnit,
       quantity,
       tierUnit,
