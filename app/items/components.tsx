@@ -342,6 +342,20 @@ export function ItemsManagement() {
     return ((sellPrice - buyPrice) / buyPrice) * 100;
   };
 
+  const formatDateInput = (date: Date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  const setExpiryInDays = (days: number) => {
+    const base = new Date();
+    base.setHours(0, 0, 0, 0);
+    base.setDate(base.getDate() + days);
+    setFormData((prev) => ({ ...prev, expiryDate: formatDateInput(base) }));
+  };
+
   return (
     <div className="space-y-6 pb-10">
       <div className="space-y-2">
@@ -501,12 +515,34 @@ export function ItemsManagement() {
                   label="Expiry Date"
                   tooltip="Optional. If set, the system can show expiry alerts for this item."
                 />
-                <Input
-                  type="date"
-                  value={formData.expiryDate}
-                  onChange={(e) => setFormData({ ...formData, expiryDate: e.target.value })}
-                  className="mt-1"
-                />
+                <div className="mt-1 flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <Input
+                    type="date"
+                    value={formData.expiryDate}
+                    onChange={(e) => setFormData({ ...formData, expiryDate: e.target.value })}
+                    className="sm:w-[200px]"
+                  />
+                  <div className="flex flex-wrap gap-2">
+                    <Button type="button" variant="outline" size="sm" onClick={() => setExpiryInDays(0)}>
+                      Today
+                    </Button>
+                    <Button type="button" variant="outline" size="sm" onClick={() => setExpiryInDays(7)}>
+                      +7 days
+                    </Button>
+                    <Button type="button" variant="outline" size="sm" onClick={() => setExpiryInDays(30)}>
+                      +30 days
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setFormData((prev) => ({ ...prev, expiryDate: '' }))}
+                      disabled={!formData.expiryDate}
+                    >
+                      Clear
+                    </Button>
+                  </div>
+                </div>
               </div>
 
               <div>
