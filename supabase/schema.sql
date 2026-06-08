@@ -62,6 +62,7 @@ CREATE TABLE IF NOT EXISTS items (
     category_id BIGINT REFERENCES categories(id) ON DELETE SET NULL,
     unit_id BIGINT REFERENCES units(id) ON DELETE SET NULL,
     quantity NUMERIC NOT NULL DEFAULT 0 CHECK (quantity >= 0),
+    expiry_date TIMESTAMP WITH TIME ZONE,
     buy_price NUMERIC NOT NULL,
     sell_price NUMERIC NOT NULL,
     margin_amount NUMERIC,
@@ -70,6 +71,9 @@ CREATE TABLE IF NOT EXISTS items (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+ALTER TABLE items
+ADD COLUMN IF NOT EXISTS expiry_date TIMESTAMP WITH TIME ZONE;
 
 -- 6. Price Tiers
 CREATE TABLE IF NOT EXISTS price_tiers (

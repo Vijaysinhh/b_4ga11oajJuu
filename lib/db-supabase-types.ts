@@ -150,6 +150,7 @@ export interface Database {
           category_id: number | null;
           unit_id: number | null;
           quantity: number;
+          expiry_date: string | null;
           buy_price: number;
           sell_price: number;
           margin_amount: number | null;
@@ -168,6 +169,7 @@ export interface Database {
           category_id?: number | null;
           unit_id?: number | null;
           quantity?: number;
+          expiry_date?: string | null;
           buy_price: number;
           sell_price: number;
           margin_amount?: number | null;
@@ -186,6 +188,7 @@ export interface Database {
           category_id?: number | null;
           unit_id?: number | null;
           quantity?: number;
+          expiry_date?: string | null;
           buy_price?: number;
           sell_price?: number;
           margin_amount?: number | null;

@@ -46,6 +46,7 @@ interface ItemFormData {
   categoryId: number;
   unitId: number;
   quantity: number;
+  expiryDate: string;
   buyPrice: number;
   sellPrice: number;
   lowStockLimit: number;
@@ -95,6 +96,7 @@ export function ItemsManagement() {
     categoryId: categories[0]?.id || 1,
     unitId: units[0]?.id || 1,
     quantity: 0,
+    expiryDate: '',
     buyPrice: 0,
     sellPrice: 0,
     lowStockLimit: 0,
@@ -130,6 +132,7 @@ export function ItemsManagement() {
         categoryId: item.categoryId,
         unitId: item.unitId,
         quantity: item.quantity,
+        expiryDate: item.expiryDate ? String(item.expiryDate).slice(0, 10) : '',
         buyPrice: item.buyPrice,
         sellPrice: item.sellPrice,
         lowStockLimit: item.lowStockLimit,
@@ -144,6 +147,7 @@ export function ItemsManagement() {
         categoryId: categories[0]?.id || 1,
         unitId: units[0]?.id || 1,
         quantity: 0,
+        expiryDate: '',
         buyPrice: 0,
         sellPrice: 0,
         lowStockLimit: 5,
@@ -161,6 +165,7 @@ export function ItemsManagement() {
       categoryId: categories[0]?.id || 1,
       unitId: units[0]?.id || 1,
       quantity: 0,
+      expiryDate: '',
       buyPrice: 0,
       sellPrice: 0,
       lowStockLimit: 0,
@@ -196,6 +201,14 @@ export function ItemsManagement() {
       toast.error('Please enter a valid quantity.');
       return;
     }
+    const expiryDate = formData.expiryDate.trim();
+    if (expiryDate) {
+      const parsed = Date.parse(`${expiryDate}T00:00:00`);
+      if (Number.isNaN(parsed)) {
+        toast.error('Please enter a valid expiry date.');
+        return;
+      }
+    }
     if (!Number.isFinite(formData.buyPrice) || formData.buyPrice <= 0) {
       toast.error(`Please enter a valid buying price. Current: Rs. ${formData.buyPrice || 0}`);
       return;
@@ -212,6 +225,7 @@ export function ItemsManagement() {
     }
 
     try {
+      const expiryDateIso = expiryDate ? new Date(`${expiryDate}T23:59:59`).toISOString() : null;
       if (editingId) {
         await updateItem(editingId, {
           name: formData.name,
@@ -221,6 +235,7 @@ export function ItemsManagement() {
           categoryId: formData.categoryId,
           unitId: formData.unitId,
           quantity: formData.quantity,
+          expiryDate: expiryDateIso,
           buyPrice: formData.buyPrice,
           sellPrice: formData.sellPrice,
           lowStockLimit: formData.lowStockLimit,
@@ -235,6 +250,7 @@ export function ItemsManagement() {
           categoryId: formData.categoryId,
           unitId: formData.unitId,
           quantity: formData.quantity,
+          expiryDate: expiryDateIso,
           buyPrice: formData.buyPrice,
           sellPrice: formData.sellPrice,
           lowStockLimit: formData.lowStockLimit,
@@ -476,6 +492,19 @@ export function ItemsManagement() {
                   value={formData.quantity || ''}
                   onChange={(e) => setFormData({ ...formData, quantity: parseWholeNumberInput(e.target.value) })}
                   placeholder="0"
+                  className="mt-1"
+                />
+              </div>
+
+              <div>
+                <LabelWithTooltip
+                  label="Expiry Date"
+                  tooltip="Optional. If set, the system can show expiry alerts for this item."
+                />
+                <Input
+                  type="date"
+                  value={formData.expiryDate}
+                  onChange={(e) => setFormData({ ...formData, expiryDate: e.target.value })}
                   className="mt-1"
                 />
               </div>
