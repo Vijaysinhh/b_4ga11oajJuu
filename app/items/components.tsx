@@ -102,7 +102,10 @@ export function ItemsManagement() {
 
   const filteredItems = useMemo(() => {
     return items.filter((item) => {
-      const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase());
+      const searchLower = searchTerm.toLowerCase();
+      const matchesSearch = 
+        (item.name?.toLowerCase().includes(searchLower) || false) || 
+        (item.nameMarathi?.toLowerCase().includes(searchLower) || false);
       const matchesCategory = selectedCategoryId === null || item.categoryId === selectedCategoryId;
       return matchesSearch && matchesCategory;
     });
@@ -184,8 +187,9 @@ export function ItemsManagement() {
       return;
     }
     const name = formData.name.trim();
-    if (!name) {
-      toast.error('Please enter item name.');
+    const nameMarathi = formData.nameMarathi.trim();
+    if (!name && !nameMarathi) {
+      toast.error('Please enter item name in English OR Marathi.');
       return;
     }
     if (!Number.isFinite(formData.quantity) || formData.quantity < 0) {
@@ -364,8 +368,7 @@ export function ItemsManagement() {
               <div>
                 <LabelWithTooltip 
                   label="Item Name" 
-                  tooltip="Enter the product name as it appears in your shop (e.g., Basmati Rice, Sunflower Oil, Salt)"
-                  required
+                  tooltip="Enter the product name as it appears in your shop (e.g., Basmati Rice, Sunflower Oil, Salt). Fill either this OR Marathi name."
                 />
                 <Input
                   value={formData.name}
@@ -378,7 +381,7 @@ export function ItemsManagement() {
               <div>
                 <LabelWithTooltip 
                   label="Item Name (Marathi)" 
-                  tooltip="Enter the product name in Marathi for better local understanding"
+                  tooltip="Enter the product name in Marathi for better local understanding. Fill either this OR English name."
                 />
                 <Input
                   value={formData.nameMarathi}
@@ -657,10 +660,16 @@ export function ItemsManagement() {
                     {/* Item Name and Category */}
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
-                        <h3 className="font-bold text-base">{language === 'mr' && item.nameMarathi ? item.nameMarathi : item.name}</h3>
+                        <h3 className="font-bold text-base">
+                          {language === 'mr' 
+                            ? (item.nameMarathi || item.name) 
+                            : (item.name || item.nameMarathi)}
+                        </h3>
                         {(item.brand || item.brandMarathi) && (
                           <p className="text-xs text-gray-500">
-                            {language === 'mr' && item.brandMarathi ? item.brandMarathi : item.brand}
+                            {language === 'mr' 
+                              ? (item.brandMarathi || item.brand) 
+                              : (item.brand || item.brandMarathi)}
                           </p>
                         )}
                         <p className="text-xs text-muted-foreground">{getCategoryName(item.categoryId)}</p>

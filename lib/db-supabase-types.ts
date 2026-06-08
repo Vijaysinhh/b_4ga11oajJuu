@@ -143,8 +143,10 @@ export interface Database {
         Row: {
           id: number;
           shop_id: number;
-          name: string;
+          name: string | null;
           name_marathi: string | null;
+          brand: string | null;
+          brand_marathi: string | null;
           category_id: number | null;
           unit_id: number | null;
           quantity: number;
@@ -159,8 +161,10 @@ export interface Database {
         Insert: {
           id?: number;
           shop_id: number;
-          name: string;
+          name?: string | null;
           name_marathi?: string | null;
+          brand?: string | null;
+          brand_marathi?: string | null;
           category_id?: number | null;
           unit_id?: number | null;
           quantity?: number;
@@ -175,8 +179,10 @@ export interface Database {
         Update: {
           id?: number;
           shop_id?: number;
-          name?: string;
+          name?: string | null;
           name_marathi?: string | null;
+          brand?: string | null;
+          brand_marathi?: string | null;
           category_id?: number | null;
           unit_id?: number | null;
           quantity?: number;
@@ -638,6 +644,108 @@ export interface Database {
           paytm?: string | null;
           created_at?: string;
           updated_at?: string;
+        };
+      };
+      audit_logs: {
+        Row: {
+          id: number;
+          shop_id: number;
+          user_id: number | null;
+          action: 'create' | 'update' | 'delete';
+          table_name: string;
+          record_id: string;
+          old_data: Json | null;
+          new_data: Json | null;
+          ip_address: string | null;
+          user_agent: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: number;
+          shop_id: number;
+          user_id?: number | null;
+          action: 'create' | 'update' | 'delete';
+          table_name: string;
+          record_id: string;
+          old_data?: Json | null;
+          new_data?: Json | null;
+          ip_address?: string | null;
+          user_agent?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: number;
+          shop_id?: number;
+          user_id?: number | null;
+          action?: 'create' | 'update' | 'delete';
+          table_name?: string;
+          record_id?: string;
+          old_data?: Json | null;
+          new_data?: Json | null;
+          ip_address?: string | null;
+          user_agent?: string | null;
+          created_at?: string;
+        };
+      };
+      user_roles: {
+        Row: {
+          id: number;
+          user_id: number;
+          shop_id: number;
+          role: 'super_admin' | 'owner' | 'manager' | 'cashier' | 'worker';
+          permissions: Json;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: number;
+          user_id: number;
+          shop_id: number;
+          role: 'super_admin' | 'owner' | 'manager' | 'cashier' | 'worker';
+          permissions: Json;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: number;
+          user_id?: number;
+          shop_id?: number;
+          role?: 'super_admin' | 'owner' | 'manager' | 'cashier' | 'worker';
+          permissions?: Json;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+      system_health_checks: {
+        Row: {
+          id: number;
+          shop_id: number;
+          check_type: 'database' | 'api' | 'storage' | 'auth';
+          status: 'healthy' | 'degraded' | 'unhealthy';
+          response_time_ms: number | null;
+          error_message: string | null;
+          details: Json | null;
+          checked_at: string;
+        };
+        Insert: {
+          id?: number;
+          shop_id: number;
+          check_type: 'database' | 'api' | 'storage' | 'auth';
+          status: 'healthy' | 'degraded' | 'unhealthy';
+          response_time_ms?: number | null;
+          error_message?: string | null;
+          details?: Json | null;
+          checked_at?: string;
+        };
+        Update: {
+          id?: number;
+          shop_id?: number;
+          check_type?: 'database' | 'api' | 'storage' | 'auth';
+          status?: 'healthy' | 'degraded' | 'unhealthy';
+          response_time_ms?: number | null;
+          error_message?: string | null;
+          details?: Json | null;
+          checked_at?: string;
         };
       };
     };

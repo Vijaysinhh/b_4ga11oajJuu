@@ -55,7 +55,7 @@ CREATE TABLE IF NOT EXISTS units (
 CREATE TABLE IF NOT EXISTS items (
     id BIGSERIAL PRIMARY KEY,
     shop_id BIGINT REFERENCES shops(id) ON DELETE CASCADE,
-    name VARCHAR(255) NOT NULL,
+    name VARCHAR(255),
     name_marathi VARCHAR(255),
     brand VARCHAR(255),
     brand_marathi VARCHAR(255),
@@ -245,6 +245,44 @@ ALTER TABLE shops
 ADD COLUMN IF NOT EXISTS subscription_end_date TIMESTAMP WITH TIME ZONE,
 ADD COLUMN IF NOT EXISTS last_payment_date TIMESTAMP WITH TIME ZONE;
 
+-- 17. Audit Logs
+CREATE TABLE IF NOT EXISTS audit_logs (
+    id BIGSERIAL PRIMARY KEY,
+    shop_id BIGINT REFERENCES shops(id) ON DELETE CASCADE,
+    user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+    action VARCHAR(50) NOT NULL CHECK (action IN ('create', 'update', 'delete')),
+    table_name VARCHAR(100) NOT NULL,
+    record_id VARCHAR(255) NOT NULL,
+    old_data JSONB,
+    new_data JSONB,
+    ip_address VARCHAR(50),
+    user_agent TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 18. User Roles
+CREATE TABLE IF NOT EXISTS user_roles (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT REFERENCES users(id) ON DELETE CASCADE,
+    shop_id BIGINT REFERENCES shops(id) ON DELETE CASCADE,
+    role VARCHAR(50) NOT NULL CHECK (role IN ('super_admin', 'owner', 'manager', 'cashier', 'worker')),
+    permissions JSONB NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 19. System Health Checks
+CREATE TABLE IF NOT EXISTS system_health_checks (
+    id BIGSERIAL PRIMARY KEY,
+    shop_id BIGINT REFERENCES shops(id) ON DELETE CASCADE,
+    check_type VARCHAR(50) NOT NULL CHECK (check_type IN ('database', 'api', 'storage', 'auth')),
+    status VARCHAR(50) NOT NULL CHECK (status IN ('healthy', 'degraded', 'unhealthy')),
+    response_time_ms INTEGER,
+    error_message TEXT,
+    details JSONB,
+    checked_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
 -- ============================================
 -- INSERT SUPER ADMIN USER
 -- ============================================
@@ -268,6 +306,13 @@ CREATE INDEX IF NOT EXISTS idx_credit_entries_shop_id ON credit_entries(shop_id)
 CREATE INDEX IF NOT EXISTS idx_credit_entries_customer_id ON credit_entries(customer_id);
 CREATE INDEX IF NOT EXISTS idx_subscriptions_shop_id ON subscriptions(shop_id);
 CREATE INDEX IF NOT EXISTS idx_shop_payment_info_shop_id ON shop_payment_info(shop_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_shop_id ON audit_logs(shop_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON audit_logs(user_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at);
+CREATE INDEX IF NOT EXISTS idx_user_roles_user_id ON user_roles(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_roles_shop_id ON user_roles(shop_id);
+CREATE INDEX IF NOT EXISTS idx_system_health_checks_shop_id ON system_health_checks(shop_id);
+CREATE INDEX IF NOT EXISTS idx_system_health_checks_checked_at ON system_health_checks(checked_at);
 
 -- ============================================
 -- ROW LEVEL SECURITY (RLS) POLICIES
@@ -290,6 +335,9 @@ ALTER TABLE credit_entries ENABLE ROW LEVEL SECURITY;
 ALTER TABLE app_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE subscriptions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE shop_payment_info ENABLE ROW LEVEL SECURITY;
+ALTER TABLE audit_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_roles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE system_health_checks ENABLE ROW LEVEL SECURITY;
 
 -- Helper function to get current user's shop ID (simplified for now)
 -- For this app, we'll use permissive policies since we're using custom auth
@@ -577,6 +625,180 @@ BEGIN
   ) THEN
     CREATE POLICY "Allow all operations on shop_payment_info"
     ON public.shop_payment_info
+    FOR ALL
+    USING (true)
+    WITH CHECK (true);
+  END IF;
+END $$;
+
+-- Audit Logs: Allow all operations
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'audit_logs'
+      AND policyname = 'Allow all operations on audit_logs'
+  ) THEN
+    CREATE POLICY "Allow all operations on audit_logs"
+    ON public.audit_logs
+    FOR ALL
+    USING (true)
+    WITH CHECK (true);
+  END IF;
+END $$;
+
+-- User Roles: Allow all operations
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'user_roles'
+      AND policyname = 'Allow all operations on user_roles'
+  ) THEN
+    CREATE POLICY "Allow all operations on user_roles"
+    ON public.user_roles
+    FOR ALL
+    USING (true)
+    WITH CHECK (true);
+  END IF;
+END $$;
+
+-- System Health Checks: Allow all operations
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'system_health_checks'
+      AND policyname = 'Allow all operations on system_health_checks'
+  ) THEN
+    CREATE POLICY "Allow all operations on system_health_checks"
+    ON public.system_health_checks
+    FOR ALL
+    USING (true)
+    WITH CHECK (true);
+  END IF;
+END $$;
+
+-- =============================================
+-- Audit Logs Table
+-- =============================================
+CREATE TABLE IF NOT EXISTS public.audit_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  action TEXT NOT NULL,
+  table_name TEXT NOT NULL,
+  record_id TEXT,
+  old_data JSONB,
+  new_data JSONB,
+  user_id UUID REFERENCES auth.users(id),
+  shop_id UUID REFERENCES public.shops(id),
+  ip_address TEXT,
+  user_agent TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Indexes for audit_logs
+CREATE INDEX IF NOT EXISTS idx_audit_logs_shop_id ON public.audit_logs(shop_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON public.audit_logs(user_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON public.audit_logs(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_table_name ON public.audit_logs(table_name);
+
+-- Enable RLS
+ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
+
+-- Audit Logs: Allow all operations
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'audit_logs'
+      AND policyname = 'Allow all operations on audit_logs'
+  ) THEN
+    CREATE POLICY "Allow all operations on audit_logs"
+    ON public.audit_logs
+    FOR ALL
+    USING (true)
+    WITH CHECK (true);
+  END IF;
+END $$;
+
+-- =============================================
+-- User Roles Table (Role-Based Access Control)
+-- =============================================
+CREATE TABLE IF NOT EXISTS public.user_roles (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  shop_id UUID REFERENCES public.shops(id) ON DELETE CASCADE,
+  role TEXT NOT NULL CHECK (role IN ('super_admin', 'admin', 'manager', 'cashier', 'viewer')),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(user_id, shop_id)
+);
+
+-- Indexes for user_roles
+CREATE INDEX IF NOT EXISTS idx_user_roles_user_id ON public.user_roles(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_roles_shop_id ON public.user_roles(shop_id);
+CREATE INDEX IF NOT EXISTS idx_user_roles_role ON public.user_roles(role);
+
+-- Enable RLS
+ALTER TABLE public.user_roles ENABLE ROW LEVEL SECURITY;
+
+-- User Roles: Allow all operations
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'user_roles'
+      AND policyname = 'Allow all operations on user_roles'
+  ) THEN
+    CREATE POLICY "Allow all operations on user_roles"
+    ON public.user_roles
+    FOR ALL
+    USING (true)
+    WITH CHECK (true);
+  END IF;
+END $$;
+
+-- =============================================
+-- System Health Checks Table
+-- =============================================
+CREATE TABLE IF NOT EXISTS public.system_health_checks (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  check_name TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('healthy', 'warning', 'critical')),
+  message TEXT,
+  details JSONB,
+  checked_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Indexes for system_health_checks
+CREATE INDEX IF NOT EXISTS idx_health_checks_checked_at ON public.system_health_checks(checked_at DESC);
+CREATE INDEX IF NOT EXISTS idx_health_checks_status ON public.system_health_checks(status);
+
+-- Enable RLS
+ALTER TABLE public.system_health_checks ENABLE ROW LEVEL SECURITY;
+
+-- System Health Checks: Allow all operations
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'system_health_checks'
+      AND policyname = 'Allow all operations on system_health_checks'
+  ) THEN
+    CREATE POLICY "Allow all operations on system_health_checks"
+    ON public.system_health_checks
     FOR ALL
     USING (true)
     WITH CHECK (true);
