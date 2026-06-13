@@ -19,6 +19,7 @@ import {
   Edit,
   Trash2,
   X,
+  Search,
 } from "lucide-react";
 import { dateKey } from "@/lib/utils";
 import { formatMoney, formatPercent, formatWholeNumber, cleanWholeNumberInput } from "@/lib/number-format";
@@ -503,12 +504,21 @@ export default function SalesPage() {
   const { items } = useItems(currentShopId);
   const { units } = useUnits(currentShopId);
   const { priceTiers } = usePriceTiers(currentShopId);
+  const { customers } = useUdhari(currentShopId);
 
   // --- Date navigation state ---
   const [selectedDate, setSelectedDate] = useState(() => new Date());
   const [expandedSaleId, setExpandedSaleId] = useState<number | null>(null);
   const [editingSale, setEditingSale] = useState<any | null>(null);
   const [deleteSaleId, setDeleteSaleId] = useState<number | null>(null);
+
+  // --- Search & Filter state ---
+  const [searchQuery, setSearchQuery] = useState('');
+  const [dateRangePreset, setDateRangePreset] = useState<'today' | 'yesterday' | 'last7' | 'custom'>('today');
+  const [customStartDate, setCustomStartDate] = useState<string>('');
+  const [customEndDate, setCustomEndDate] = useState<string>('');
+  const [paymentMethodFilter, setPaymentMethodFilter] = useState<string | null>(null);
+  const [customerFilter, setCustomerFilter] = useState<string | null>(null);
 
   const isToday = dateKey(selectedDate) === dateKey(new Date());
   const selectedDayKey = dateKey(selectedDate);
@@ -531,18 +541,94 @@ export default function SalesPage() {
     return map;
   }, [items]);
 
-  // --- Data for the SELECTED day ---
-  const daySales = useMemo(() => {
-    return sales
-      .filter((sale) => sale.date === selectedDayKey)
-      .sort((a, b) => b.timestamp - a.timestamp); // newest first
-  }, [sales, selectedDayKey]);
+  // --- Data for the SELECTED filters ---
+  const filteredSales = useMemo(() => {
+    let filtered = [...sales];
 
-  const daySummary = useMemo(() => {
-    const revenue = daySales.reduce((sum, s) => sum + s.subtotal, 0);
-    const cost = daySales.reduce((sum, s) => sum + s.totalCost, 0);
+    // --- Date range filter ---
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    let minDate: Date | null = null;
+    let maxDate: Date | null = null;
+
+    if (dateRangePreset === 'today') {
+      minDate = new Date(today);
+      maxDate = new Date(today);
+    } else if (dateRangePreset === 'yesterday') {
+      const yesterday = new Date(today);
+      yesterday.setDate(yesterday.getDate() - 1);
+      minDate = new Date(yesterday);
+      maxDate = new Date(yesterday);
+    } else if (dateRangePreset === 'last7') {
+      const last7 = new Date(today);
+      last7.setDate(last7.getDate() - 6);
+      minDate = last7;
+      maxDate = new Date(today);
+    } else if (dateRangePreset === 'custom' && customStartDate && customEndDate) {
+      minDate = new Date(customStartDate);
+      maxDate = new Date(customEndDate);
+    }
+
+    if (minDate && maxDate) {
+      const minKey = dateKey(minDate);
+      const maxKey = dateKey(maxDate);
+      filtered = filtered.filter(sale => sale.date >= minKey && sale.date <= maxKey);
+    } else if (dateRangePreset === 'today') {
+      filtered = filtered.filter(sale => sale.date === selectedDayKey);
+    }
+
+    // --- Payment method filter ---
+    if (paymentMethodFilter) {
+      filtered = filtered.filter(sale => sale.paymentMethod === paymentMethodFilter);
+    }
+
+    // --- Search filter ---
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      filtered = filtered.filter(sale => {
+        // Check customer name
+        if (sale.creditCustomerName && sale.creditCustomerName.toLowerCase().includes(q)) return true;
+        // Check item names
+        const itemsMatch = sale.items?.some((item: any) => item.itemName.toLowerCase().includes(q)) || false;
+        if (itemsMatch) return true;
+        // Check amount
+        const amountStr = sale.subtotal.toString();
+        if (amountStr.includes(q)) return true;
+        return false;
+      });
+    }
+
+    // --- Customer filter ---
+    if (customerFilter) {
+      if (customerFilter === 'all') {
+        // no filter
+      } else if (customerFilter === 'udhari-only') {
+        filtered = filtered.filter(sale => sale.paymentMethod === 'udhar');
+      } else {
+        filtered = filtered.filter(sale => 
+          sale.creditCustomerId === Number(customerFilter)
+        );
+      }
+    }
+
+    // Sort newest first
+    return filtered.sort((a, b) => b.timestamp - a.timestamp);
+  }, [
+    sales,
+    dateRangePreset,
+    customStartDate,
+    customEndDate,
+    paymentMethodFilter,
+    customerFilter,
+    searchQuery,
+    selectedDayKey
+  ]);
+
+  const filteredSummary = useMemo(() => {
+    const revenue = filteredSales.reduce((sum, s) => sum + s.subtotal, 0);
+    const cost = filteredSales.reduce((sum, s) => sum + s.totalCost, 0);
     const profit = revenue - cost;
-    const totalItems = daySales.reduce(
+    const totalItems = filteredSales.reduce(
       (sum, s) =>
         sum +
         (s.items || []).reduce(
@@ -552,14 +638,14 @@ export default function SalesPage() {
       0,
     );
     return {
-      transactions: daySales.length,
+      transactions: filteredSales.length,
       revenue,
       cost,
       profit,
       margin: revenue > 0 ? (profit / revenue) * 100 : 0,
       totalItems,
     };
-  }, [daySales]);
+  }, [filteredSales]);
 
   const goToPreviousDay = useCallback(() => {
     setSelectedDate((prev) => {
@@ -605,71 +691,130 @@ export default function SalesPage() {
       <div className="space-y-6">
         <SalesTransaction />
 
+        {/* Search & Filters section */}
+        <section className="space-y-3">
+          <div className="flex gap-2 flex-wrap">
+            <div className="relative flex-1 min-w-[200px]">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                placeholder="Search sales, customers, items..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2"
+                >
+                  <X className="w-4 h-4 text-muted-foreground" />
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="flex gap-2 flex-wrap">
+            {/* Date Range */}
+            <Select
+              value={dateRangePreset}
+              onValueChange={(v: any) => setDateRangePreset(v)}
+            >
+              <SelectTrigger className="w-full sm:w-[180px]">
+                <SelectValue placeholder="Date Range" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="today">Today</SelectItem>
+                <SelectItem value="yesterday">Yesterday</SelectItem>
+                <SelectItem value="last7">Last 7 Days</SelectItem>
+                <SelectItem value="custom">Custom</SelectItem>
+              </SelectContent>
+            </Select>
+
+            {dateRangePreset === 'custom' && (
+              <div className="flex gap-2 flex-wrap">
+                <Input
+                  type="date"
+                  value={customStartDate}
+                  onChange={(e) => setCustomStartDate(e.target.value)}
+                  className="w-full sm:w-auto"
+                />
+                <span className="self-center text-muted-foreground">to</span>
+                <Input
+                  type="date"
+                  value={customEndDate}
+                  onChange={(e) => setCustomEndDate(e.target.value)}
+                  className="w-full sm:w-auto"
+                />
+              </div>
+            )}
+
+            {/* Payment Method */}
+            <Select
+              value={paymentMethodFilter || 'all'}
+              onValueChange={(v) => setPaymentMethodFilter(v === 'all' ? null : v)}
+            >
+              <SelectTrigger className="w-full sm:w-[160px]">
+                <SelectValue placeholder="Payment Method" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All</SelectItem>
+                <SelectItem value="cash">Cash</SelectItem>
+                <SelectItem value="card">Card</SelectItem>
+                <SelectItem value="partial">Partial</SelectItem>
+                <SelectItem value="udhar">Udhari</SelectItem>
+              </SelectContent>
+            </Select>
+
+            {/* Customer Filter */}
+            <Select
+              value={customerFilter || 'all'}
+              onValueChange={(v) => setCustomerFilter(v === 'all' ? null : v)}
+            >
+              <SelectTrigger className="w-full sm:w-[200px]">
+                <SelectValue placeholder="Customer" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Customers</SelectItem>
+                <SelectItem value="udhari-only">Udhari Only</SelectItem>
+                {customers.map((customer) => (
+                  <SelectItem key={customer.id} value={customer.id.toString()}>
+                    {customer.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </section>
+
         {/* Recent sales section for everyone */}
         <section className="space-y-3">
-            <div className="flex items-center justify-between gap-2">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={goToPreviousDay}
-                className="h-9 w-9 shrink-0"
-              >
-                <ChevronLeft className="h-5 w-5" />
-              </Button>
-              <div className="text-center">
-                <h2 className="text-lg font-bold leading-tight">
-                  {formatDateLabel(selectedDate, t("english") ? "en" : "mr")}
-                </h2>
-                <p className="text-xs text-muted-foreground">
-                  {selectedDate.toLocaleDateString(
-                    t("english") ? "en-IN" : "mr-IN",
-                    {
-                      weekday: "long",
-                      day: "numeric",
-                      month: "long",
-                      year: "numeric",
-                    },
-                  )}
-                </p>
-              </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={goToNextDay}
-                disabled={isToday}
-                className="h-9 w-9 shrink-0"
-              >
-                <ChevronRight className="h-5 w-5" />
-              </Button>
-            </div>
-
-            {/* Day summary bar */}
-            {daySales.length > 0 && (
+            {/* Filtered summary bar */}
+            {filteredSales.length > 0 && (
               <Card className="border-2 bg-gradient-to-r from-green-50 to-blue-50">
                 <CardContent className="py-3">
                   <div className="grid grid-cols-4 gap-1 text-center text-xs">
                     <div>
                       <p className="text-muted-foreground">Revenue</p>
                       <p className="text-sm font-bold">
-                        ₹{formatMoney(daySummary.revenue)}
+                        ₹{formatMoney(filteredSummary.revenue)}
                       </p>
                     </div>
                     <div>
                       <p className="text-muted-foreground">Profit</p>
                       <p className="text-sm font-bold text-green-700">
-                        ₹{formatMoney(daySummary.profit)}
+                        ₹{formatMoney(filteredSummary.profit)}
                       </p>
                     </div>
                     <div>
                       <p className="text-muted-foreground">Margin</p>
                       <p className="text-sm font-bold">
-                        {formatPercent(daySummary.margin)}%
+                        {formatPercent(filteredSummary.margin)}%
                       </p>
                     </div>
                     <div>
                       <p className="text-muted-foreground">Transactions</p>
                       <p className="text-sm font-bold">
-                        {daySummary.transactions}
+                        {filteredSummary.transactions}
                       </p>
                     </div>
                   </div>
@@ -678,12 +823,14 @@ export default function SalesPage() {
             )}
 
             {/* Empty state */}
-            {daySales.length === 0 && (
+            {filteredSales.length === 0 && (
               <Card className="border-2 border-dashed">
                 <CardContent className="py-10 text-center">
                   <ShoppingBag className="mx-auto mb-3 h-10 w-10 text-muted-foreground/50" />
                   <p className="font-medium text-muted-foreground">
-                    {t("no_sales_day")}
+                    {searchQuery || paymentMethodFilter || customerFilter || dateRangePreset !== 'today' 
+                      ? "No sales found for selected filters" 
+                      : t("no_sales_day")}
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground/70">
                     {t("no_sales_day_desc")}
@@ -694,7 +841,7 @@ export default function SalesPage() {
 
             {/* Transaction list */}
             <div className="space-y-2">
-              {daySales.map((sale, index) => {
+              {filteredSales.map((sale, index) => {
                 const isExpanded = expandedSaleId === sale.id;
                 const saleItems = sale.items || [];
                 const isUdhar = sale.paymentMethod === "udhar";

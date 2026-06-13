@@ -18,16 +18,76 @@ import {
   Plus,
   Shield,
   Store,
+  Search,
+  X,
+  User,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { LanguageToggle } from '@/components/page-shell';
+import { Input } from '@/components/ui/input';
+import { useItems, useSales, useUdhari } from '@/hooks/use-supabase';
+import { 
+  Avatar,
+  AvatarFallback,
+  AvatarImage 
+} from '@/components/ui/avatar';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 export function Navigation() {
-  const { user, logout, isAuthenticated } = useAuth();
+  const { user, logout, isAuthenticated, currentShopId } = useAuth();
   const { t } = useLanguage();
   const pathname = usePathname();
   const router = useRouter();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [globalSearchQuery, setGlobalSearchQuery] = useState('');
+  const [showSearchResults, setShowSearchResults] = useState(false);
+
+  // Get data for search
+  const { items } = useItems(currentShopId);
+  const { sales } = useSales(currentShopId);
+  const { customers } = useUdhari(currentShopId);
+
+  // Compute search results
+  const searchResults = useMemo(() => {
+    if (!globalSearchQuery.trim()) return { items: [], sales: [], customers: [] };
+
+    const q = globalSearchQuery.toLowerCase();
+
+    const filteredItems = items.filter(item => 
+      (item.name?.toLowerCase().includes(q)) || 
+      (item.nameMarathi?.toLowerCase().includes(q)) || 
+      (item.brand?.toLowerCase().includes(q)) || 
+      (item.brandMarathi?.toLowerCase().includes(q))
+    );
+
+    const filteredSales = sales.filter(sale => {
+      if (sale.creditCustomerName?.toLowerCase().includes(q)) return true;
+      if (sale.subtotal.toString().includes(q)) return true;
+      const hasMatchingItem = sale.items?.some((item: any) => 
+        item.itemName?.toLowerCase().includes(q)
+      ) || false;
+      return hasMatchingItem;
+    });
+
+    const filteredCustomers = customers.filter(c => 
+      c.name?.toLowerCase().includes(q) || 
+      c.phone?.includes(q) || 
+      c.balance.toString().includes(q)
+    );
+
+    return {
+      items: filteredItems,
+      sales: filteredSales,
+      customers: filteredCustomers,
+    };
+  }, [globalSearchQuery, items, sales, customers]);
 
   // Redirect logic moved to useEffect to prevent setState during render
   useEffect(() => {
@@ -42,6 +102,18 @@ export function Navigation() {
     }
   }, [user, pathname, router, isAuthenticated]);
 
+  // Close search dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (!target.closest('.search-container')) {
+        setShowSearchResults(false);
+      }
+    };
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }, []);
+
   const handleLogout = async () => {
     await logout();
     router.push('/login');
@@ -52,7 +124,7 @@ export function Navigation() {
     return null;
   }
 
-  // Navigation items based on role
+  // Navigation items based on role and permissions
   const getNavItems = () => {
     if (user?.role === 'super_admin') {
       return [
@@ -60,10 +132,16 @@ export function Navigation() {
       ];
     }
 
+    const permissions = user?.permissions || { canViewDashboard: false, canViewItems: false, canViewSales: true, canViewUdhari: false, canViewReports: false, canViewSettings: false, canManageStaff: false };
+    
     if (user?.role === 'worker') {
-      return [
-        { href: '/sales', icon: ShoppingCart, label: 'Sell' },
-      ];
+      const items: any[] = [];
+      if (permissions.canViewDashboard) items.push({ href: '/dashboard', icon: Home, label: t('home') });
+      if (permissions.canViewSales) items.push({ href: '/sales', icon: ShoppingCart, label: 'Sell' });
+      if (permissions.canViewItems) items.push({ href: '/items', icon: Package, label: t('stock') });
+      if (permissions.canViewUdhari) items.push({ href: '/udhari', icon: Users, label: t('udhari') });
+      if (permissions.canViewReports) items.push({ href: '/reports', icon: Settings, label: 'Reports' }); // Reuse Settings icon temporarily
+      return items.length > 0 ? items : [{ href: '/sales', icon: ShoppingCart, label: 'Sell' }];
     }
 
     // Owner role
@@ -71,7 +149,8 @@ export function Navigation() {
       { href: '/dashboard', icon: Home, label: t('home') },
       { href: '/items', icon: Package, label: t('stock') },
       { href: '/udhari', icon: Users, label: t('udhari') },
-      { href: '/settings', icon: Settings, label: t('settings') },
+      { href: '/reports', icon: Shield, label: 'Reports' },
+      { href: '/staff', icon: Users, label: 'Staff' },
     ];
   };
 
@@ -81,7 +160,7 @@ export function Navigation() {
     <>
       {/* Header */}
       <header className="fixed top-0 left-0 right-0 z-40 bg-background border-b border-border px-3 sm:px-4 py-3 h-16 sm:h-20 flex items-center justify-between">
-        <div className="flex items-center gap-2 sm:gap-3 flex-1">
+        <div className="flex items-center gap-2 sm:gap-3">
           <div className="min-w-0">
             <h1 className="text-lg sm:text-2xl font-bold tracking-tight flex items-center gap-2">
               {user?.role === 'super_admin' && <Shield className="h-5 w-5 text-purple-600" />}
@@ -96,17 +175,141 @@ export function Navigation() {
             </p>
           </div>
         </div>
+
+        {/* Global Search Bar */}
+        {(user?.role === 'owner' || user?.role === 'super_admin') && (
+          <div className="relative flex-1 max-w-md mx-4 search-container">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input
+              placeholder="Search items, sales, udhari..."
+              value={globalSearchQuery}
+              onChange={(e) => setGlobalSearchQuery(e.target.value)}
+              onFocus={() => setShowSearchResults(true)}
+              className="pl-10 pr-10"
+            />
+            {globalSearchQuery && (
+              <button
+                onClick={() => {
+                  setGlobalSearchQuery('');
+                  setShowSearchResults(false);
+                }}
+                className="absolute right-3 top-1/2 -translate-y-1/2"
+              >
+                <X className="w-4 h-4 text-muted-foreground" />
+              </button>
+            )}
+
+            {/* Search Results Dropdown */}
+            {showSearchResults && globalSearchQuery && (
+              <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-lg shadow-xl border border-border z-50 max-h-[500px] overflow-y-auto">
+                {/* Items */}
+                {searchResults.items.length > 0 && (
+                  <div className="p-3 border-b border-border">
+                  <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wide mb-2">Items</h3>
+                    <div className="space-y-1">
+                      {searchResults.items.slice(0, 5).map((item) => (
+                        <Link key={item.id} href="/items" onClick={() => setShowSearchResults(false)} className="block p-2 rounded hover:bg-muted transition-colors">
+                          <div className="font-medium text-sm">{item.name || item.nameMarathi}</div>
+                          {item.brand && <div className="text-xs text-muted-foreground">{item.brand}</div>}
+                        </Link>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Sales */}
+                {searchResults.sales.length > 0 && (
+                  <div className="p-3 border-b border-border">
+                    <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wide mb-2">Sales</h3>
+                    <div className="space-y-1">
+                      {searchResults.sales.slice(0, 5).map((sale) => (
+                        <Link key={sale.id} href="/sales" onClick={() => setShowSearchResults(false)} className="block p-2 rounded hover:bg-muted transition-colors">
+                          <div className="font-medium text-sm">
+                            Sale - ₹{sale.subtotal}</div>
+                          {sale.creditCustomerName && (
+                            <div className="text-xs text-muted-foreground">
+                              {sale.creditCustomerName}
+                            </div>
+                          )}
+                        </Link>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Customers */}
+                {searchResults.customers.length > 0 && (
+                  <div className="p-3">
+                    <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wide mb-2">
+                      Udhari Customers
+                    </h3>
+                    <div className="space-y-1">
+                      {searchResults.customers.slice(0, 5).map((customer) => (
+                        <Link key={customer.id} href="/udhari" onClick={() => setShowSearchResults(false)} className="block p-2 rounded hover:bg-muted transition-colors">
+                          <div className="font-medium text-sm">{customer.name}</div>
+                          <div className="text-xs text-muted-foreground">
+                            Balance: ₹{customer.balance}
+                          </div>
+                        </Link>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {searchResults.items.length === 0 && searchResults.sales.length === 0 && searchResults.customers.length === 0 && (
+                  <div className="p-8 text-center text-muted-foreground">
+                    No results found
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="flex items-center gap-2">
           {user?.role !== 'worker' && <LanguageToggle className="hidden sm:flex" />}
-        <Button
-          onClick={handleLogout}
-          variant="ghost"
-          size="sm"
-          className="h-9 px-2 sm:px-3 text-xs sm:text-sm"
-        >
-          <LogOut className="w-4 h-4 mr-1 sm:mr-2" />
-          <span className="hidden sm:inline">{t('logout')}</span>
-        </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="sm" className="rounded-full h-10 w-10 p-0">
+                <Avatar className="h-9 w-9">
+                  <AvatarImage src="" alt={user?.username} />
+                  <AvatarFallback className="bg-purple-600 text-white">
+                    {user?.username ? user.username.charAt(0).toUpperCase() : 'U'}
+                  </AvatarFallback>
+                </Avatar>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuLabel>
+                <div className="flex flex-col">
+                  <span className="font-semibold">{user?.username}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {user?.role === 'owner' ? 'Owner' : user?.role === 'super_admin' ? 'Super Admin' : 'Worker'}
+                  </span>
+                </div>
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem asChild>
+                <Link href="/profile" className="cursor-pointer flex items-center gap-2">
+                  <User className="h-4 w-4" />
+                  <span>Profile</span>
+                </Link>
+              </DropdownMenuItem>
+              {user?.role === 'owner' && (
+                <DropdownMenuItem asChild>
+                  <Link href="/settings" className="cursor-pointer flex items-center gap-2">
+                    <Settings className="h-4 w-4" />
+                    <span>Settings</span>
+                  </Link>
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={handleLogout} className="cursor-pointer flex items-center gap-2 text-red-600">
+                <LogOut className="h-4 w-4" />
+                <span>Logout</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </header>
 

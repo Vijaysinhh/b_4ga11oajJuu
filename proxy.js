@@ -26,7 +26,10 @@ export function handleAuthRedirect(request, label = "[Proxy]") {
   const isPublicFile = publicFiles.includes(pathname);
 
   if (isPublicRoute || isPublicFile) {
-    return NextResponse.next();
+    const response = NextResponse.next();
+    // Apply security headers to all responses
+    addSecurityHeaders(response);
+    return response;
   }
 
   const cookieObj = request.cookies.get("authToken");
@@ -36,10 +39,29 @@ export function handleAuthRedirect(request, label = "[Proxy]") {
     console.log(
       `${label} Unauthenticated access to ${pathname}, redirecting to login. Cookie: ${!!cookieObj}`,
     );
-    return NextResponse.redirect(new URL("/login", request.url));
+    const redirectUrl = new URL("/login", request.url);
+    const response = NextResponse.redirect(redirectUrl);
+    addSecurityHeaders(response);
+    return response;
   }
 
-  return NextResponse.next();
+  const response = NextResponse.next();
+  addSecurityHeaders(response);
+  return response;
+}
+
+function addSecurityHeaders(response) {
+  // Security Headers
+  response.headers.set('X-Frame-Options', 'DENY');
+  response.headers.set('X-Content-Type-Options', 'nosniff');
+  response.headers.set('X-XSS-Protection', '1; mode=block');
+  response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+  
+  // Content Security Policy (CSP)
+  response.headers.set(
+    'Content-Security-Policy',
+    "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://*.supabase.co https://vitals.vercel-insights.com; object-src 'none'; frame-ancestors 'none'; base-uri 'self';"
+  );
 }
 
 export const config = {

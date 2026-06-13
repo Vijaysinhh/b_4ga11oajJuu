@@ -3,14 +3,18 @@
 import { useState } from "react";
 import { DailySalesReport } from "@/components/daily-sales-report";
 import { MonthlyPLReport } from "@/components/monthly-pl-report";
+import { TopProductsReport } from "@/components/top-products-report";
+import { InventoryHealthReport } from "@/components/inventory-health-report";
 import { Button } from "@/components/ui/button";
 import { HelpTooltip } from "@/components/help-tooltip";
 import { PageContainer, PageHeader } from "@/components/page-shell";
 import { useLanguage } from "@/providers/language-provider";
 
+type Tab = "daily" | "monthly" | "top-products" | "inventory";
+
 export default function ReportsPage() {
   const { t } = useLanguage();
-  const [activeTab, setActiveTab] = useState<"daily" | "monthly">("daily");
+  const [activeTab, setActiveTab] = useState<Tab>("daily");
 
   return (
     <PageContainer size="narrow">
@@ -19,25 +23,41 @@ export default function ReportsPage() {
         help={<HelpTooltip text={t("reports_help")} />}
       />
 
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         <Button
           onClick={() => setActiveTab("daily")}
           variant={activeTab === "daily" ? "default" : "outline"}
-          className="flex-1"
+          className="flex-1 min-w-[120px]"
         >
-          {t("daily_report")}
+          Daily Sales
         </Button>
         <Button
           onClick={() => setActiveTab("monthly")}
           variant={activeTab === "monthly" ? "default" : "outline"}
-          className="flex-1"
+          className="flex-1 min-w-[120px]"
         >
-          {t("monthly_pl")}
+          Monthly P&L
+        </Button>
+        <Button
+          onClick={() => setActiveTab("top-products")}
+          variant={activeTab === "top-products" ? "default" : "outline"}
+          className="flex-1 min-w-[120px]"
+        >
+          Top Products
+        </Button>
+        <Button
+          onClick={() => setActiveTab("inventory")}
+          variant={activeTab === "inventory" ? "default" : "outline"}
+          className="flex-1 min-w-[120px]"
+        >
+          Inventory Health
         </Button>
       </div>
 
       {activeTab === "daily" && <DailySalesReport />}
       {activeTab === "monthly" && <MonthlyPLReport />}
+      {activeTab === "top-products" && <TopProductsReport />}
+      {activeTab === "inventory" && <InventoryHealthReport />}
     </PageContainer>
   );
 }

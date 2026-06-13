@@ -7,7 +7,6 @@ import { ServiceWorkerProvider } from "@/providers/service-worker-provider";
 import { ToastProvider } from "@/providers/toast-provider";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { Navigation } from "@/components/navigation";
-import { CommandPalette } from "@/components/command-palette";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/toaster";
 import { SubscriptionCheck } from "@/components/SubscriptionCheck";
@@ -55,12 +54,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="mr" suppressHydrationWarning>
-      <head>
-        <link rel="manifest" href="/manifest.json" />
-        <meta name="theme-color" content="#8d5cf6" />
-      </head>
+      <head />
       <body className="font-sans antialiased bg-background overflow-x-hidden m-0 p-0">
-        <ErrorBoundary>
+        <ErrorBoundary key="app-error-boundary">
           <ThemeProvider
             attribute="class"
             defaultTheme="light"
@@ -71,8 +67,7 @@ export default function RootLayout({
                 <LanguageProvider>
                   <SubscriptionCheck>
                     <Navigation />
-                    <CommandPalette />
-                    <main className="pt-16 sm:pt-20 pb-20 sm:pb-6 px-3 sm:px-4 sm:ml-56 md:px-6 overflow-y-auto overflow-x-hidden min-h-screen transition-all duration-300">
+                    <main className="pt-16 sm:pt-20 pb-24 sm:pb-10 px-3 sm:px-4 sm:ml-56 md:px-6 overflow-y-auto overflow-x-hidden min-h-screen transition-all duration-300" key="main-content">
                       {children}
                     </main>
                     <Toaster />

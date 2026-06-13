@@ -610,6 +610,32 @@ export function Dashboard() {
     [items],
   );
 
+  // --- Expiry items ---
+  const { expiredItems, expiringItems } = useMemo(() => {
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const nextWeek = new Date(todayStart);
+    nextWeek.setDate(nextWeek.getDate() + 7);
+
+    const expired: typeof items = [];
+    const expiring: typeof items = [];
+
+    for (const item of items) {
+      if (!item.expiryDate) continue;
+      const expiryDate = new Date(item.expiryDate);
+      const expiryStart = new Date(expiryDate);
+      expiryStart.setHours(0, 0, 0, 0);
+
+      if (expiryStart < todayStart) {
+        expired.push(item);
+      } else if (expiryStart <= nextWeek) {
+        expiring.push(item);
+      }
+    }
+
+    return { expiredItems: expired, expiringItems: expiring };
+  }, [items]);
+
   // --- Generate single report based on selection ---
   const currentReport = useMemo(() => {
     const makeReport = (
@@ -1532,6 +1558,128 @@ export function Dashboard() {
             <p className="text-xs text-muted-foreground text-center pt-2">
               +{lowStockItems.length - 8} more items with low stock
             </p>
+          )}
+        </section>
+      )}
+
+      {/* ─── Expiry Alerts ─── */}
+      {(expiredItems.length > 0 || expiringItems.length > 0) && (
+        <section className="space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-orange-600" />
+              <h2 className="text-xl font-bold text-orange-700">
+                Expiry Alerts
+              </h2>
+              <span className="inline-flex items-center justify-center w-6 h-6 bg-orange-600 text-white text-xs font-bold rounded-full">
+                {expiredItems.length + expiringItems.length}
+              </span>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => (window.location.href = "/items")}
+              className="text-xs"
+            >
+              Manage Items
+            </Button>
+          </div>
+
+          {/* Expired Items */}
+          {expiredItems.length > 0 && (
+            <div className="space-y-2">
+              <h3 className="text-sm font-semibold text-red-700 flex items-center gap-1">
+                <span className="w-2 h-2 bg-red-600 rounded-full"></span>
+                Expired ({expiredItems.length})
+              </h3>
+              <div className="grid gap-2">
+                {expiredItems.slice(0, 5).map((item) => {
+                  const expiryDate = new Date(item.expiryDate!);
+                  return (
+                    <div
+                      key={item.id}
+                      className="flex items-center justify-between rounded-md border-2 border-red-400 bg-red-50 px-3 py-3"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate font-semibold text-red-900">
+                          {language === "mr" && item.nameMarathi
+                            ? item.nameMarathi
+                            : item.name}
+                        </p>
+                        <p className="text-xs text-red-700 mt-1">
+                          Expired on: {expiryDate.toLocaleDateString(language === "mr" ? "mr-IN" : "en-IN")}
+                        </p>
+                      </div>
+                      <div className="text-right ml-3 shrink-0">
+                        <p className="font-bold text-red-700">
+                          {formatWholeNumber(item.quantity)}
+                        </p>
+                        <p className="text-xs text-red-600">
+                          {units.find((u) => u.id === item.unitId)?.shortForm}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              {expiredItems.length > 5 && (
+                <p className="text-xs text-red-600 text-center pt-1">
+                  +{expiredItems.length - 5} more expired items
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Near Expiry Items */}
+          {expiringItems.length > 0 && (
+            <div className="space-y-2">
+              <h3 className="text-sm font-semibold text-orange-700 flex items-center gap-1">
+                <span className="w-2 h-2 bg-orange-600 rounded-full"></span>
+                Near Expiry (Next 7 Days) ({expiringItems.length})
+              </h3>
+              <div className="grid gap-2">
+                {expiringItems.slice(0, 5).map((item) => {
+                  const expiryDate = new Date(item.expiryDate!);
+                  const today = new Date();
+                  today.setHours(0, 0, 0, 0);
+                  const daysLeft = Math.ceil((expiryDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+                  
+                  return (
+                    <div
+                      key={item.id}
+                      className="flex items-center justify-between rounded-md border-2 border-orange-400 bg-orange-50 px-3 py-3"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate font-semibold text-orange-900">
+                          {language === "mr" && item.nameMarathi
+                            ? item.nameMarathi
+                            : item.name}
+                        </p>
+                        <p className="text-xs text-orange-700 mt-1">
+                          Expires on: {expiryDate.toLocaleDateString(language === "mr" ? "mr-IN" : "en-IN")} 
+                          <span className="ml-2 font-semibold">
+                            ({daysLeft} {daysLeft === 1 ? "day" : "days"} left)
+                          </span>
+                        </p>
+                      </div>
+                      <div className="text-right ml-3 shrink-0">
+                        <p className="font-bold text-orange-700">
+                          {formatWholeNumber(item.quantity)}
+                        </p>
+                        <p className="text-xs text-orange-600">
+                          {units.find((u) => u.id === item.unitId)?.shortForm}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              {expiringItems.length > 5 && (
+                <p className="text-xs text-orange-600 text-center pt-1">
+                  +{expiringItems.length - 5} more near-expiry items
+                </p>
+              )}
+            </div>
           )}
         </section>
       )}

@@ -85,6 +85,9 @@ export function ItemsManagement() {
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
+  const [selectedExpiryStatus, setSelectedExpiryStatus] = useState<string | null>(null); // null = All, 'expired', 'expiring', 'notExpiring'
+  const [selectedStockStatus, setSelectedStockStatus] = useState<string | null>(null); // null = All, 'lowStock', 'inStock', 'outOfStock'
+  const [sortBy, setSortBy] = useState<string>('name-asc'); // 'name-asc', 'qty-asc', 'expiry-asc', 'margin-desc'
   const [activeTab, setActiveTab] = useState('basic');
   const [selectedItems, setSelectedItems] = useState<Set<number>>(new Set());
 
@@ -103,15 +106,80 @@ export function ItemsManagement() {
   });
 
   const filteredItems = useMemo(() => {
-    return items.filter((item) => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    let result = items.filter((item) => {
+      // Search filter
       const searchLower = searchTerm.toLowerCase();
       const matchesSearch = 
         (item.name?.toLowerCase().includes(searchLower) || false) || 
         (item.nameMarathi?.toLowerCase().includes(searchLower) || false);
+      
+      // Category filter
       const matchesCategory = selectedCategoryId === null || item.categoryId === selectedCategoryId;
-      return matchesSearch && matchesCategory;
+
+      // Expiry status filter
+      let matchesExpiry = true;
+      if (selectedExpiryStatus) {
+        const expiryObj = item.expiryDate ? new Date(item.expiryDate) : null;
+        const expiryStart = expiryObj ? new Date(expiryObj) : null;
+        if (expiryStart) expiryStart.setHours(0, 0, 0, 0);
+        
+        const isExpired = expiryStart ? expiryStart < today : false;
+        const isExpiring = expiryStart ? expiryStart <= new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000) : false;
+
+        if (selectedExpiryStatus === 'expired') matchesExpiry = isExpired;
+        else if (selectedExpiryStatus === 'expiring') matchesExpiry = isExpiring && !isExpired;
+        else if (selectedExpiryStatus === 'notExpiring') matchesExpiry = !isExpired && !isExpiring;
+        else if (selectedExpiryStatus === 'hasExpiry') matchesExpiry = !!item.expiryDate;
+        else if (selectedExpiryStatus === 'noExpiry') matchesExpiry = !item.expiryDate;
+      }
+
+      // Stock status filter
+      let matchesStock = true;
+      if (selectedStockStatus) {
+        const isLowStock = item.quantity <= item.lowStockLimit;
+        const isOutOfStock = item.quantity === 0;
+        const isInStock = !isLowStock;
+
+        if (selectedStockStatus === 'lowStock') matchesStock = isLowStock;
+        else if (selectedStockStatus === 'outOfStock') matchesStock = isOutOfStock;
+        else if (selectedStockStatus === 'inStock') matchesStock = isInStock;
+      }
+
+      return matchesSearch && matchesCategory && matchesExpiry && matchesStock;
     });
-  }, [items, searchTerm, selectedCategoryId]);
+
+    // Sorting
+    result.sort((a, b) => {
+      switch (sortBy) {
+        case 'name-asc': {
+          const nameA = (a.name || a.nameMarathi || '').toLowerCase();
+          const nameB = (b.name || b.nameMarathi || '').toLowerCase();
+          return nameA.localeCompare(nameB);
+        }
+        case 'qty-asc':
+          return a.quantity - b.quantity;
+        case 'qty-desc':
+          return b.quantity - a.quantity;
+        case 'expiry-asc': {
+          const expiryA = a.expiryDate ? new Date(a.expiryDate).getTime() : Infinity;
+          const expiryB = b.expiryDate ? new Date(b.expiryDate).getTime() : Infinity;
+          return expiryA - expiryB;
+        }
+        case 'margin-desc': {
+          const marginA = a.buyPrice > 0 ? ((a.sellPrice - a.buyPrice) / a.buyPrice) * 100 : 0;
+          const marginB = b.buyPrice > 0 ? ((b.sellPrice - b.buyPrice) / b.buyPrice) * 100 : 0;
+          return marginB - marginA;
+        }
+        default:
+          return 0;
+      }
+    });
+
+    return result;
+  }, [items, searchTerm, selectedCategoryId, selectedExpiryStatus, selectedStockStatus, sortBy]);
 
   const totalStockValue = useMemo(() => {
     return items.reduce((sum, item) => {
@@ -651,22 +719,76 @@ export function ItemsManagement() {
           </div>
         </div>
 
-        <Select
-          value={selectedCategoryId?.toString() || 'all'}
-          onValueChange={(value) => setSelectedCategoryId(value === 'all' ? null : Number(value))}
-        >
-          <SelectTrigger className="w-full sm:w-48">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Categories</SelectItem>
-            {categories.map((cat) => (
-              <SelectItem key={cat.id} value={cat.id!.toString()}>
-                {cat.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="flex flex-wrap gap-2">
+          {/* Category Filter */}
+          <Select
+            value={selectedCategoryId?.toString() || 'all'}
+            onValueChange={(value) => setSelectedCategoryId(value === 'all' ? null : Number(value))}
+          >
+            <SelectTrigger className="w-full sm:w-40">
+              <SelectValue placeholder="Category" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Categories</SelectItem>
+              {categories.map((cat) => (
+                <SelectItem key={cat.id} value={cat.id!.toString()}>
+                  {cat.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {/* Expiry Status Filter */}
+          <Select
+            value={selectedExpiryStatus || 'all'}
+            onValueChange={(value) => setSelectedExpiryStatus(value === 'all' ? null : value)}
+          >
+            <SelectTrigger className="w-full sm:w-40">
+              <SelectValue placeholder="Expiry Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All</SelectItem>
+              <SelectItem value="expired">Expired</SelectItem>
+              <SelectItem value="expiring">Near Expiry</SelectItem>
+              <SelectItem value="notExpiring">Not Expiring Soon</SelectItem>
+              <SelectItem value="hasExpiry">Has Expiry Date</SelectItem>
+              <SelectItem value="noExpiry">No Expiry Date</SelectItem>
+            </SelectContent>
+          </Select>
+
+          {/* Stock Status Filter */}
+          <Select
+            value={selectedStockStatus || 'all'}
+            onValueChange={(value) => setSelectedStockStatus(value === 'all' ? null : value)}
+          >
+            <SelectTrigger className="w-full sm:w-40">
+              <SelectValue placeholder="Stock Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All</SelectItem>
+              <SelectItem value="lowStock">Low Stock</SelectItem>
+              <SelectItem value="outOfStock">Out of Stock</SelectItem>
+              <SelectItem value="inStock">In Stock</SelectItem>
+            </SelectContent>
+          </Select>
+
+          {/* Sort By */}
+          <Select
+            value={sortBy}
+            onValueChange={(value) => setSortBy(value)}
+          >
+            <SelectTrigger className="w-full sm:w-44">
+              <SelectValue placeholder="Sort By" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="name-asc">Name (A-Z)</SelectItem>
+              <SelectItem value="qty-asc">Quantity (Low → High)</SelectItem>
+              <SelectItem value="qty-desc">Quantity (High → Low)</SelectItem>
+              <SelectItem value="expiry-asc">Expiry (Soonest First)</SelectItem>
+              <SelectItem value="margin-desc">Profit Margin (High → Low)</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       {/* Batch Operations Toolbar */}
@@ -711,6 +833,30 @@ export function ItemsManagement() {
           {filteredItems.map((item) => {
             const itemPriceTiers = priceTiers.filter(tier => tier.itemId === item.id);
             const isSelected = selectedItems.has(item.id || 0);
+            const todayStart = new Date();
+            todayStart.setHours(0, 0, 0, 0);
+            const expiryObj = item.expiryDate ? new Date(item.expiryDate) : null;
+            const expiryStart = expiryObj ? new Date(expiryObj) : null;
+            if (expiryStart) expiryStart.setHours(0, 0, 0, 0);
+            const expiryStatus =
+              expiryStart && expiryStart.getTime() < todayStart.getTime()
+                ? 'expired'
+                : expiryStart && expiryStart.getTime() <= todayStart.getTime() + 7 * 24 * 60 * 60 * 1000
+                ? 'expiring'
+                : null;
+            
+            // Calculate days left
+            let daysLeftText = '';
+            if (expiryStart && expiryStatus) {
+              if (expiryStatus === 'expired') {
+                const daysAgo = Math.floor((todayStart.getTime() - expiryStart.getTime()) / (1000 * 60 * 60 * 24));
+                daysLeftText = ` (${daysAgo} day${daysAgo !== 1 ? 's' : ''} ago)`;
+              } else if (expiryStatus === 'expiring') {
+                const daysLeft = Math.ceil((expiryStart.getTime() - todayStart.getTime()) / (1000 * 60 * 60 * 24));
+                daysLeftText = ` (${daysLeft} day${daysLeft !== 1 ? 's' : ''} left)`;
+              }
+            }
+            
             return (
               <div key={item.id} className={`flex gap-2 items-start ${isSelected ? 'opacity-75' : ''}`}>
                 <input
@@ -738,6 +884,21 @@ export function ItemsManagement() {
                           </p>
                         )}
                         <p className="text-xs text-muted-foreground">{getCategoryName(item.categoryId)}</p>
+                        {expiryStart && (
+                          <p
+                            className={
+                              expiryStatus === 'expired'
+                                ? 'text-xs font-semibold text-red-600'
+                                : expiryStatus === 'expiring'
+                                ? 'text-xs font-semibold text-orange-600'
+                                : 'text-xs text-muted-foreground'
+                            }
+                          >
+                            Expiry: {expiryStart.toLocaleDateString(language === 'mr' ? 'mr-IN' : 'en-IN')}
+                            {expiryStatus === 'expired' ? ' (Expired)' : expiryStatus === 'expiring' ? ' (Near Expiry)' : ''}
+                            {daysLeftText}
+                          </p>
+                        )}
                       </div>
                       <div className="text-right">
                         <p className="text-sm font-semibold text-blue-600">{formatWholeNumber(item.quantity)} {getUnitName(item.unitId)}</p>

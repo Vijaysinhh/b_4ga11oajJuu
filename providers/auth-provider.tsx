@@ -4,11 +4,40 @@ import React, { createContext, useCallback, useContext, useEffect, useState } fr
 import { createClient } from '@/lib/supabase';
 import type { Database } from '@/lib/db-supabase-types';
 
+// Define permission types
+export type UserPermissions = {
+  canViewDashboard: boolean;
+  canViewItems: boolean;
+  canManageItems: boolean;
+  canViewSales: boolean;
+  canCreateSales: boolean;
+  canViewUdhari: boolean;
+  canManageUdhari: boolean;
+  canViewReports: boolean;
+  canViewSettings: boolean;
+  canManageStaff: boolean;
+};
+
+// Default permissions for workers
+export const DEFAULT_WORKER_PERMISSIONS: UserPermissions = {
+  canViewDashboard: false,
+  canViewItems: false,
+  canManageItems: false,
+  canViewSales: true,
+  canCreateSales: true,
+  canViewUdhari: false,
+  canManageUdhari: false,
+  canViewReports: false,
+  canViewSettings: false,
+  canManageStaff: false,
+};
+
 // Convert Supabase types to match our old User/Shop types
 type User = Database['public']['Tables']['users']['Row'] & {
   createdAt?: number;
   updatedAt?: number;
   shopId?: number | null;
+  permissions?: UserPermissions;
 };
 
 type Shop = Database['public']['Tables']['shops']['Row'] & {
@@ -76,6 +105,43 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Expose current shop ID for easy access
   const currentShopId = currentShop?.id;
 
+  // Helper to fetch user permissions
+  const fetchUserPermissions = async (userId: number, shopId: number | null): Promise<UserPermissions> => {
+    if (!shopId || userId === 0) {
+      // Super admin or no shop - full permissions
+      return {
+        canViewDashboard: true,
+        canViewItems: true,
+        canManageItems: true,
+        canViewSales: true,
+        canCreateSales: true,
+        canViewUdhari: true,
+        canManageUdhari: true,
+        canViewReports: true,
+        canViewSettings: true,
+        canManageStaff: true,
+      };
+    }
+
+    try {
+      const { data } = await (supabase as any)
+        .from('user_roles')
+        .select('permissions')
+        .eq('user_id', userId)
+        .eq('shop_id', shopId)
+        .single();
+
+      if (data?.permissions) {
+        return data.permissions as UserPermissions;
+      }
+    } catch (e) {
+      console.log('No permissions found, using defaults');
+    }
+
+    // Return default permissions
+    return DEFAULT_WORKER_PERMISSIONS;
+  };
+
   useEffect(() => {
     checkAuth();
   }, []);
@@ -89,7 +155,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // Check if user exists in Supabase
         if (parsedUser.id === 0) {
           // Super admin
-          setUser(parsedUser);
+          const superAdminWithPerms = {
+            ...parsedUser,
+            permissions: {
+              canViewDashboard: true,
+              canViewItems: true,
+              canManageItems: true,
+              canViewSales: true,
+              canCreateSales: true,
+              canViewUdhari: true,
+              canManageUdhari: true,
+              canViewReports: true,
+              canViewSettings: true,
+              canManageStaff: true,
+            } as UserPermissions
+          };
+          setUser(superAdminWithPerms);
           // Set auth cookie if not present
           document.cookie = `authToken=token-super-${Date.now()}; path=/; max-age=${60 * 60 * 24 * 7}`;
         } else {
@@ -100,8 +181,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             .single();
             
           if (data) {
-            const mappedUser = mapUser(data);
+            const permissions = await fetchUserPermissions(data.id, data.shop_id);
+            const mappedUser = {
+              ...mapUser(data),
+              permissions
+            };
             setUser(mappedUser);
+            localStorage.setItem('auth_user', JSON.stringify(mappedUser));
             // Set auth cookie if not present
             document.cookie = `authToken=token-${data.id}-${Date.now()}; path=/; max-age=${60 * 60 * 24 * 7}`;
             
@@ -129,18 +215,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const login = useCallback(async (username: string, password: string) => {
     try {
       // First, check if it's a super admin
-    if (username === 'vijaysinhjadhav23@gmail.com' && password === 'Vijaysinh@23') {
-      const superAdminUser: User = {
-        id: 0,
-        shop_id: null,
-        username: 'vijaysinhjadhav23@gmail.com',
-        password: 'Vijaysinh@23',
-        role: 'super_admin',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      };
+      if (username === 'vijaysinhjadhav23@gmail.com' && password === 'Vijaysinh@23') {
+        const superAdminUser: User = {
+          id: 0,
+          shop_id: null,
+          username: 'vijaysinhjadhav23@gmail.com',
+          password: 'Vijaysinh@23',
+          role: 'super_admin',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          permissions: {
+            canViewDashboard: true,
+            canViewItems: true,
+            canManageItems: true,
+            canViewSales: true,
+            canCreateSales: true,
+            canViewUdhari: true,
+            canManageUdhari: true,
+            canViewReports: true,
+            canViewSettings: true,
+            canManageStaff: true,
+          }
+        };
         setUser(superAdminUser);
         localStorage.setItem('auth_user', JSON.stringify(superAdminUser));
         // Set auth cookie
@@ -181,7 +279,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         
         if (ownerUser) {
-          const mappedUser = mapUser(ownerUser);
+          const permissions = {
+            canViewDashboard: true,
+            canViewItems: true,
+            canManageItems: true,
+            canViewSales: true,
+            canCreateSales: true,
+            canViewUdhari: true,
+            canManageUdhari: true,
+            canViewReports: true,
+            canViewSettings: true,
+            canManageStaff: true,
+          } as UserPermissions;
+          
+          const mappedUser = {
+            ...mapUser(ownerUser),
+            permissions
+          };
           const mappedShop = mapShop(shop);
           setUser(mappedUser);
           setCurrentShop(mappedShop);
@@ -202,7 +316,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       
       const worker = users?.[0];
       if (worker) {
-        const mappedUser = mapUser(worker);
+        const permissions = await fetchUserPermissions(worker.id, worker.shop_id);
+        const mappedUser = {
+          ...mapUser(worker),
+          permissions
+        };
         setUser(mappedUser);
         
         if (worker.shop_id) {
