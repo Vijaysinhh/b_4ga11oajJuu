@@ -13,13 +13,21 @@ import { ArrowUpRight } from "lucide-react";
 
 type ReportType = "today" | "month" | "sixMonths" | "year" | "specificMonth";
 
+interface BrandComparisonProps {
+  showOnlyTop5?: boolean;
+  selectedReportType?: ReportType;
+  setSelectedReportType?: (type: ReportType) => void;
+  selectedMonth?: string;
+  setSelectedMonth?: (month: string) => void;
+}
+
 export function BrandComparison({ 
     showOnlyTop5 = false, 
     selectedReportType: externalSelectedReportType, 
     setSelectedReportType: externalSetSelectedReportType, 
     selectedMonth: externalSelectedMonth, 
     setSelectedMonth: externalSetSelectedMonth 
-  }) {
+  }: BrandComparisonProps) {
   const router = useRouter();
   const { currentShopId } = useAuth();
   const { language } = useLanguage();
