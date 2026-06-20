@@ -140,7 +140,6 @@ export function Navigation() {
       if (permissions.canViewSales) items.push({ href: '/sales', icon: ShoppingCart, label: 'Sell' });
       if (permissions.canViewItems) items.push({ href: '/items', icon: Package, label: t('stock') });
       if (permissions.canViewUdhari) items.push({ href: '/udhari', icon: Users, label: t('udhari') });
-      if (permissions.canViewReports) items.push({ href: '/reports', icon: Settings, label: 'Reports' }); // Reuse Settings icon temporarily
       return items.length > 0 ? items : [{ href: '/sales', icon: ShoppingCart, label: 'Sell' }];
     }
 
@@ -149,7 +148,6 @@ export function Navigation() {
       { href: '/dashboard', icon: Home, label: t('home') },
       { href: '/items', icon: Package, label: t('stock') },
       { href: '/udhari', icon: Users, label: t('udhari') },
-      { href: '/reports', icon: Shield, label: 'Reports' },
       { href: '/staff', icon: Users, label: 'Staff' },
     ];
   };
