@@ -33,14 +33,14 @@ export const DEFAULT_WORKER_PERMISSIONS: UserPermissions = {
 };
 
 // Convert Supabase types to match our old User/Shop types
-type User = Database['public']['Tables']['users']['Row'] & {
+export type User = Database['public']['Tables']['users']['Row'] & {
   createdAt?: number;
   updatedAt?: number;
   shopId?: number | null;
   permissions?: UserPermissions;
 };
 
-type Shop = Database['public']['Tables']['shops']['Row'] & {
+export type Shop = Database['public']['Tables']['shops']['Row'] & {
   createdAt?: number;
   updatedAt?: number;
   ownerName?: string;

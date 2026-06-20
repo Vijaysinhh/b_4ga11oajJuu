@@ -103,10 +103,11 @@ export function hasAllPermissions(
 export function useRBAC() {
   const { user } = useAuth();
 
-  const userRole: UserRole = useMemo(() => {
+  const userRole = useMemo((): UserRole => {
     if (user?.role === 'super_admin') return 'super_admin';
-    // Default to admin if not specified
-    return 'admin';
+    if (user?.role === 'owner') return 'admin';
+    // Default to viewer if worker or not specified
+    return 'viewer';
   }, [user]);
 
   const can = useMemo(() => {
