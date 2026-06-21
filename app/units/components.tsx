@@ -1,12 +1,15 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { useLanguage } from '@/providers/language-provider';
-import { useUnits } from '@/hooks/use-db';
-import { toast } from 'sonner';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Card, CardContent } from '@/components/ui/card';
+import { useState } from "react";
+import { useLanguage } from "@/providers/language-provider";
+import { useUnits as useSupabaseUnits } from "@/hooks/use-supabase";
+import { useAuth } from "@/providers/auth-provider";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Card, CardContent } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
+import { PageContainer, PageHeader } from "@/components/page-shell";
 import {
   Dialog,
   DialogContent,
@@ -14,7 +17,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from '@/components/ui/dialog';
+} from "@/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -23,8 +26,8 @@ import {
   AlertDialogDescription,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { Trash2, Edit2, Plus } from 'lucide-react';
+} from "@/components/ui/alert-dialog";
+import { Trash2, Edit2, Plus } from "lucide-react";
 
 interface UnitFormData {
   name: string;
@@ -32,17 +35,18 @@ interface UnitFormData {
   shortForm: string;
 }
 
-export function UnitsManagement() {
+export function UnitsManagement({ embedded = false }: { embedded?: boolean }) {
   const { t } = useLanguage();
-  const { units, addUnit, updateUnit, deleteUnit } = useUnits();
+  const { currentShopId } = useAuth();
+  const { units, addUnit, updateUnit, deleteUnit } = useSupabaseUnits(currentShopId);
 
   const [isOpen, setIsOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [formData, setFormData] = useState<UnitFormData>({
-    name: '',
-    nameMarathi: '',
-    shortForm: '',
+    name: "",
+    nameMarathi: "",
+    shortForm: "",
   });
 
   const handleOpenDialog = (unit?: (typeof units)[0]) => {
@@ -50,15 +54,15 @@ export function UnitsManagement() {
       setEditingId(unit.id || null);
       setFormData({
         name: unit.name,
-        nameMarathi: unit.nameMarathi || '',
+        nameMarathi: unit.nameMarathi || "",
         shortForm: unit.shortForm,
       });
     } else {
       setEditingId(null);
       setFormData({
-        name: '',
-        nameMarathi: '',
-        shortForm: '',
+        name: "",
+        nameMarathi: "",
+        shortForm: "",
       });
     }
     setIsOpen(true);
@@ -66,7 +70,7 @@ export function UnitsManagement() {
 
   const handleSave = async () => {
     if (!formData.name.trim() || !formData.shortForm.trim()) {
-      toast.error('Please fill all fields');
+      toast.error(t("fill_all_fields"));
       return;
     }
 
@@ -77,24 +81,24 @@ export function UnitsManagement() {
           nameMarathi: formData.nameMarathi,
           shortForm: formData.shortForm,
         });
-        toast.success('Unit updated successfully');
+        toast.success(t("unit_updated"));
       } else {
         await addUnit({
           name: formData.name,
           nameMarathi: formData.nameMarathi,
           shortForm: formData.shortForm,
         });
-        toast.success('Unit added successfully');
+        toast.success(t("unit_added"));
       }
       setIsOpen(false);
       setFormData({
-        name: '',
-        nameMarathi: '',
-        shortForm: '',
+        name: "",
+        nameMarathi: "",
+        shortForm: "",
       });
     } catch (error) {
-      console.error('[v0] Error saving unit:', error);
-      toast.error('Error saving unit');
+      console.error("[v0] Error saving unit:", error);
+      toast.error(t("unit_save_error"));
     }
   };
 
@@ -103,70 +107,69 @@ export function UnitsManagement() {
       try {
         await deleteUnit(deleteId);
         setDeleteId(null);
-        toast.success('Unit deleted successfully');
+        toast.success(t("unit_deleted"));
       } catch (error) {
-        console.error('[v0] Error deleting unit:', error);
-        toast.error('Error deleting unit');
+        console.error("[v0] Error deleting unit:", error);
+        toast.error(t("unit_delete_error"));
       }
     }
   };
 
-  return (
-    <div className="space-y-6 pb-10">
-      <div className="space-y-2">
-        <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">Units</h1>
-        <p className="text-muted-foreground text-sm sm:text-base">Manage measurement units for products</p>
-      </div>
+  const content = (
+    <>
+      {!embedded ? (
+        <PageHeader title={t("units")} description={t("units_desc")} />
+      ) : null}
 
       <Dialog open={isOpen} onOpenChange={setIsOpen}>
         <DialogTrigger asChild>
           <Button onClick={() => handleOpenDialog()} className="w-full sm:w-auto gap-2">
             <Plus className="w-4 h-4" />
-            Add Unit
+            {t("add_unit")}
           </Button>
         </DialogTrigger>
         <DialogContent className="max-w-full sm:max-w-md">
           <DialogHeader>
             <DialogTitle>
-              {editingId ? 'Edit Unit' : 'Add New Unit'}
+              {editingId ? t("edit_unit") : t("add_unit")}
             </DialogTitle>
             <DialogDescription>
-              {editingId ? 'Update unit details' : 'Create a new measurement unit'}
+              {editingId ? t("update_unit_desc") : t("create_unit_desc")}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <label className="text-sm font-semibold">Unit Name *</label>
+              <Label>{t("unit_name_label")} *</Label>
               <Input
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                placeholder="e.g., Kilogram, Liter, Piece"
+                placeholder={t("unit_name_label")}
                 className="mt-1"
               />
             </div>
 
             <div>
-              <label className="text-sm font-semibold">Short Form *</label>
+              <Label>{t("short_form_label")} *</Label>
               <Input
                 value={formData.shortForm}
                 onChange={(e) => setFormData({ ...formData, shortForm: e.target.value.toUpperCase() })}
-                placeholder="e.g., KG, L, PCS"
+                placeholder={t("short_form")}
                 maxLength={5}
                 className="mt-1"
               />
             </div>
 
             <Button onClick={handleSave} className="w-full">
-              {editingId ? 'Update Unit' : 'Add Unit'}
+              {editingId ? t("update") : t("add_unit")}
             </Button>
           </div>
         </DialogContent>
       </Dialog>
 
       {units.length === 0 ? (
-        <Card className="border-dashed">
-          <CardContent className="pt-8 pb-8 text-center">
-            <p className="text-muted-foreground">No units added yet</p>
+        <Card className="border-2 border-dashed">
+          <CardContent className="py-8 text-center">
+            <p className="text-muted-foreground">{t("no_units")}</p>
           </CardContent>
         </Card>
       ) : (
@@ -188,7 +191,7 @@ export function UnitsManagement() {
                       size="sm"
                       onClick={() => handleOpenDialog(unit)}
                       className="gap-1 h-8 w-8 p-0"
-                      title="Edit"
+                      title={t("edit")}
                     >
                       <Edit2 className="w-4 h-4" />
                     </Button>
@@ -197,7 +200,7 @@ export function UnitsManagement() {
                       size="sm"
                       onClick={() => setDeleteId(unit.id || null)}
                       className="gap-1 h-8 w-8 p-0"
-                      title="Delete"
+                      title={t("delete")}
                     >
                       <Trash2 className="w-4 h-4" />
                     </Button>
@@ -212,19 +215,25 @@ export function UnitsManagement() {
       <AlertDialog open={deleteId !== null} onOpenChange={() => setDeleteId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Unit?</AlertDialogTitle>
+            <AlertDialogTitle>{t("delete_unit_title")}</AlertDialogTitle>
             <AlertDialogDescription>
-              This action cannot be undone. The unit will be deleted permanently.
+              {t("cannot_undo")} {t("delete_unit_desc")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="flex gap-2 justify-end">
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>{t("cancel")}</AlertDialogCancel>
             <AlertDialogAction onClick={handleDelete} className="bg-destructive">
-              Delete
+              {t("delete")}
             </AlertDialogAction>
           </div>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </>
   );
+
+  if (embedded) {
+    return <div className="space-y-6">{content}</div>;
+  }
+
+  return <PageContainer>{content}</PageContainer>;
 }

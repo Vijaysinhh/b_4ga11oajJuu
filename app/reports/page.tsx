@@ -1,45 +1,63 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { DailySalesReport } from '@/components/daily-sales-report';
-import { MonthlyPLReport } from '@/components/monthly-pl-report';
-import { Button } from '@/components/ui/button';
-import { HelpTooltip } from '@/components/help-tooltip';
+import { useState } from "react";
+import { DailySalesReport } from "@/components/daily-sales-report";
+import { MonthlyPLReport } from "@/components/monthly-pl-report";
+import { TopProductsReport } from "@/components/top-products-report";
+import { InventoryHealthReport } from "@/components/inventory-health-report";
+import { Button } from "@/components/ui/button";
+import { HelpTooltip } from "@/components/help-tooltip";
+import { PageContainer, PageHeader } from "@/components/page-shell";
+import { useLanguage } from "@/providers/language-provider";
+
+type Tab = "daily" | "monthly" | "top-products" | "inventory";
 
 export default function ReportsPage() {
-  const [activeTab, setActiveTab] = useState<'daily' | 'monthly'>('daily');
+  const { t } = useLanguage();
+  const [activeTab, setActiveTab] = useState<Tab>("daily");
 
   return (
-    <div className="min-h-screen bg-background p-4">
-      <div className="max-w-4xl mx-auto">
-        {/* Header with Help */}
-        <div className="flex items-center gap-2 mb-6">
-          <h1 className="text-3xl font-bold">Reports</h1>
-          <HelpTooltip text="View your daily sales summary or monthly profit & loss analysis" />
-        </div>
+    <PageContainer size="narrow">
+      <PageHeader
+        title={t("reports")}
+        help={<HelpTooltip text={t("reports_help")} />}
+      />
 
-        {/* Tab Buttons */}
-        <div className="flex gap-2 mb-6">
-          <Button
-            onClick={() => setActiveTab('daily')}
-            variant={activeTab === 'daily' ? 'default' : 'outline'}
-            className="flex-1"
-          >
-            Daily Report
-          </Button>
-          <Button
-            onClick={() => setActiveTab('monthly')}
-            variant={activeTab === 'monthly' ? 'default' : 'outline'}
-            className="flex-1"
-          >
-            Monthly P&L
-          </Button>
-        </div>
-
-        {/* Content */}
-        {activeTab === 'daily' && <DailySalesReport />}
-        {activeTab === 'monthly' && <MonthlyPLReport />}
+      <div className="flex flex-wrap gap-2">
+        <Button
+          onClick={() => setActiveTab("daily")}
+          variant={activeTab === "daily" ? "default" : "outline"}
+          className="flex-1 min-w-[120px]"
+        >
+          Daily Sales
+        </Button>
+        <Button
+          onClick={() => setActiveTab("monthly")}
+          variant={activeTab === "monthly" ? "default" : "outline"}
+          className="flex-1 min-w-[120px]"
+        >
+          Monthly P&L
+        </Button>
+        <Button
+          onClick={() => setActiveTab("top-products")}
+          variant={activeTab === "top-products" ? "default" : "outline"}
+          className="flex-1 min-w-[120px]"
+        >
+          Top Products
+        </Button>
+        <Button
+          onClick={() => setActiveTab("inventory")}
+          variant={activeTab === "inventory" ? "default" : "outline"}
+          className="flex-1 min-w-[120px]"
+        >
+          Inventory Health
+        </Button>
       </div>
-    </div>
+
+      {activeTab === "daily" && <DailySalesReport />}
+      {activeTab === "monthly" && <MonthlyPLReport />}
+      {activeTab === "top-products" && <TopProductsReport />}
+      {activeTab === "inventory" && <InventoryHealthReport />}
+    </PageContainer>
   );
 }

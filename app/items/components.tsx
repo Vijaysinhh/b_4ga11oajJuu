@@ -2,8 +2,8 @@
 
 import { useState, useMemo } from 'react';
 import { useLanguage } from '@/providers/language-provider';
-import { useItems, useCategories, useUnits, usePriceTiers } from '@/hooks/use-db';
-import { useSyncToCloud } from '@/hooks/use-sync-to-cloud';
+import { useItems as useSupabaseItems, useCategories as useSupabaseCategories, useUnits as useSupabaseUnits, usePriceTiers } from '@/hooks/use-supabase';
+import { useAuth } from '@/providers/auth-provider';
 import { PriceTierManager } from '@/components/price-tier-manager';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -36,52 +36,158 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Trash2, Edit2, Plus, Search } from 'lucide-react';
 import { HelpTooltip, LabelWithTooltip } from '@/components/help-tooltip';
+import { formatMoney, formatPercent, formatWholeNumber, parseWholeNumberInput } from '@/lib/number-format';
 
 interface ItemFormData {
   name: string;
   nameMarathi: string;
+  brand: string;
+  brandMarathi: string;
   categoryId: number;
   unitId: number;
   quantity: number;
+  expiryDate: string;
   buyPrice: number;
   sellPrice: number;
   lowStockLimit: number;
 }
 
 export function ItemsManagement() {
-  const { t } = useLanguage();
-  const { items, addItem, updateItem, deleteItem } = useItems();
-  const { syncItemToCloud } = useSyncToCloud();
-  const { categories } = useCategories();
-  const { units } = useUnits();
-  const { priceTiers, addPriceTier, deletePriceTier } = usePriceTiers();
+  const { t, language } = useLanguage();
+  const { currentShopId } = useAuth();
+  const { items, addItem, updateItem, deleteItem } = useSupabaseItems(currentShopId);
+  const { categories } = useSupabaseCategories(currentShopId);
+  const { units } = useSupabaseUnits(currentShopId);
+  const { priceTiers, addPriceTier: addPriceTierSupabase, deletePriceTier: deletePriceTierSupabase } = usePriceTiers(currentShopId);
+
+  const handleAddPriceTier = async (tierData: any) => {
+    try {
+      await addPriceTierSupabase(tierData);
+      toast.success('Price tier added successfully!');
+    } catch (error) {
+      console.error('Error adding price tier:', error);
+      toast.error('Failed to add price tier');
+    }
+  };
+
+  const handleDeletePriceTier = async (tierId: number) => {
+    try {
+      await deletePriceTierSupabase(tierId);
+      toast.success('Price tier deleted successfully!');
+    } catch (error) {
+      console.error('Error deleting price tier:', error);
+      toast.error('Failed to delete price tier');
+    }
+  };
 
   const [isOpen, setIsOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
+  const [selectedExpiryStatus, setSelectedExpiryStatus] = useState<string | null>(null); // null = All, 'expired', 'expiring', 'notExpiring'
+  const [selectedStockStatus, setSelectedStockStatus] = useState<string | null>(null); // null = All, 'lowStock', 'inStock', 'outOfStock'
+  const [sortBy, setSortBy] = useState<string>('name-asc'); // 'name-asc', 'qty-asc', 'expiry-asc', 'margin-desc'
   const [activeTab, setActiveTab] = useState('basic');
   const [selectedItems, setSelectedItems] = useState<Set<number>>(new Set());
 
   const [formData, setFormData] = useState<ItemFormData>({
     name: '',
     nameMarathi: '',
+    brand: '',
+    brandMarathi: '',
     categoryId: categories[0]?.id || 1,
     unitId: units[0]?.id || 1,
     quantity: 0,
+    expiryDate: '',
     buyPrice: 0,
     sellPrice: 0,
     lowStockLimit: 0,
   });
 
   const filteredItems = useMemo(() => {
-    return items.filter((item) => {
-      const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase());
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    let result = items.filter((item) => {
+      // Search filter
+      const searchLower = searchTerm.toLowerCase();
+      const matchesSearch = 
+        (item.name?.toLowerCase().includes(searchLower) || false) || 
+        (item.nameMarathi?.toLowerCase().includes(searchLower) || false);
+      
+      // Category filter
       const matchesCategory = selectedCategoryId === null || item.categoryId === selectedCategoryId;
-      return matchesSearch && matchesCategory;
+
+      // Expiry status filter
+      let matchesExpiry = true;
+      if (selectedExpiryStatus) {
+        const expiryObj = item.expiryDate ? new Date(item.expiryDate) : null;
+        const expiryStart = expiryObj ? new Date(expiryObj) : null;
+        if (expiryStart) expiryStart.setHours(0, 0, 0, 0);
+        
+        const isExpired = expiryStart ? expiryStart < today : false;
+        const isExpiring = expiryStart ? expiryStart <= new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000) : false;
+
+        if (selectedExpiryStatus === 'expired') matchesExpiry = isExpired;
+        else if (selectedExpiryStatus === 'expiring') matchesExpiry = isExpiring && !isExpired;
+        else if (selectedExpiryStatus === 'notExpiring') matchesExpiry = !isExpired && !isExpiring;
+        else if (selectedExpiryStatus === 'hasExpiry') matchesExpiry = !!item.expiryDate;
+        else if (selectedExpiryStatus === 'noExpiry') matchesExpiry = !item.expiryDate;
+      }
+
+      // Stock status filter
+      let matchesStock = true;
+      if (selectedStockStatus) {
+        const isLowStock = item.quantity <= item.lowStockLimit;
+        const isOutOfStock = item.quantity === 0;
+        const isInStock = !isLowStock;
+
+        if (selectedStockStatus === 'lowStock') matchesStock = isLowStock;
+        else if (selectedStockStatus === 'outOfStock') matchesStock = isOutOfStock;
+        else if (selectedStockStatus === 'inStock') matchesStock = isInStock;
+      }
+
+      return matchesSearch && matchesCategory && matchesExpiry && matchesStock;
     });
-  }, [items, searchTerm, selectedCategoryId]);
+
+    // Sorting
+    result.sort((a, b) => {
+      switch (sortBy) {
+        case 'name-asc': {
+          const nameA = (a.name || a.nameMarathi || '').toLowerCase();
+          const nameB = (b.name || b.nameMarathi || '').toLowerCase();
+          return nameA.localeCompare(nameB);
+        }
+        case 'qty-asc':
+          return a.quantity - b.quantity;
+        case 'qty-desc':
+          return b.quantity - a.quantity;
+        case 'expiry-asc': {
+          const expiryA = a.expiryDate ? new Date(a.expiryDate).getTime() : Infinity;
+          const expiryB = b.expiryDate ? new Date(b.expiryDate).getTime() : Infinity;
+          return expiryA - expiryB;
+        }
+        case 'margin-desc': {
+          const marginA = a.buyPrice > 0 ? ((a.sellPrice - a.buyPrice) / a.buyPrice) * 100 : 0;
+          const marginB = b.buyPrice > 0 ? ((b.sellPrice - b.buyPrice) / b.buyPrice) * 100 : 0;
+          return marginB - marginA;
+        }
+        default:
+          return 0;
+      }
+    });
+
+    return result;
+  }, [items, searchTerm, selectedCategoryId, selectedExpiryStatus, selectedStockStatus, sortBy]);
+
+  const totalStockValue = useMemo(() => {
+    return items.reduce((sum, item) => {
+      const qty = Number(item.quantity || 0);
+      const cost = Number(item.buyPrice || 0);
+      return sum + qty * cost;
+    }, 0);
+  }, [items]);
 
   const handleOpenDialog = (item?: (typeof items)[0]) => {
     if (item) {
@@ -89,9 +195,12 @@ export function ItemsManagement() {
       setFormData({
         name: item.name,
         nameMarathi: item.nameMarathi || '',
+        brand: item.brand || '',
+        brandMarathi: item.brandMarathi || '',
         categoryId: item.categoryId,
         unitId: item.unitId,
         quantity: item.quantity,
+        expiryDate: item.expiryDate ? String(item.expiryDate).slice(0, 10) : '',
         buyPrice: item.buyPrice,
         sellPrice: item.sellPrice,
         lowStockLimit: item.lowStockLimit,
@@ -101,9 +210,12 @@ export function ItemsManagement() {
       setFormData({
         name: '',
         nameMarathi: '',
+        brand: '',
+        brandMarathi: '',
         categoryId: categories[0]?.id || 1,
         unitId: units[0]?.id || 1,
         quantity: 0,
+        expiryDate: '',
         buyPrice: 0,
         sellPrice: 0,
         lowStockLimit: 5,
@@ -116,9 +228,12 @@ export function ItemsManagement() {
     setFormData({
       name: '',
       nameMarathi: '',
+      brand: '',
+      brandMarathi: '',
       categoryId: categories[0]?.id || 1,
       unitId: units[0]?.id || 1,
       quantity: 0,
+      expiryDate: '',
       buyPrice: 0,
       sellPrice: 0,
       lowStockLimit: 0,
@@ -128,59 +243,100 @@ export function ItemsManagement() {
   };
 
   const handleSave = async () => {
-    if (
-      !formData.name.trim() ||
-      formData.categoryId === 0 ||
-      formData.unitId === 0 ||
-      formData.quantity < 0 ||
-      formData.buyPrice <= 0 ||
-      formData.sellPrice <= 0 ||
-      formData.sellPrice < formData.buyPrice
-    ) {
-      toast.error('Please fill all fields correctly. Selling price must be greater than buying price.');
+    if (categories.length === 0) {
+      toast.error('Please add a category first.');
+      return;
+    }
+    if (units.length === 0) {
+      toast.error('Please add a unit first.');
+      return;
+    }
+    if (!categories.some((c) => c.id === formData.categoryId)) {
+      toast.error('Please select a valid category.');
+      return;
+    }
+    if (!units.some((u) => u.id === formData.unitId)) {
+      toast.error('Please select a valid unit.');
+      return;
+    }
+    const name = formData.name.trim();
+    const nameMarathi = formData.nameMarathi.trim();
+    if (!name && !nameMarathi) {
+      toast.error('Please enter item name in English OR Marathi.');
+      return;
+    }
+    if (!Number.isFinite(formData.quantity) || formData.quantity < 0) {
+      toast.error('Please enter a valid quantity.');
+      return;
+    }
+    const expiryDate = formData.expiryDate.trim();
+    if (expiryDate) {
+      const parsed = Date.parse(`${expiryDate}T00:00:00`);
+      if (Number.isNaN(parsed)) {
+        toast.error('Please enter a valid expiry date.');
+        return;
+      }
+    }
+    if (!Number.isFinite(formData.buyPrice) || formData.buyPrice <= 0) {
+      toast.error(`Please enter a valid buying price. Current: Rs. ${formData.buyPrice || 0}`);
+      return;
+    }
+    if (!Number.isFinite(formData.sellPrice) || formData.sellPrice <= 0) {
+      toast.error(`Please enter a valid selling price. Current: Rs. ${formData.sellPrice || 0}`);
+      return;
+    }
+    if (formData.sellPrice < formData.buyPrice) {
+      toast.error(
+        `Selling price must be greater than buying price. Buying: Rs. ${formData.buyPrice}, Selling: Rs. ${formData.sellPrice}`,
+      );
       return;
     }
 
     try {
+      const expiryDateIso = expiryDate ? new Date(`${expiryDate}T23:59:59`).toISOString() : null;
       if (editingId) {
         await updateItem(editingId, {
           name: formData.name,
           nameMarathi: formData.nameMarathi,
+          brand: formData.brand,
+          brandMarathi: formData.brandMarathi,
           categoryId: formData.categoryId,
           unitId: formData.unitId,
           quantity: formData.quantity,
+          expiryDate: expiryDateIso,
           buyPrice: formData.buyPrice,
           sellPrice: formData.sellPrice,
           lowStockLimit: formData.lowStockLimit,
         });
-        // Sync updated item to cloud
-        const updatedItem = items.find(i => i.id === editingId);
-        if (updatedItem) {
-          await syncItemToCloud(updatedItem).catch(() => {/* sync failed but local save succeeded */});
-        }
         toast.success('Item updated successfully');
       } else {
-        const newItemId = await addItem({
+        const newId = await addItem({
           name: formData.name,
           nameMarathi: formData.nameMarathi,
+          brand: formData.brand,
+          brandMarathi: formData.brandMarathi,
           categoryId: formData.categoryId,
           unitId: formData.unitId,
           quantity: formData.quantity,
+          expiryDate: expiryDateIso,
           buyPrice: formData.buyPrice,
           sellPrice: formData.sellPrice,
           lowStockLimit: formData.lowStockLimit,
         });
-        // Sync new item to cloud
-        const newItem = items.find(i => i.id === newItemId);
-        if (newItem) {
-          await syncItemToCloud(newItem).catch(() => {/* sync failed but local save succeeded */});
+        if (!newId) {
+          throw new Error('Item saved but could not be loaded');
         }
         toast.success('Item added successfully');
       }
       resetForm();
     } catch (error) {
       console.error('[v0] Error saving item:', error);
-      toast.error('Error saving item. Please try again.');
+      const message =
+        (error as any)?.message ||
+        (error as any)?.details ||
+        (error as any)?.hint ||
+        (error as any)?.error_description;
+      toast.error(message ? `Error saving item: ${message}` : 'Error saving item. Please try again.');
     }
   };
 
@@ -249,9 +405,23 @@ export function ItemsManagement() {
     return unit?.shortForm || unit?.name || 'N/A';
   };
 
-  const calculateMargin = (buyPrice: number, sellPrice: number): string => {
-    if (buyPrice === 0) return '0';
-    return (((sellPrice - buyPrice) / buyPrice) * 100).toFixed(1);
+  const calculateMargin = (buyPrice: number, sellPrice: number): number => {
+    if (buyPrice === 0) return 0;
+    return ((sellPrice - buyPrice) / buyPrice) * 100;
+  };
+
+  const formatDateInput = (date: Date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  const setExpiryInDays = (days: number) => {
+    const base = new Date();
+    base.setHours(0, 0, 0, 0);
+    base.setDate(base.getDate() + days);
+    setFormData((prev) => ({ ...prev, expiryDate: formatDateInput(base) }));
   };
 
   return (
@@ -260,6 +430,18 @@ export function ItemsManagement() {
         <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">{t('items')}</h1>
         <p className="text-muted-foreground text-sm sm:text-base">Manage your product inventory</p>
       </div>
+
+      <Card className="border-2">
+        <CardContent className="p-4 flex items-center justify-between">
+          <div>
+            <p className="text-sm font-semibold">{t('total_value_label')}</p>
+            <p className="text-xs text-muted-foreground">
+              {items.length} {t('products')}
+            </p>
+          </div>
+          <p className="text-xl font-bold text-purple-700">Rs. {formatMoney(totalStockValue)}</p>
+        </CardContent>
+      </Card>
 
       <Dialog open={isOpen} onOpenChange={setIsOpen}>
         <DialogTrigger asChild>
@@ -284,8 +466,7 @@ export function ItemsManagement() {
               <div>
                 <LabelWithTooltip 
                   label="Item Name" 
-                  tooltip="Enter the product name as it appears in your shop (e.g., Basmati Rice, Sunflower Oil, Salt)"
-                  required
+                  tooltip="Enter the product name as it appears in your shop (e.g., Basmati Rice, Sunflower Oil, Salt). Fill either this OR Marathi name."
                 />
                 <Input
                   value={formData.name}
@@ -298,12 +479,38 @@ export function ItemsManagement() {
               <div>
                 <LabelWithTooltip 
                   label="Item Name (Marathi)" 
-                  tooltip="Enter the product name in Marathi for better local understanding"
+                  tooltip="Enter the product name in Marathi for better local understanding. Fill either this OR English name."
                 />
                 <Input
                   value={formData.nameMarathi}
                   onChange={(e) => setFormData({ ...formData, nameMarathi: e.target.value })}
                   placeholder="उदा., तांदूळ, तेल, मीठ"
+                  className="mt-1"
+                />
+              </div>
+
+              <div>
+                <LabelWithTooltip 
+                  label="Brand Name" 
+                  tooltip="Enter the product brand name"
+                />
+                <Input
+                  value={formData.brand}
+                  onChange={(e) => setFormData({ ...formData, brand: e.target.value })}
+                  placeholder="e.g., Parle, Amul, Nestle"
+                  className="mt-1"
+                />
+              </div>
+
+              <div>
+                <LabelWithTooltip 
+                  label="Brand Name (Marathi)" 
+                  tooltip="Enter the product brand name in Marathi"
+                />
+                <Input
+                  value={formData.brandMarathi}
+                  onChange={(e) => setFormData({ ...formData, brandMarathi: e.target.value })}
+                  placeholder="उदा., पार्ले, अमूल, नेस्टले"
                   className="mt-1"
                 />
               </div>
@@ -361,24 +568,63 @@ export function ItemsManagement() {
                   required
                 />
                 <Input
-                  type="number"
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
                   value={formData.quantity || ''}
-                  onChange={(e) => setFormData({ ...formData, quantity: e.target.value === '' ? 0 : parseFloat(e.target.value) || 0 })}
+                  onChange={(e) => setFormData({ ...formData, quantity: parseWholeNumberInput(e.target.value) })}
                   placeholder="0"
                   className="mt-1"
                 />
               </div>
 
               <div>
+                <LabelWithTooltip
+                  label="Expiry Date"
+                  tooltip="Optional. If set, the system can show expiry alerts for this item."
+                />
+                <div className="mt-1 flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <Input
+                    type="date"
+                    value={formData.expiryDate}
+                    onChange={(e) => setFormData({ ...formData, expiryDate: e.target.value })}
+                    className="sm:w-[200px]"
+                  />
+                  <div className="flex flex-wrap gap-2">
+                    <Button type="button" variant="outline" size="sm" onClick={() => setExpiryInDays(0)}>
+                      Today
+                    </Button>
+                    <Button type="button" variant="outline" size="sm" onClick={() => setExpiryInDays(7)}>
+                      +7 days
+                    </Button>
+                    <Button type="button" variant="outline" size="sm" onClick={() => setExpiryInDays(30)}>
+                      +30 days
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setFormData((prev) => ({ ...prev, expiryDate: '' }))}
+                      disabled={!formData.expiryDate}
+                    >
+                      Clear
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
+              <div>
                 <LabelWithTooltip 
                   label="Buying Price" 
-                  tooltip="The cost price - how much you pay to buy this item from your supplier (in ₹)"
+                  tooltip="The cost price - how much you pay to buy this item from your supplier (in Rs.)"
                   required
                 />
                 <Input
-                  type="number"
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
                   value={formData.buyPrice || ''}
-                  onChange={(e) => setFormData({ ...formData, buyPrice: e.target.value === '' ? 0 : parseFloat(e.target.value) || 0 })}
+                  onChange={(e) => setFormData({ ...formData, buyPrice: parseWholeNumberInput(e.target.value) })}
                   placeholder="0"
                   className="mt-1"
                 />
@@ -387,19 +633,21 @@ export function ItemsManagement() {
               <div>
                 <LabelWithTooltip 
                   label="Selling Price" 
-                  tooltip="The retail price - how much you sell this item for to customers (in ₹)"
+                  tooltip="The retail price - how much you sell this item for to customers (in Rs.)"
                   required
                 />
                 <Input
-                  type="number"
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
                   value={formData.sellPrice || ''}
-                  onChange={(e) => setFormData({ ...formData, sellPrice: e.target.value === '' ? 0 : parseFloat(e.target.value) || 0 })}
+                  onChange={(e) => setFormData({ ...formData, sellPrice: parseWholeNumberInput(e.target.value) })}
                   placeholder="0"
                   className="mt-1"
                 />
                 {formData.buyPrice > 0 && formData.sellPrice > 0 && (
                   <p className="text-xs text-green-600 mt-1">
-                    Margin: {calculateMargin(formData.buyPrice, formData.sellPrice)}%
+                    Margin: {formatPercent(calculateMargin(formData.buyPrice, formData.sellPrice))}%
                   </p>
                 )}
               </div>
@@ -411,11 +659,12 @@ export function ItemsManagement() {
                 </div>
                 <div className="flex gap-2 mt-1">
                   <Input
-                    type="number"
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
                     value={formData.lowStockLimit === 0 ? '' : formData.lowStockLimit}
                     onChange={(e) => {
-                      const value = e.target.value;
-                      setFormData({ ...formData, lowStockLimit: value === '' ? 0 : Math.max(0, parseFloat(value) || 0) });
+                      setFormData({ ...formData, lowStockLimit: parseWholeNumberInput(e.target.value) });
                     }}
                     placeholder="Leave empty to disable alerts"
                     className="mt-0"
@@ -448,8 +697,8 @@ export function ItemsManagement() {
                   wholesaleCost={formData.buyPrice}
                   wholesaleQty={formData.quantity}
                   wholesaleUnitId={formData.unitId}
-                  onAdd={addPriceTier}
-                  onDelete={deletePriceTier}
+                  onAdd={handleAddPriceTier}
+                  onDelete={handleDeletePriceTier}
                 />
               )}
             </TabsContent>
@@ -462,7 +711,7 @@ export function ItemsManagement() {
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
-              placeholder="Search items..."
+              placeholder={t('search_items')}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="pl-10"
@@ -470,22 +719,76 @@ export function ItemsManagement() {
           </div>
         </div>
 
-        <Select
-          value={selectedCategoryId?.toString() || 'all'}
-          onValueChange={(value) => setSelectedCategoryId(value === 'all' ? null : Number(value))}
-        >
-          <SelectTrigger className="w-full sm:w-48">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Categories</SelectItem>
-            {categories.map((cat) => (
-              <SelectItem key={cat.id} value={cat.id!.toString()}>
-                {cat.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="flex flex-wrap gap-2">
+          {/* Category Filter */}
+          <Select
+            value={selectedCategoryId?.toString() || 'all'}
+            onValueChange={(value) => setSelectedCategoryId(value === 'all' ? null : Number(value))}
+          >
+            <SelectTrigger className="w-full sm:w-40">
+              <SelectValue placeholder="Category" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Categories</SelectItem>
+              {categories.map((cat) => (
+                <SelectItem key={cat.id} value={cat.id!.toString()}>
+                  {cat.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {/* Expiry Status Filter */}
+          <Select
+            value={selectedExpiryStatus || 'all'}
+            onValueChange={(value) => setSelectedExpiryStatus(value === 'all' ? null : value)}
+          >
+            <SelectTrigger className="w-full sm:w-40">
+              <SelectValue placeholder="Expiry Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All</SelectItem>
+              <SelectItem value="expired">Expired</SelectItem>
+              <SelectItem value="expiring">Near Expiry</SelectItem>
+              <SelectItem value="notExpiring">Not Expiring Soon</SelectItem>
+              <SelectItem value="hasExpiry">Has Expiry Date</SelectItem>
+              <SelectItem value="noExpiry">No Expiry Date</SelectItem>
+            </SelectContent>
+          </Select>
+
+          {/* Stock Status Filter */}
+          <Select
+            value={selectedStockStatus || 'all'}
+            onValueChange={(value) => setSelectedStockStatus(value === 'all' ? null : value)}
+          >
+            <SelectTrigger className="w-full sm:w-40">
+              <SelectValue placeholder="Stock Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All</SelectItem>
+              <SelectItem value="lowStock">Low Stock</SelectItem>
+              <SelectItem value="outOfStock">Out of Stock</SelectItem>
+              <SelectItem value="inStock">In Stock</SelectItem>
+            </SelectContent>
+          </Select>
+
+          {/* Sort By */}
+          <Select
+            value={sortBy}
+            onValueChange={(value) => setSortBy(value)}
+          >
+            <SelectTrigger className="w-full sm:w-44">
+              <SelectValue placeholder="Sort By" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="name-asc">Name (A-Z)</SelectItem>
+              <SelectItem value="qty-asc">Quantity (Low → High)</SelectItem>
+              <SelectItem value="qty-desc">Quantity (High → Low)</SelectItem>
+              <SelectItem value="expiry-asc">Expiry (Soonest First)</SelectItem>
+              <SelectItem value="margin-desc">Profit Margin (High → Low)</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       {/* Batch Operations Toolbar */}
@@ -530,6 +833,30 @@ export function ItemsManagement() {
           {filteredItems.map((item) => {
             const itemPriceTiers = priceTiers.filter(tier => tier.itemId === item.id);
             const isSelected = selectedItems.has(item.id || 0);
+            const todayStart = new Date();
+            todayStart.setHours(0, 0, 0, 0);
+            const expiryObj = item.expiryDate ? new Date(item.expiryDate) : null;
+            const expiryStart = expiryObj ? new Date(expiryObj) : null;
+            if (expiryStart) expiryStart.setHours(0, 0, 0, 0);
+            const expiryStatus =
+              expiryStart && expiryStart.getTime() < todayStart.getTime()
+                ? 'expired'
+                : expiryStart && expiryStart.getTime() <= todayStart.getTime() + 7 * 24 * 60 * 60 * 1000
+                ? 'expiring'
+                : null;
+            
+            // Calculate days left
+            let daysLeftText = '';
+            if (expiryStart && expiryStatus) {
+              if (expiryStatus === 'expired') {
+                const daysAgo = Math.floor((todayStart.getTime() - expiryStart.getTime()) / (1000 * 60 * 60 * 24));
+                daysLeftText = ` (${daysAgo} day${daysAgo !== 1 ? 's' : ''} ago)`;
+              } else if (expiryStatus === 'expiring') {
+                const daysLeft = Math.ceil((expiryStart.getTime() - todayStart.getTime()) / (1000 * 60 * 60 * 24));
+                daysLeftText = ` (${daysLeft} day${daysLeft !== 1 ? 's' : ''} left)`;
+              }
+            }
+            
             return (
               <div key={item.id} className={`flex gap-2 items-start ${isSelected ? 'opacity-75' : ''}`}>
                 <input
@@ -544,13 +871,39 @@ export function ItemsManagement() {
                     {/* Item Name and Category */}
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
-                        <h3 className="font-bold text-base">{item.name}</h3>
+                        <h3 className="font-bold text-base">
+                          {language === 'mr' 
+                            ? (item.nameMarathi || item.name) 
+                            : (item.name || item.nameMarathi)}
+                        </h3>
+                        {(item.brand || item.brandMarathi) && (
+                          <p className="text-xs text-gray-500">
+                            {language === 'mr' 
+                              ? (item.brandMarathi || item.brand) 
+                              : (item.brand || item.brandMarathi)}
+                          </p>
+                        )}
                         <p className="text-xs text-muted-foreground">{getCategoryName(item.categoryId)}</p>
+                        {expiryStart && (
+                          <p
+                            className={
+                              expiryStatus === 'expired'
+                                ? 'text-xs font-semibold text-red-600'
+                                : expiryStatus === 'expiring'
+                                ? 'text-xs font-semibold text-orange-600'
+                                : 'text-xs text-muted-foreground'
+                            }
+                          >
+                            Expiry: {expiryStart.toLocaleDateString(language === 'mr' ? 'mr-IN' : 'en-IN')}
+                            {expiryStatus === 'expired' ? ' (Expired)' : expiryStatus === 'expiring' ? ' (Near Expiry)' : ''}
+                            {daysLeftText}
+                          </p>
+                        )}
                       </div>
                       <div className="text-right">
-                        <p className="text-sm font-semibold text-blue-600">{item.quantity} {getUnitName(item.unitId)}</p>
+                        <p className="text-sm font-semibold text-blue-600">{formatWholeNumber(item.quantity)} {getUnitName(item.unitId)}</p>
                         {item.quantity <= item.lowStockLimit && (
-                          <p className="text-xs font-semibold text-orange-600">Low Stock</p>
+                          <p className="text-xs font-semibold text-orange-600">{t('low_stock_alert')}</p>
                         )}
                       </div>
                     </div>
@@ -558,30 +911,30 @@ export function ItemsManagement() {
                     {/* Default Prices */}
                     <div className="grid grid-cols-3 gap-2 text-xs">
                       <div>
-                        <span className="text-muted-foreground">Buy:</span>
-                        <p className="font-semibold">₹{item.buyPrice.toFixed(2)}</p>
+                        <span className="text-muted-foreground">{t('buy')}:</span>
+                        <p className="font-semibold">Rs. {formatMoney(item.buyPrice)}</p>
                       </div>
                       <div>
-                        <span className="text-muted-foreground">Sell:</span>
-                        <p className="font-semibold">₹{item.sellPrice.toFixed(2)}</p>
+                        <span className="text-muted-foreground">{t('sell')}:</span>
+                        <p className="font-semibold">Rs. {formatMoney(item.sellPrice)}</p>
                       </div>
                       <div>
-                        <span className="text-muted-foreground">Margin:</span>
-                        <p className="font-semibold text-green-600">{calculateMargin(item.buyPrice, item.sellPrice)}%</p>
+                        <span className="text-muted-foreground">{t('margin')}:</span>
+                        <p className="font-semibold text-green-600">{formatPercent(calculateMargin(item.buyPrice, item.sellPrice))}%</p>
                       </div>
                     </div>
 
                     {/* Price Tiers */}
                     {itemPriceTiers.length > 0 && (
                       <div className="pt-2 border-t">
-                        <p className="text-xs font-semibold text-muted-foreground mb-2">Price Variants:</p>
+                        <p className="text-xs font-semibold text-muted-foreground mb-2">{t('price_variants')}</p>
                         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                           {itemPriceTiers.map((tier) => (
                             <div key={tier.id} className="bg-amber-50 p-2 rounded border border-amber-200">
                               <p className="text-xs font-semibold text-amber-900">
-                                {tier.quantity}{getUnitName(tier.unitId)}
+                                {formatWholeNumber(tier.quantity)}{getUnitName(tier.unitId)}
                               </p>
-                              <p className="text-xs text-amber-700">₹{(tier.price || 0).toFixed(2)}</p>
+                              <p className="text-xs text-amber-700">Rs. {formatMoney(tier.price || 0)}</p>
                             </div>
                           ))}
                         </div>
@@ -591,7 +944,7 @@ export function ItemsManagement() {
                     {/* Stock Value */}
                     <div className="pt-2 border-t">
                       <p className="text-xs text-muted-foreground">
-                        Total Value: <span className="font-semibold text-foreground">₹{(item.quantity * item.buyPrice).toFixed(2)}</span>
+                        {t('total_value_label')}: <span className="font-semibold text-foreground">Rs. {formatMoney(item.quantity * item.buyPrice)}</span>
                       </p>
                     </div>
 
@@ -604,7 +957,7 @@ export function ItemsManagement() {
                         className="flex-1 gap-1 h-8"
                       >
                         <Edit2 className="w-3 h-3" />
-                        Edit
+                        {t('edit')}
                       </Button>
                       <AlertDialog>
                         <AlertDialog open={deleteId === item.id} onOpenChange={(open) => {
@@ -617,18 +970,18 @@ export function ItemsManagement() {
                             className="flex-1 gap-1 h-8"
                           >
                             <Trash2 className="w-3 h-3" />
-                            Delete
+                            {t('delete')}
                           </Button>
                           <AlertDialogContent>
                             <AlertDialogHeader>
-                              <AlertDialogTitle>Delete Item?</AlertDialogTitle>
+                              <AlertDialogTitle>{t('confirm_delete')}</AlertDialogTitle>
                               <AlertDialogDescription>
-                                Are you sure you want to delete &quot;{item.name}&quot;? This action cannot be undone.
+                                Are you sure you want to delete &quot;{language === 'mr' && item.nameMarathi ? item.nameMarathi : item.name}&quot;? This action cannot be undone.
                               </AlertDialogDescription>
                             </AlertDialogHeader>
                             <div className="flex gap-2">
-                              <AlertDialogCancel>Cancel</AlertDialogCancel>
-                              <AlertDialogAction onClick={handleDelete}>Delete</AlertDialogAction>
+                              <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
+                              <AlertDialogAction onClick={handleDelete}>{t('delete')}</AlertDialogAction>
                             </div>
                           </AlertDialogContent>
                         </AlertDialog>

@@ -16,6 +16,8 @@ export interface Item {
   id?: number;
   name: string;
   nameMarathi: string;
+  brand?: string;
+  brandMarathi?: string;
   categoryId: number;
   unitId: number;
   quantity: number;
@@ -60,10 +62,16 @@ export interface SaleItem {
   saleId: number;
   itemId: number;
   itemName: string;
+  /** Total quantity in item's stock unit (for inventory math). */
   quantity: number;
+  /** How the sale was shown at checkout, e.g. "2 x 200 g". */
+  displayQuantity?: string;
   unitId: number;
   unitShortForm: string;
   priceTierId?: number; // Which price tier was used
+  packCount?: number;
+  priceTierQuantity?: number;
+  priceTierUnitShortForm?: string;
   pricePerUnit: number; // Actual selling price used
   totalPrice: number; // quantity * pricePerUnit
   costPerUnit: number; // For profit calculation
@@ -115,6 +123,56 @@ export interface Alert {
   createdAt: number;
 }
 
+// New Types for Multi-Role System & Subscription
+export interface Shop {
+  id?: number;
+  ownerName: string;
+  shopName: string;
+  address: string;
+  phoneNumber: string;
+  password: string; // Shop owner password
+  isPaused: boolean;
+  subscriptionEndDate?: number; // Unix timestamp of when subscription ends
+  lastPaymentDate?: number; // Last payment date
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface Subscription {
+  id?: number;
+  shopId: number;
+  amount: number; // Should be 299
+  startDate: number; // Unix timestamp
+  endDate: number; // Unix timestamp (1 month later)
+  paymentMethod: string; // 'upi', 'cash', 'card', etc.
+  transactionId?: string; // UPI transaction ID
+  status: 'active' | 'pending' | 'failed' | 'cancelled';
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface ShopPaymentInfo {
+  id?: number;
+  shopId: number;
+  upiId?: string;
+  qrCodeUrl?: string;
+  phonePe?: string;
+  gPay?: string;
+  paytm?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface User {
+  id?: number;
+  shopId: number; // Which shop does this user belong to?
+  username: string;
+  password: string;
+  role: 'super_admin' | 'owner' | 'worker';
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface Sale {
   id?: number;
   date: string; // YYYY-MM-DD format
@@ -125,10 +183,49 @@ export interface Sale {
   totalCost: number; // Sum of all item costs
   totalProfit: number; // subtotal - totalCost
   profitMarginPercent: number; // (totalProfit / subtotal) * 100
-  paymentMethod: 'cash' | 'card' | 'partial'; // How they paid
+  paymentMethod: 'cash' | 'card' | 'partial' | 'udhar'; // How they paid
+  creditCustomerId?: number; // Udhari customer if payment method is udhar
+  creditCustomerName?: string;
   notes?: string; // Optional notes
   createdAt: number;
   updatedAt: number;
+}
+
+export interface CreditCustomer {
+  id?: number;
+  name: string;
+  phone?: string;
+  balance: number;
+  notes?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface CreditBillItem {
+  itemName: string;
+  quantity: number;
+  displayQuantity?: string;
+  unitShortForm: string;
+  pricePerUnit: number;
+  totalPrice: number;
+  priceTierId?: number;
+  packCount?: number;
+  priceTierQuantity?: number;
+  priceTierUnitShortForm?: string;
+}
+
+export interface CreditEntry {
+  id?: number;
+  customerId: number;
+  customerName: string;
+  type: 'credit' | 'payment';
+  amount: number;
+  note?: string;
+  saleId?: number;
+  billItems?: CreditBillItem[];
+  date: string;
+  timestamp: number;
+  createdAt: number;
 }
 
 export class DukanDB extends Dexie {
@@ -142,6 +239,14 @@ export class DukanDB extends Dexie {
   stockHistory!: Table<StockHistory>;
   batches!: Table<Batch>;
   alerts!: Table<Alert>;
+  creditCustomers!: Table<CreditCustomer>;
+  creditEntries!: Table<CreditEntry>;
+  // New tables for multi-role system
+  shops!: Table<Shop>;
+  users!: Table<User>;
+  // New tables for subscription system
+  subscriptions!: Table<Subscription>;
+  shopPaymentInfo!: Table<ShopPaymentInfo>;
 
   constructor() {
     super('DukanDB');
@@ -156,6 +261,56 @@ export class DukanDB extends Dexie {
       stockHistory: '++id, itemId, createdAt',
       batches: '++id, itemId, expiryDate',
       alerts: '++id, itemId, alertType, createdAt',
+    });
+    this.version(2).stores({
+      items: '++id, categoryId, updatedAt',
+      priceTiers: '++id, itemId, updatedAt',
+      categories: '++id, updatedAt',
+      units: '++id, updatedAt',
+      appSettings: '++id',
+      sales: '++id, date, timestamp',
+      saleItems: '++id, saleId, itemId',
+      stockHistory: '++id, itemId, createdAt',
+      batches: '++id, itemId, expiryDate',
+      alerts: '++id, itemId, alertType, createdAt',
+      creditCustomers: '++id, name, updatedAt',
+      creditEntries: '++id, customerId, date, timestamp',
+    });
+    // New version with shops and users tables
+    this.version(3).stores({
+      items: '++id, categoryId, updatedAt',
+      priceTiers: '++id, itemId, updatedAt',
+      categories: '++id, updatedAt',
+      units: '++id, updatedAt',
+      appSettings: '++id',
+      sales: '++id, date, timestamp',
+      saleItems: '++id, saleId, itemId',
+      stockHistory: '++id, itemId, createdAt',
+      batches: '++id, itemId, expiryDate',
+      alerts: '++id, itemId, alertType, createdAt',
+      creditCustomers: '++id, name, updatedAt',
+      creditEntries: '++id, customerId, date, timestamp',
+      shops: '++id, shopName, ownerName, isPaused, subscriptionEndDate, updatedAt',
+      users: '++id, shopId, username, role, updatedAt',
+    });
+    // New version with subscription tables
+    this.version(4).stores({
+      items: '++id, categoryId, updatedAt',
+      priceTiers: '++id, itemId, updatedAt',
+      categories: '++id, updatedAt',
+      units: '++id, updatedAt',
+      appSettings: '++id',
+      sales: '++id, date, timestamp',
+      saleItems: '++id, saleId, itemId',
+      stockHistory: '++id, itemId, createdAt',
+      batches: '++id, itemId, expiryDate',
+      alerts: '++id, itemId, alertType, createdAt',
+      creditCustomers: '++id, name, updatedAt',
+      creditEntries: '++id, customerId, date, timestamp',
+      shops: '++id, shopName, ownerName, isPaused, subscriptionEndDate, updatedAt',
+      users: '++id, shopId, username, role, updatedAt',
+      subscriptions: '++id, shopId, status, startDate, endDate, updatedAt',
+      shopPaymentInfo: '++id, shopId, updatedAt',
     });
   }
 }
@@ -192,17 +347,29 @@ export const DEMO_ITEMS: Omit<Item, 'id'>[] = [];
 
 // Initialize database with default categories and units on first load
 export async function initializeDatabase() {
+  if (typeof window === 'undefined') return;
+  
   try {
+    if (!db.isOpen()) {
+      await db.open();
+    }
+
     const settingsCount = await db.appSettings.count();
     
     if (settingsCount === 0) {
-      // First time setup - clear everything and reinitialize
-      await db.delete();
-      await db.open();
+      console.log('[Dukan] Initializing default settings...');
       
-      // Initialize with default categories and units
-      await db.categories.bulkAdd(getDefaultCategories());
-      await db.units.bulkAdd(getDefaultUnits());
+      // Check if categories already exist before adding
+      const categoryCount = await db.categories.count();
+      if (categoryCount === 0) {
+        await db.categories.bulkAdd(getDefaultCategories());
+      }
+
+      // Check if units already exist before adding
+      const unitCount = await db.units.count();
+      if (unitCount === 0) {
+        await db.units.bulkAdd(getDefaultUnits());
+      }
 
       await db.appSettings.add({
         language: 'mr',

@@ -2,7 +2,22 @@
 
 import { useState, useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db, type Item, type Category, type Unit, type PriceTier, type Sale, type SaleItem, type StockHistory, type Batch, type Alert } from '@/lib/db';
+import {
+  db,
+  type Item,
+  type Category,
+  type Unit,
+  type PriceTier,
+  type Sale,
+  type SaleItem,
+  type StockHistory,
+  type Batch,
+  type Alert,
+  type CreditCustomer,
+  type CreditEntry,
+  type CreditBillItem,
+} from '@/lib/db';
+import { dateKey } from '@/lib/utils';
 
 // Categories Hook
 export function useCategories() {
@@ -253,7 +268,7 @@ export function useSales() {
   };
 
   const getTodaySales = async () => {
-    const today = new Date().toISOString().split('T')[0];
+    const today = dateKey(new Date());
     return db.sales.where('date').equals(today).toArray();
   };
 
@@ -430,5 +445,128 @@ export function useAlerts() {
     markAlertAsRead,
     deleteAlert,
     clearOldAlerts,
+  };
+}
+
+// Udhari Hook - Customer credit notebook
+export function useUdhari() {
+  const customers = useLiveQuery(() => db.creditCustomers.orderBy('updatedAt').reverse().toArray());
+  const entries = useLiveQuery(() => db.creditEntries.orderBy('timestamp').reverse().toArray());
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    if (customers !== undefined && entries !== undefined) {
+      setIsLoading(false);
+    }
+  }, [customers, entries]);
+
+  const addCustomer = async (customer: Omit<CreditCustomer, 'id' | 'balance' | 'createdAt' | 'updatedAt'>) => {
+    const now = Date.now();
+    return db.creditCustomers.add({
+      ...customer,
+      balance: 0,
+      createdAt: now,
+      updatedAt: now,
+    });
+  };
+
+  const updateCustomer = async (
+    id: number,
+    updates: Partial<Omit<CreditCustomer, 'id' | 'createdAt' | 'balance'>>,
+  ) => {
+    return db.creditCustomers.update(id, {
+      ...updates,
+      updatedAt: Date.now(),
+    });
+  };
+
+  const deleteCustomer = async (id: number) => {
+    return db.transaction('rw', db.creditCustomers, db.creditEntries, async () => {
+      await db.creditEntries.where('customerId').equals(id).delete();
+      await db.creditCustomers.delete(id);
+    });
+  };
+
+  const addCredit = async (
+    customerId: number,
+    amount: number,
+    note?: string,
+    billItems?: CreditBillItem[],
+    saleId?: number,
+  ) => {
+    const customer = await db.creditCustomers.get(customerId);
+    if (!customer) {
+      throw new Error('Customer not found');
+    }
+
+    const now = Date.now();
+    const date = dateKey(new Date());
+
+    return db.transaction('rw', db.creditCustomers, db.creditEntries, async () => {
+      await db.creditEntries.add({
+        customerId,
+        customerName: customer.name,
+        type: 'credit',
+        amount,
+        note,
+        saleId,
+        billItems,
+        date,
+        timestamp: now,
+        createdAt: now,
+      });
+
+      await db.creditCustomers.update(customerId, {
+        balance: customer.balance + amount,
+        updatedAt: now,
+      });
+    });
+  };
+
+  const receivePayment = async (customerId: number, amount: number, note?: string) => {
+    const customer = await db.creditCustomers.get(customerId);
+    if (!customer) {
+      throw new Error('Customer not found');
+    }
+
+    const now = Date.now();
+    const date = dateKey(new Date());
+
+    return db.transaction('rw', db.creditCustomers, db.creditEntries, async () => {
+      await db.creditEntries.add({
+        customerId,
+        customerName: customer.name,
+        type: 'payment',
+        amount,
+        note,
+        date,
+        timestamp: now,
+        createdAt: now,
+      });
+
+      await db.creditCustomers.update(customerId, {
+        balance: Math.max(0, customer.balance - amount),
+        updatedAt: now,
+      });
+    });
+  };
+
+  const getCustomerEntries = (customerId: number) => {
+    return (entries || []).filter((entry) => entry.customerId === customerId);
+  };
+
+  const totalPending = (customers || []).reduce((sum, customer) => sum + customer.balance, 0);
+
+  return {
+    customers: customers || [],
+    entries: entries || [],
+    isLoading,
+    totalPending,
+    addCustomer,
+    updateCustomer,
+    deleteCustomer,
+    addCredit,
+    receivePayment,
+    getCustomerEntries,
   };
 }

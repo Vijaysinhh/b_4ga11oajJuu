@@ -1,24 +1,54 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { useSales } from '@/hooks/use-db';
-import { useLanguage } from '@/providers/language-provider';
-import { SalesItemSearch } from './sales-item-search';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { Trash2, Check } from 'lucide-react';
-import { toast } from 'sonner';
-import type { SaleItem } from '@/lib/db';
+import { useState } from "react";
+import { useSales, useUdhari, useItems } from "@/hooks/use-supabase";
+import { useAuth } from "@/providers/auth-provider";
+import { useLanguage } from "@/providers/language-provider";
+import { dateKey } from "@/lib/utils";
+import { formatSaleLineSubtitle } from "@/lib/sale-item-display";
+import { SalesItemSearch } from "./sales-item-search";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  cleanWholeNumberInput,
+  formatMoney,
+  formatNumber,
+  formatPercent,
+  formatWholeNumber,
+} from "@/lib/number-format";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Check, Trash2, UserPlus } from "lucide-react";
+import { toast } from "sonner";
+
+type PaymentMethod = "cash" | "card" | "partial" | "udhar";
 
 interface LineItem {
   itemId: number;
   itemName: string;
   quantity: number;
+  displayQuantity: string;
   unitId: number;
   unitShortForm: string;
   priceTierId?: number;
+  packCount?: number;
+  priceTierQuantity?: number;
+  priceTierUnitShortForm?: string;
   pricePerUnit: number;
   totalPrice: number;
   costPerUnit: number;
@@ -26,48 +56,117 @@ interface LineItem {
 }
 
 export function SalesTransaction() {
+  const { currentShopId } = useAuth();
+  const { createSale, updateStockAfterSale } = useSales(currentShopId);
+  const { customers, addCustomer, addCredit } = useUdhari(currentShopId);
+  const { items: allItems } = useItems(currentShopId);
   const { t } = useLanguage();
-  const { createSale, updateStockAfterSale } = useSales();
 
   const [items, setItems] = useState<LineItem[]>([]);
-  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'card' | 'partial'>('cash');
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
+  const [creditCustomerId, setCreditCustomerId] = useState<number | null>(null);
+  const [newCustomerName, setNewCustomerName] = useState("");
+  const [newCustomerPhone, setNewCustomerPhone] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
 
-  const totals: { subtotal: number; totalCost: number; totalProfit: number } = {
+  const totals = {
     subtotal: items.reduce((sum, item) => sum + (item.totalPrice || 0), 0),
     totalCost: items.reduce((sum, item) => sum + (item.totalCost || 0), 0),
-    totalProfit: items.reduce((sum, item) => sum + ((item.totalPrice || 0) - (item.totalCost || 0)), 0),
+    totalProfit: items.reduce(
+      (sum, item) => sum + ((item.totalPrice || 0) - (item.totalCost || 0)),
+      0,
+    ),
   };
 
-  const profitMarginPercent = totals.subtotal > 0 ? ((totals.totalProfit / totals.subtotal) * 100) : 0;
+  const isUdharSale = paymentMethod === "udhar";
+  const selectedCreditCustomer =
+    customers.find((customer) => customer.id === creditCustomerId) || null;
+  const profitMarginPercent =
+    totals.subtotal > 0 ? (totals.totalProfit / totals.subtotal) * 100 : 0;
 
   const handleItemAdded = (item: LineItem) => {
     setItems([...items, item]);
-    toast.success(`${item.itemName} added to sale`);
+    toast.success(`${item.itemName} ${t("success")}`);
   };
 
   const handleRemoveItem = (index: number) => {
     setItems(items.filter((_, i) => i !== index));
   };
 
+  const resetCreditFields = () => {
+    setCreditCustomerId(null);
+    setNewCustomerName("");
+    setNewCustomerPhone("");
+  };
+
+  const resetSale = () => {
+    setItems([]);
+    setPaymentMethod("cash");
+    resetCreditFields();
+    setShowConfirmDialog(false);
+  };
+
+  const handlePaymentChange = (value: string) => {
+    const nextPaymentMethod = value as PaymentMethod;
+    setPaymentMethod(nextPaymentMethod);
+
+    if (nextPaymentMethod !== "udhar") {
+      resetCreditFields();
+    }
+  };
+
   const handleCompleteSale = async () => {
     if (items.length === 0) {
-      toast.error('Add items to complete sale');
+      toast.error(t("error"));
+      return;
+    }
+
+    if (isUdharSale && !selectedCreditCustomer && !newCustomerName.trim()) {
+      toast.error(t("error"));
+      return;
+    }
+
+    // Verify stock availability (sum quantities per item in cart)
+    const quantityByItemId = items.reduce<Map<number, number>>((acc, lineItem) => {
+      acc.set(
+        lineItem.itemId,
+        (acc.get(lineItem.itemId) || 0) + lineItem.quantity,
+      );
+      return acc;
+    }, new Map());
+
+    const stockErrors: string[] = [];
+    for (const [itemId, requestedQty] of quantityByItemId) {
+      const currentItem = allItems.find((item) => item.id === itemId);
+      const lineItem = items.find((item) => item.itemId === itemId);
+      if (!currentItem || currentItem.quantity < requestedQty) {
+        const availableQty = currentItem?.quantity || 0;
+        stockErrors.push(
+          `${lineItem?.itemName || "Item"}: Only ${formatNumber(availableQty)} ${lineItem?.unitShortForm || ""} available (tried to sell ${lineItem?.displayQuantity || formatNumber(requestedQty)})`,
+        );
+      }
+    }
+
+    if (stockErrors.length > 0) {
+      toast.error(`Stock issue: ${stockErrors[0]}`);
       return;
     }
 
     setIsProcessing(true);
 
     try {
-      // Create sale items array for the sale
-      const saleItems: any[] = items.map(item => ({
+      const saleItems: any[] = items.map((item) => ({
         itemId: item.itemId,
         itemName: item.itemName,
         quantity: item.quantity,
+        displayQuantity: item.displayQuantity,
         unitId: item.unitId,
         unitShortForm: item.unitShortForm,
         priceTierId: item.priceTierId,
+        packCount: item.packCount,
+        priceTierQuantity: item.priceTierQuantity,
+        priceTierUnitShortForm: item.priceTierUnitShortForm,
         pricePerUnit: item.pricePerUnit,
         totalPrice: item.totalPrice,
         costPerUnit: item.costPerUnit,
@@ -75,8 +174,20 @@ export function SalesTransaction() {
         profit: item.totalPrice - item.totalCost,
       }));
 
-      // Create sale record
-      const today = new Date().toISOString().split('T')[0];
+      let finalCreditCustomerId = creditCustomerId;
+      let finalCreditCustomerName = selectedCreditCustomer?.name || "";
+
+      if (isUdharSale && !finalCreditCustomerId) {
+        const createdCustomerId = await addCustomer({
+          name: newCustomerName.trim(),
+          phone: newCustomerPhone.trim() || undefined,
+        });
+
+        finalCreditCustomerId = Number(createdCustomerId);
+        finalCreditCustomerName = newCustomerName.trim();
+      }
+
+      const today = dateKey(new Date());
       const saleId = await createSale({
         date: today,
         timestamp: Date.now(),
@@ -87,32 +198,31 @@ export function SalesTransaction() {
         totalProfit: totals.totalProfit,
         profitMarginPercent,
         paymentMethod,
+        creditCustomerId: isUdharSale
+          ? finalCreditCustomerId || undefined
+          : undefined,
+        creditCustomerName: isUdharSale ? finalCreditCustomerName : undefined,
       });
 
-      // Update stock after sale
       await updateStockAfterSale(saleItems);
 
-      toast.success('Sale completed successfully!');
-
-      // Reset form
-      setItems([]);
-      setPaymentMethod('cash');
-      setShowConfirmDialog(false);
+      toast.success(t("success"));
+      resetSale();
+      window.dispatchEvent(new Event('refresh-dukan-data'));
     } catch (error) {
-      console.error('Error completing sale:', error);
-      toast.error('Failed to complete sale');
+      console.error("Error completing sale:", error);
+      toast.error(t("error"));
     } finally {
       setIsProcessing(false);
     }
   };
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-      {/* Left: Item Search */}
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
       <div className="lg:col-span-1">
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Add Items</CardTitle>
+            <CardTitle className="text-base">{t("add_items")}</CardTitle>
           </CardHeader>
           <CardContent>
             <SalesItemSearch onItemAdded={handleItemAdded} addedItems={items} />
@@ -120,171 +230,271 @@ export function SalesTransaction() {
         </Card>
       </div>
 
-      {/* Right: Sale Summary */}
-      <div className="lg:col-span-2 space-y-3">
-        {/* Items List */}
+      <div className="space-y-3 lg:col-span-2">
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Sale Items ({items.length})</CardTitle>
+            <CardTitle className="text-base">
+              {t("sale_items")} ({items.length})
+            </CardTitle>
           </CardHeader>
           <CardContent>
             {items.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
-                <p>No items added yet</p>
+              <div className="py-8 text-center text-gray-500">
+                <p>{t("no_items_added")}</p>
               </div>
             ) : (
               <div className="space-y-2">
-                {items.map((item, index) => (
-                  <div
-                    key={index}
-                    className="flex items-start justify-between bg-gray-50 p-3 rounded border hover:bg-gray-100 transition"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className="font-semibold text-sm">
-                        {item.itemName} × {item.quantity}{item.unitShortForm}
-                      </div>
-                      {/* Price and Cost Breakdown */}
-                      <div className="text-xs text-gray-600 mt-1 space-y-1">
-                        <div>
-                          Selling: {item.quantity} × ₹{item.pricePerUnit.toFixed(2)} = <span className="font-semibold text-blue-600">₹{item.totalPrice.toFixed(2)}</span>
-                        </div>
-                        <div>
-                          Cost: {item.quantity} × ₹{item.costPerUnit.toFixed(2)} = <span className="font-semibold text-red-600">₹{item.totalCost.toFixed(2)}</span>
-                        </div>
-                      </div>
-                      {/* Profit calculation */}
-                      <div className="text-xs font-semibold mt-1">
-                        {(() => {
-                          const profit = item.totalPrice - item.totalCost;
-                          const marginPct = item.totalPrice > 0 ? ((profit / item.totalPrice) * 100).toFixed(1) : '0';
-                          return (
-                            <span className={profit > 0 ? 'text-green-700' : 'text-red-700'}>
-                              Profit: ₹{profit.toFixed(2)} ({marginPct}%)
-                            </span>
-                          );
-                        })()}
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => handleRemoveItem(index)}
-                      className="text-red-600 hover:text-red-800 ml-2 flex-shrink-0"
+                {items.map((item, index) => {
+                  const profit = item.totalPrice - item.totalCost;
+                  const marginPct =
+                    item.totalPrice > 0 ? (profit / item.totalPrice) * 100 : 0;
+
+                  return (
+                    <div
+                      key={`${item.itemId}-${index}`}
+                      className="flex items-start justify-between rounded border bg-gray-50 p-3 transition hover:bg-gray-100"
                     >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                ))}
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-semibold">
+                          {item.itemName} - {item.displayQuantity}
+                        </div>
+                        <div className="mt-1 space-y-1 text-xs text-muted-foreground">
+                          <div>
+                            {t("selling")}: {formatSaleLineSubtitle(item)} ={" "}
+                            <span className="font-semibold text-blue-600">
+                              Rs. {formatMoney(item.totalPrice)}
+                            </span>
+                          </div>
+                          <div>
+                            {t("cost")}: Rs. {formatMoney(item.totalCost)}
+                          </div>
+                        </div>
+                        <div className="mt-1 text-xs font-semibold">
+                          <span
+                            className={
+                              profit > 0 ? "text-green-700" : "text-red-700"
+                            }
+                          >
+                            {t("profit_amount")}: Rs. {formatMoney(profit)} (
+                            {formatPercent(marginPct)}%)
+                          </span>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => handleRemoveItem(index)}
+                        className="ml-2 flex-shrink-0 text-red-600 hover:text-red-800"
+                        aria-label={`Remove ${item.itemName}`}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </CardContent>
         </Card>
 
-        {/* Totals */}
         {items.length > 0 && (
           <>
-            <Card className="bg-green-50 border-green-200">
+            <Card className="border-green-200 bg-green-50">
               <CardContent className="pt-4">
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between">
-                    <span>Total Revenue:</span>
-                    <span className="font-bold">₹{totals.subtotal.toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Total Cost:</span>
-                    <span className="font-bold">₹{totals.totalCost.toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between border-t pt-2 text-base">
-                    <span>Total Profit:</span>
-                    <span className={`font-bold ${totals.totalProfit >= 0 ? 'text-green-700' : 'text-red-700'}`}>
-                      ₹{totals.totalProfit.toFixed(2)}
+                    <span>{t("total_revenue")}:</span>
+                    <span className="font-bold">
+                      Rs. {formatMoney(totals.subtotal)}
                     </span>
                   </div>
-                  {totals.subtotal > 0 && (
-                    <div className="flex justify-between text-xs text-gray-600">
-                      <span>Margin %:</span>
-                      <span className="font-semibold">{profitMarginPercent.toFixed(1)}%</span>
-                    </div>
-                  )}
+                  <div className="flex justify-between">
+                    <span>{t("total_cost")}:</span>
+                    <span className="font-bold">
+                      Rs. {formatMoney(totals.totalCost)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between border-t pt-2 text-base">
+                    <span>{t("total_profit")}:</span>
+                    <span
+                      className={`font-bold ${totals.totalProfit >= 0 ? "text-green-700" : "text-red-700"}`}
+                    >
+                      Rs. {formatMoney(totals.totalProfit)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-xs text-gray-600">
+                    <span>{t("margin")} %:</span>
+                    <span className="font-semibold">
+                      {formatPercent(profitMarginPercent)}%
+                    </span>
+                  </div>
                 </div>
               </CardContent>
             </Card>
 
-            {/* Cost Calculation Info */}
-            <Card className="bg-blue-50 border-blue-200">
-              <CardContent className="pt-4">
-                <div className="text-xs text-blue-900 space-y-1">
-                  <div className="font-semibold mb-2">How Cost is Calculated:</div>
-                  <div>• For each price tier, we convert to base unit (e.g., grams for weight)</div>
-                  <div>• Cost = Quantity × (Buy Price ÷ Base Item Qty)</div>
-                  <div>• Example: 50g of 1kg @ ₹90 = 50 × (90 ÷ 1000) = ₹4.50</div>
-                  <div>• Profit = Selling Price - Cost</div>
+            <Card>
+              <CardContent className="space-y-3 pt-4">
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-gray-700">
+                    {t("payment_method")}
+                  </label>
+                  <Select
+                    value={paymentMethod}
+                    onValueChange={handlePaymentChange}
+                  >
+                    <SelectTrigger className="h-9">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="cash">{t("cash")}</SelectItem>
+                      <SelectItem value="card">{t("card")}</SelectItem>
+                      <SelectItem value="partial">{t("partial")}</SelectItem>
+                      <SelectItem value="udhar">{t("udhar")}</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
+
+                {isUdharSale && (
+                  <div className="space-y-3 rounded-md border border-orange-200 bg-orange-50 p-3">
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold text-orange-900">
+                        {t("udhari_customer")}
+                      </label>
+                      <Select
+                        value={
+                          creditCustomerId ? creditCustomerId.toString() : "new"
+                        }
+                        onValueChange={(value) =>
+                          setCreditCustomerId(
+                            value === "new" ? null : Number(value),
+                          )
+                        }
+                      >
+                        <SelectTrigger className="h-9 bg-white">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="new">
+                            {t("new_customer")}
+                          </SelectItem>
+                          {customers.map((customer) => (
+                            <SelectItem
+                              key={customer.id}
+                              value={customer.id!.toString()}
+                            >
+                              {customer.name} - Rs.{" "}
+                              {formatMoney(customer.balance)}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {!creditCustomerId && (
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        <div>
+                          <label className="mb-1 block text-xs font-semibold text-orange-900">
+                            {t("customer_name")}
+                          </label>
+                          <Input
+                            value={newCustomerName}
+                            onChange={(event) =>
+                              setNewCustomerName(event.target.value)
+                            }
+                            placeholder={t("name")}
+                            className="h-9 bg-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-1 block text-xs font-semibold text-orange-900">
+                            {t("mobile")}
+                          </label>
+                          <Input
+                            value={newCustomerPhone}
+                            onChange={(event) =>
+                              setNewCustomerPhone(
+                                cleanWholeNumberInput(event.target.value),
+                              )
+                            }
+                            placeholder={t("optional")}
+                            inputMode="tel"
+                            className="h-9 bg-white"
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="flex items-center gap-2 text-xs text-orange-900">
+                      <UserPlus className="h-4 w-4" />
+                      <span>{t("udhari_bill_notice")}</span>
+                    </div>
+                  </div>
+                )}
+
+                <Button
+                  onClick={() => setShowConfirmDialog(true)}
+                  disabled={isProcessing}
+                  className="h-10 w-full bg-green-600 text-white hover:bg-green-700"
+                >
+                  <Check className="mr-2 h-4 w-4" />
+                  {isProcessing ? t("processing") : t("complete_sale")}
+                </Button>
               </CardContent>
             </Card>
           </>
         )}
-
-        {/* Payment & Complete */}
-        {items.length > 0 && (
-          <Card>
-            <CardContent className="pt-4 space-y-3">
-              <div>
-                <label className="text-xs font-semibold text-gray-700 block mb-1">
-                  Payment Method
-                </label>
-                <Select value={paymentMethod} onValueChange={(value: any) => setPaymentMethod(value)}>
-                  <SelectTrigger className="h-9">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="cash">Cash</SelectItem>
-                    <SelectItem value="card">Card</SelectItem>
-                    <SelectItem value="partial">Partial</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <Button
-                onClick={() => setShowConfirmDialog(true)}
-                disabled={isProcessing}
-                className="w-full h-10 bg-green-600 hover:bg-green-700 text-white"
-              >
-                <Check className="w-4 h-4 mr-2" />
-                {isProcessing ? 'Processing...' : 'Complete Sale'}
-              </Button>
-            </CardContent>
-          </Card>
-        )}
       </div>
 
-      {/* Confirm Dialog */}
       <AlertDialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Complete Sale?</AlertDialogTitle>
-            <AlertDialogDescription>
-              <div className="space-y-2 mt-3">
+            <AlertDialogTitle>{t("confirm_sale_title")}</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="mt-3 space-y-2">
                 <div className="flex justify-between text-sm">
-                  <span>Items:</span>
+                  <span>{t("items")}:</span>
                   <span className="font-bold">{items.length}</span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span>Total Revenue:</span>
-                  <span className="font-bold">₹{totals.subtotal.toFixed(2)}</span>
+                  <span>{t("total_revenue")}:</span>
+                  <span className="font-bold">
+                    Rs. {formatMoney(totals.subtotal)}
+                  </span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span>Profit:</span>
-                  <span className="font-bold text-green-600">₹{totals.totalProfit.toFixed(2)}</span>
+                  <span>{t("payment")}:</span>
+                  <span className="font-bold capitalize">
+                    {t(paymentMethod)}
+                  </span>
+                </div>
+                {isUdharSale && (
+                  <div className="flex justify-between gap-3 text-sm">
+                    <span>{t("customer")}:</span>
+                    <span className="text-right font-bold">
+                      {selectedCreditCustomer?.name ||
+                        newCustomerName ||
+                        t("new_customer")}
+                    </span>
+                  </div>
+                )}
+                <div className="flex justify-between text-sm">
+                  <span>{t("profit_amount")}:</span>
+                  <span className="font-bold text-green-600">
+                    Rs. {formatMoney(totals.totalProfit)}
+                  </span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span>Margin:</span>
-                  <span className="font-bold">{profitMarginPercent.toFixed(1)}%</span>
+                  <span>{t("margin")}:</span>
+                  <span className="font-bold">
+                    {formatPercent(profitMarginPercent)}%
+                  </span>
                 </div>
               </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <div className="flex gap-2 justify-end">
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleCompleteSale}>Complete Sale</AlertDialogAction>
+          <div className="flex justify-end gap-2">
+            <AlertDialogCancel>{t("cancel")}</AlertDialogCancel>
+            <AlertDialogAction onClick={handleCompleteSale}>
+              {t("complete_sale")}
+            </AlertDialogAction>
           </div>
         </AlertDialogContent>
       </AlertDialog>
