@@ -1,11 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { Trash2, Plus } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useRealtimePriceTiers } from '@/hooks/use-realtime-price-tiers';
 import type { Unit, PriceTier } from '@/lib/db';
 import { calculatePricingMetrics } from '@/lib/pricing-calculator';
 import { convertUnit } from '@/lib/unit-conversion';
@@ -24,7 +25,7 @@ interface PriceTierManagerProps {
 
 export function PriceTierManager({
   itemId,
-  priceTiers,
+  priceTiers: initialPriceTiers,
   units,
   wholesaleCost,
   wholesaleQty,
@@ -37,6 +38,9 @@ export function PriceTierManager({
     unitId: units[0]?.id || 0,
     price: '',
   });
+
+  // Use real-time price tiers from Supabase
+  const { priceTiers, isConnected } = useRealtimePriceTiers(itemId || null);
 
   const handleAdd = () => {
     if (!newTier.quantity || !newTier.price || !itemId) {
@@ -102,7 +106,15 @@ export function PriceTierManager({
 
   return (
     <div className="space-y-4">
-      <h3 className="text-sm font-bold mb-3">Multi-Level Pricing Tiers</h3>
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-bold mb-3">Multi-Level Pricing Tiers</h3>
+        {isConnected && (
+          <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded flex items-center gap-1">
+            <span className="w-2 h-2 bg-green-600 rounded-full animate-pulse"></span>
+            Live Sync
+          </span>
+        )}
+      </div>
       
       {/* Legend with Examples */}
       <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-3 mb-4 text-xs space-y-2">
