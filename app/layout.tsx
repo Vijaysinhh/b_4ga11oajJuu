@@ -67,7 +67,7 @@ export default function RootLayout({
                 <LanguageProvider>
                   <SubscriptionCheck>
                     <Navigation />
-                    <main className="pt-16 sm:pt-20 pb-24 sm:pb-10 px-3 sm:px-4 sm:ml-56 md:px-6 overflow-y-auto overflow-x-hidden min-h-screen transition-all duration-300" key="main-content">
+                    <main className="pt-20 sm:pt-24 pb-24 sm:pb-10 px-3 sm:px-4 sm:ml-56 md:px-6 overflow-y-auto overflow-x-hidden min-h-screen transition-all duration-300" key="main-content">
                       {children}
                     </main>
                     <Toaster />
