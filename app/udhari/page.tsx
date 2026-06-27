@@ -39,6 +39,7 @@ import {
   Edit,
   Trash2,
   X,
+  MessageCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -65,6 +66,62 @@ export default function UdhariPage() {
   const { units } = useUnits(currentShopId);
   const { priceTiers } = usePriceTiers(currentShopId);
   const { t } = useLanguage();
+  
+  // Get current shop for name
+  const { currentShop } = useAuth();
+
+  // Function to send WhatsApp reminder
+  const sendWhatsAppReminder = (customer: any) => {
+    if (!customer.phone) {
+      toast.error('Customer has no phone number');
+      return;
+    }
+
+    // Format phone number: remove any non-digit characters, add country code if needed
+    let formattedPhone = customer.phone.replace(/\D/g, '');
+    if (formattedPhone.length === 10) {
+      formattedPhone = '91' + formattedPhone; // Default to India country code
+    }
+
+    // Get all customer entries
+    const customerEntries = getCustomerEntries(customer.id!);
+
+    // Build message
+    let message = `Namaste ${customer.name}!%0A%0A`;
+    message += `Aapka pending udhari hai: *Rs. ${formatMoney(customer.balance)}*%0A%0A`;
+    
+    if (customerEntries.length > 0) {
+      message += `Udhari Details:%0A`;
+      customerEntries.forEach((entry, index) => {
+        const date = new Date(entry.timestamp).toLocaleDateString('en-IN');
+        const amountStr = entry.type === 'credit' ? `+Rs. ${formatMoney(entry.amount)}` : `-Rs. ${formatMoney(entry.amount)}`;
+        message += `${index + 1}. ${date} - ${entry.type === 'credit' ? 'Udhari' : 'Payment'}: ${amountStr}%0A`;
+        
+        if (entry.billItems && entry.billItems.length > 0) {
+          entry.billItems.forEach((item: any) => {
+            message += `   • ${item.itemName} - ${formatSaleLineQuantity(item)}: Rs. ${formatMoney(item.totalPrice)}%0A`;
+          });
+        }
+        
+        if (entry.note) {
+          message += `   Note: ${entry.note}%0A`;
+        }
+      });
+    }
+    
+    message += `%0AKirpiya jald se jald payment kar dein.%0A%0A`;
+    if (currentShop?.shopName) {
+      message += `Dhanyavaad!%0A${currentShop.shopName}`;
+    } else if (currentShop?.name) {
+      message += `Dhanyavaad!%0A${currentShop.name}`;
+    } else {
+      message += `Dhanyavaad!`;
+    }
+
+    // Open WhatsApp
+    const whatsappUrl = `https://wa.me/${formattedPhone}?text=${message}`;
+    window.open(whatsappUrl, '_blank');
+  };
 
   // Dialog states
   const [customerDialogOpen, setCustomerDialogOpen] = useState(false);
@@ -425,6 +482,18 @@ export default function UdhariPage() {
                       {t('history')}
                     </Button>
                   </div>
+                  
+                  {/* WhatsApp Reminder Button */}
+                  {customer.phone && customer.balance > 0 && (
+                    <Button
+                      onClick={() => sendWhatsAppReminder(customer)}
+                      variant="default"
+                      className="mt-2 w-full h-9 bg-green-600 hover:bg-green-700 text-xs gap-2"
+                    >
+                      <MessageCircle className="h-4 w-4" />
+                      Send WhatsApp Reminder
+                    </Button>
+                  )}
 
                   <div className="mt-2 flex gap-2 justify-end">
                     <Button
