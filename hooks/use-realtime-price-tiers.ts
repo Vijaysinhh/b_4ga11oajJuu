@@ -1,11 +1,12 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { supabase } from '@/lib/supabase-sync';
-import { useSupabaseAuth } from '@/providers/supabase-auth-provider';
+import { createClient } from '@/lib/supabase';
+import { useAuth } from '@/providers/auth-provider';
 
 export function useRealtimePriceTiers(itemId: number | null) {
-  const { user } = useSupabaseAuth();
+  const { user } = useAuth();
+  const supabase = createClient();
   const [priceTiers, setPriceTiers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isConnected, setIsConnected] = useState(false);
