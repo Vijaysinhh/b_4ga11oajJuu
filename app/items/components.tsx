@@ -844,6 +844,26 @@ export function ItemsManagement() {
                 : expiryStart && expiryStart.getTime() <= todayStart.getTime() + 7 * 24 * 60 * 60 * 1000
                 ? 'expiring'
                 : null;
+            const primaryItemName =
+              language === 'mr'
+                ? (item.nameMarathi || item.name)
+                : (item.name || item.nameMarathi);
+            const secondaryItemName =
+              language === 'mr'
+                ? item.name
+                : item.nameMarathi;
+            const showSecondaryItemName =
+              Boolean(secondaryItemName) && secondaryItemName !== primaryItemName;
+            const primaryBrandName =
+              language === 'mr'
+                ? (item.brandMarathi || item.brand)
+                : (item.brand || item.brandMarathi);
+            const secondaryBrandName =
+              language === 'mr'
+                ? item.brand
+                : item.brandMarathi;
+            const showSecondaryBrandName =
+              Boolean(secondaryBrandName) && secondaryBrandName !== primaryBrandName;
             
             // Calculate days left
             let daysLeftText = '';
@@ -872,15 +892,18 @@ export function ItemsManagement() {
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
                         <h3 className="font-bold text-base">
-                          {language === 'mr' 
-                            ? (item.nameMarathi || item.name) 
-                            : (item.name || item.nameMarathi)}
+                          {primaryItemName}
                         </h3>
-                        {(item.brand || item.brandMarathi) && (
+                        {showSecondaryItemName && (
+                          <p className="text-sm font-medium text-muted-foreground">
+                            {secondaryItemName}
+                          </p>
+                        )}
+                        {(primaryBrandName || showSecondaryBrandName) && (
                           <p className="text-xs text-gray-500">
-                            {language === 'mr' 
-                              ? (item.brandMarathi || item.brand) 
-                              : (item.brand || item.brandMarathi)}
+                            {[primaryBrandName, showSecondaryBrandName ? secondaryBrandName : null]
+                              .filter(Boolean)
+                              .join(' / ')}
                           </p>
                         )}
                         <p className="text-xs text-muted-foreground">{getCategoryName(item.categoryId)}</p>
