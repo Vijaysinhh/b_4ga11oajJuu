@@ -8,9 +8,10 @@ import { InventoryHealthReport } from "@/components/inventory-health-report";
 import { Button } from "@/components/ui/button";
 import { HelpTooltip } from "@/components/help-tooltip";
 import { PageContainer, PageHeader } from "@/components/page-shell";
+import { NotificationCenter } from "@/components/notification-center";
 import { useLanguage } from "@/providers/language-provider";
 
-type Tab = "daily" | "monthly" | "top-products" | "inventory";
+type Tab = "daily" | "monthly" | "top-products" | "inventory" | "notifications";
 
 export default function ReportsPage() {
   const { t } = useLanguage();
@@ -52,12 +53,20 @@ export default function ReportsPage() {
         >
           Inventory Health
         </Button>
+        <Button
+          onClick={() => setActiveTab("notifications")}
+          variant={activeTab === "notifications" ? "default" : "outline"}
+          className="flex-1 min-w-[120px]"
+        >
+          Notifications
+        </Button>
       </div>
 
       {activeTab === "daily" && <DailySalesReport />}
       {activeTab === "monthly" && <MonthlyPLReport />}
       {activeTab === "top-products" && <TopProductsReport />}
       {activeTab === "inventory" && <InventoryHealthReport />}
+      {activeTab === "notifications" && <NotificationCenter />}
     </PageContainer>
   );
 }

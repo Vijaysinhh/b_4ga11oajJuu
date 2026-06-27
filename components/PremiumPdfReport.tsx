@@ -44,6 +44,14 @@ interface ReportData {
     cost: number;
     profit: number;
   }>;
+  notifications?: Array<{
+    id: string;
+    title: string;
+    message: string;
+    meta?: string;
+    severity: string;
+    category: string;
+  }>;
 }
 
 const styles = StyleSheet.create({
@@ -133,6 +141,9 @@ const styles = StyleSheet.create({
     padding: 8,
     fontSize: 9,
     color: "#374151",
+  },
+  mutedText: {
+    color: "#6b7280",
   },
   greenText: {
     color: "#059669",
@@ -524,6 +535,38 @@ export const PremiumPdfReport = ({ data }: { data: ReportData }) => {
                   </View>
                   <View style={[styles.tableCell, { width: "20%" }]}>
                     <Text>{item.lowStockLimit}</Text>
+                  </View>
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
+
+        {data.notifications && data.notifications.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Recent Notifications</Text>
+            <View style={styles.table}>
+              <View style={styles.tableHeader}>
+                <View style={[styles.tableHeaderCell, { width: "35%" }]}>
+                  <Text>Title</Text>
+                </View>
+                <View style={[styles.tableHeaderCell, { width: "45%" }]}>
+                  <Text>Details</Text>
+                </View>
+                <View style={[styles.tableHeaderCell, { width: "20%" }]}>
+                  <Text>Meta</Text>
+                </View>
+              </View>
+              {data.notifications.slice(0, 10).map((item, index) => (
+                <View style={styles.tableRow} key={item.id || index}>
+                  <View style={[styles.tableCell, { width: "35%" }]}>
+                    <Text>{truncateText(item.title, 26)}</Text>
+                  </View>
+                  <View style={[styles.tableCell, { width: "45%" }]}>
+                    <Text>{truncateText(item.message, 70)}</Text>
+                  </View>
+                  <View style={[styles.tableCell, { width: "20%" }]}>
+                    <Text style={styles.mutedText}>{item.meta || item.category}</Text>
                   </View>
                 </View>
               ))}
