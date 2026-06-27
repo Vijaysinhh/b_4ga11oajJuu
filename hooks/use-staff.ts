@@ -24,7 +24,8 @@ export function useStaff() {
         .from('users')
         .select('*')
         .eq('shop_id', currentShopId)
-        .eq('role', 'worker');
+        .eq('role', 'worker')
+        .order('created_at', { ascending: false });
       
       if (users) {
         // Fetch permissions for each user
@@ -93,6 +94,25 @@ export function useStaff() {
     }
   }, [currentShopId, user?.role, supabase, fetchStaff]);
 
+  const updateStaff = useCallback(async (userId: number, username: string, password: string) => {
+    if (!currentShopId || user?.role !== 'owner') return;
+    
+    try {
+      const updateData: any = {};
+      if (username) updateData.username = username;
+      if (password) updateData.password = password;
+      
+      await (supabase as any)
+        .from('users')
+        .update(updateData)
+        .eq('id', userId);
+      
+      await fetchStaff();
+    } catch (error) {
+      console.error('Error updating staff:', error);
+    }
+  }, [currentShopId, user?.role, supabase, fetchStaff]);
+
   const updateStaffPermissions = useCallback(async (userId: number, permissions: UserPermissions) => {
     if (!currentShopId || user?.role !== 'owner') return;
     
@@ -158,6 +178,7 @@ export function useStaff() {
     staff,
     isLoading,
     addStaff,
+    updateStaff,
     updateStaffPermissions,
     removeStaff,
     refreshStaff: fetchStaff,

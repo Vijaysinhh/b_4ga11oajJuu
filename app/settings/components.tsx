@@ -41,11 +41,10 @@ export function Settings() {
       <PageHeader title={t('settings')} description={t('settings_desc')} />
 
       <Tabs defaultValue="general" className="w-full">
-        <TabsList className="grid h-11 w-full grid-cols-4">
-          <TabsTrigger value="general">{t('general')}</TabsTrigger>
-          <TabsTrigger value="workers">Workers</TabsTrigger>
-          <TabsTrigger value="categories">{t('categories')}</TabsTrigger>
-          <TabsTrigger value="units">{t('units')}</TabsTrigger>
+        <TabsList className="grid h-11 w-full grid-cols-3">
+          <TabsTrigger value="general">{t("general")}</TabsTrigger>
+          <TabsTrigger value="categories">{t("categories")}</TabsTrigger>
+          <TabsTrigger value="units">{t("units")}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="general" className="mt-6 space-y-6">
@@ -72,10 +71,6 @@ export function Settings() {
               </p>
             </CardContent>
           </Card>
-        </TabsContent>
-
-        <TabsContent value="workers" className="mt-6">
-          <WorkersManagement />
         </TabsContent>
 
         <TabsContent value="categories" className="mt-6">

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/providers/auth-provider';
 import { createClient } from '@/lib/supabase';
@@ -156,26 +156,40 @@ export function SubscriptionCheck({ children }: SubscriptionCheckProps) {
     ? 'Pay ₹299 now to avoid pause on 4th.'
     : 'Pay ₹299 before month end to avoid interruption.';
 
+  // Always render the banner if needed, and wrap everything properly
   return (
     <>
-      <div className={`border ${bannerTone} rounded-lg px-4 py-3 mb-4 flex items-center justify-between gap-3`}>
-        <div className="min-w-0">
-          <div className="font-semibold">{bannerTitle}</div>
-          <div className="text-sm opacity-90">{bannerDesc}</div>
-        </div>
-        <Dialog>
-          <DialogTrigger asChild>
-            <Button size="sm">Pay ₹299</Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Pay Subscription</DialogTitle>
-            </DialogHeader>
-            <QrCodeGenerator qrImageUrl={qrImageUrl} amount={299} name={shopName || 'Dukan'} note="Monthly Subscription" />
-          </DialogContent>
-        </Dialog>
-      </div>
-      {children}
+      {React.Children.map(children, (child) => {
+        if (React.isValidElement(child) && child.type === 'main') {
+          return React.cloneElement(child as React.ReactElement<any>, {
+            children: (
+              <>
+                {status === 'dueSoon' || status === 'overdueGrace' ? (
+                  <div className={`border ${bannerTone} rounded-lg px-4 py-3 mb-4 flex items-center justify-between gap-3`}>
+                    <div className="min-w-0">
+                      <div className="font-semibold">{bannerTitle}</div>
+                      <div className="text-sm opacity-90">{bannerDesc}</div>
+                    </div>
+                    <Dialog>
+                      <DialogTrigger asChild>
+                        <Button size="sm">Pay ₹299</Button>
+                      </DialogTrigger>
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle>Pay Subscription</DialogTitle>
+                        </DialogHeader>
+                        <QrCodeGenerator qrImageUrl={qrImageUrl} amount={299} name={shopName || 'Dukan'} note="Monthly Subscription" />
+                      </DialogContent>
+                    </Dialog>
+                  </div>
+                ) : null}
+                {(child as React.ReactElement<any>).props.children}
+              </>
+            ),
+          });
+        }
+        return child;
+      })}
     </>
   );
 }

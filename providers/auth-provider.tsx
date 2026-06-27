@@ -59,6 +59,7 @@ interface AuthContextType {
   isLoading: boolean;
   login: (username: string, password: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -142,9 +143,80 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return DEFAULT_WORKER_PERMISSIONS;
   };
 
+  // Refresh user data and permissions
+  const refreshUser = useCallback(async () => {
+    if (!user) return;
+    try {
+      if (user.id === 0) {
+        // Super admin
+        return;
+      } else {
+        const { data } = await (supabase as any)
+          .from('users')
+          .select('*')
+          .eq('id', user.id)
+          .single();
+          
+        if (data) {
+          const permissions = await fetchUserPermissions(data.id, data.shop_id);
+          const mappedUser = {
+            ...mapUser(data),
+            permissions
+          };
+          setUser(mappedUser);
+          localStorage.setItem('auth_user', JSON.stringify(mappedUser));
+        }
+      }
+    } catch (e) {
+      console.error('Refresh user failed:', e);
+    }
+  }, [user, supabase]);
+
   useEffect(() => {
     checkAuth();
   }, []);
+
+  // Listen for realtime changes to user_roles and users for current user
+  useEffect(() => {
+    if (!user || user.id === 0 || !currentShopId) return;
+
+    const userRolesChannel = supabase
+      .channel(`user_roles:${user.id}:${currentShopId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'user_roles',
+          filter: `user_id=eq.${user.id}`,
+        },
+        () => {
+          refreshUser();
+        }
+      )
+      .subscribe();
+
+    const usersChannel = supabase
+      .channel(`users:${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'users',
+          filter: `id=eq.${user.id}`,
+        },
+        () => {
+          refreshUser();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      userRolesChannel.unsubscribe();
+      usersChannel.unsubscribe();
+    };
+  }, [user, currentShopId, refreshUser, supabase]);
 
   const checkAuth = async () => {
     try {
@@ -365,6 +437,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       isLoading,
       login,
       logout,
+      refreshUser,
     }}>
       {children}
     </AuthContext.Provider>

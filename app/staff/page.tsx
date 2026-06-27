@@ -6,13 +6,21 @@ import { useAuth, UserPermissions, DEFAULT_WORKER_PERMISSIONS } from '@/provider
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Plus, Trash2, Users, Shield } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Plus, Trash2, Users, Shield, Edit2 } from 'lucide-react';
+import { useToast } from '@/components/ui/use-toast';
 
 export default function StaffManagementPage() {
   const { user } = useAuth();
-  const { staff, isLoading, addStaff, updateStaffPermissions, removeStaff } = useStaff();
+  const { staff, isLoading, addStaff, updateStaff, updateStaffPermissions, removeStaff } = useStaff();
   const [newUsername, setNewUsername] = useState('');
   const [newPassword, setNewPassword] = useState('');
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editingStaff, setEditingStaff] = useState<any>(null);
+  const [editUsername, setEditUsername] = useState('');
+  const [editPassword, setEditPassword] = useState('');
+  const { toast } = useToast();
 
   if (user?.role !== 'owner') {
     return (
@@ -29,6 +37,10 @@ export default function StaffManagementPage() {
     await addStaff(newUsername, newPassword);
     setNewUsername('');
     setNewPassword('');
+    toast({
+      title: "Success",
+      description: "Staff member added successfully!",
+    });
   };
 
   const handleTogglePermission = (userId: number, key: keyof UserPermissions, currentValue: boolean) => {
@@ -40,6 +52,10 @@ export default function StaffManagementPage() {
       [key]: !currentValue
     };
     updateStaffPermissions(userId, newPermissions);
+    toast({
+      title: "Success",
+      description: "Permission updated!",
+    });
   };
 
   const handleSetAllPermissions = (userId: number, enabled: boolean) => {
@@ -56,6 +72,36 @@ export default function StaffManagementPage() {
       canManageStaff: false, // Never allow staff to manage other staff
     };
     updateStaffPermissions(userId, newPermissions);
+    toast({
+      title: "Success",
+      description: "All permissions updated!",
+    });
+  };
+
+  const handleRemoveStaff = async (userId: number) => {
+    await removeStaff(userId);
+    toast({
+      title: "Success",
+      description: "Staff member removed!",
+    });
+  };
+
+  const handleOpenEditDialog = (staffMember: any) => {
+    setEditingStaff(staffMember);
+    setEditUsername(staffMember.username);
+    setEditPassword('');
+    setEditDialogOpen(true);
+  };
+
+  const handleUpdateStaff = async () => {
+    if (!editingStaff) return;
+    await updateStaff(editingStaff.id, editUsername, editPassword);
+    setEditDialogOpen(false);
+    setEditingStaff(null);
+    toast({
+      title: "Success",
+      description: "Staff member updated!",
+    });
   };
 
   return (
@@ -125,14 +171,24 @@ export default function StaffManagementPage() {
                   <Shield className="w-5 h-5 text-primary" />
                   {staffMember.username}
                 </CardTitle>
-                <Button 
-                  variant="destructive" 
-                  size="sm"
-                  onClick={() => removeStaff(staffMember.id)}
-                >
-                  <Trash2 className="w-4 h-4 mr-2" />
-                  Remove
-                </Button>
+                <div className="flex gap-2">
+                  <Button 
+                    variant="secondary" 
+                    size="sm"
+                    onClick={() => handleOpenEditDialog(staffMember)}
+                  >
+                    <Edit2 className="w-4 h-4 mr-2" />
+                    Edit
+                  </Button>
+                  <Button 
+                    variant="destructive" 
+                    size="sm"
+                    onClick={() => handleRemoveStaff(staffMember.id)}
+                  >
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    Remove
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent>
                 {/* Quick Actions */}
@@ -171,24 +227,14 @@ export default function StaffManagementPage() {
                         <p className="font-medium text-sm">{perm.label}</p>
                         <p className="text-xs text-muted-foreground">{perm.desc}</p>
                       </div>
-                      <button
-                        onClick={() => handleTogglePermission(
+                      <Switch
+                        checked={!!(staffMember.permissions || DEFAULT_WORKER_PERMISSIONS)[perm.key as keyof UserPermissions]}
+                        onCheckedChange={(checked) => handleTogglePermission(
                           staffMember.id, 
                           perm.key as keyof UserPermissions, 
-                          !!(staffMember.permissions || DEFAULT_WORKER_PERMISSIONS)[perm.key as keyof UserPermissions]
+                          !checked
                         )}
-                        className={`w-10 h-6 rounded-full transition-colors relative ${
-                          (staffMember.permissions || DEFAULT_WORKER_PERMISSIONS)[perm.key as keyof UserPermissions] 
-                            ? 'bg-primary' 
-                            : 'bg-muted'
-                        }`}
-                      >
-                        <div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-transform ${
-                          (staffMember.permissions || DEFAULT_WORKER_PERMISSIONS)[perm.key as keyof UserPermissions]
-                            ? 'left-5'
-                            : 'left-1'
-                        }`} />
-                      </button>
+                      />
                     </div>
                   ))}
                 </div>
@@ -197,6 +243,38 @@ export default function StaffManagementPage() {
           ))
         )}
       </div>
+
+      {/* Edit Staff Dialog */}
+      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit Staff</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <label className="block text-sm font-medium mb-2">Username</label>
+              <Input 
+                placeholder="Enter username"
+                value={editUsername}
+                onChange={(e) => setEditUsername(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="block text-sm font-medium mb-2">Password (leave empty to keep current)</label>
+              <Input 
+                type="password"
+                placeholder="Enter new password"
+                value={editPassword}
+                onChange={(e) => setEditPassword(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditDialogOpen(false)}>Cancel</Button>
+            <Button onClick={handleUpdateStaff}>Update Staff</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
