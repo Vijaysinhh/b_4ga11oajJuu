@@ -1,7 +1,7 @@
 'use client';
 
 import { useLanguage } from '@/providers/language-provider';
-import { useAuth } from '@/providers/auth-provider';
+import { normalizeUserPermissions, useAuth } from '@/providers/auth-provider';
 import type { User } from '@/providers/auth-provider';
 import { PageContainer, PageHeader } from '@/components/page-shell';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -26,12 +26,14 @@ import { useToast } from '@/components/ui/use-toast';
 export function Settings() {
   const { t, language, setLanguage } = useLanguage();
   const { user } = useAuth();
+  const permissions = normalizeUserPermissions(user?.role, user?.permissions);
+  const canViewSettings = user?.role === 'owner' || permissions.canViewSettings;
+  const canManageCatalogSettings = user?.role === 'owner' || permissions.canManageItems;
 
-  // If not owner, don't show settings
-  if (!user || user.role !== 'owner') {
+  if (!user || !canViewSettings) {
     return (
       <PageContainer>
-        <PageHeader title="Access Denied" description="Only owners can access settings" />
+        <PageHeader title="Access Denied" description="You do not have permission to access settings" />
       </PageContainer>
     );
   }
@@ -41,10 +43,10 @@ export function Settings() {
       <PageHeader title={t('settings')} description={t('settings_desc')} />
 
       <Tabs defaultValue="general" className="w-full">
-        <TabsList className="grid h-11 w-full grid-cols-3">
+        <TabsList className={`grid h-11 w-full ${canManageCatalogSettings ? 'grid-cols-3' : 'grid-cols-1'}`}>
           <TabsTrigger value="general">{t("general")}</TabsTrigger>
-          <TabsTrigger value="categories">{t("categories")}</TabsTrigger>
-          <TabsTrigger value="units">{t("units")}</TabsTrigger>
+          {canManageCatalogSettings && <TabsTrigger value="categories">{t("categories")}</TabsTrigger>}
+          {canManageCatalogSettings && <TabsTrigger value="units">{t("units")}</TabsTrigger>}
         </TabsList>
 
         <TabsContent value="general" className="mt-6 space-y-6">
@@ -73,13 +75,17 @@ export function Settings() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="categories" className="mt-6">
-          <CategoriesManagement embedded />
-        </TabsContent>
+        {canManageCatalogSettings && (
+          <TabsContent value="categories" className="mt-6">
+            <CategoriesManagement embedded />
+          </TabsContent>
+        )}
 
-        <TabsContent value="units" className="mt-6">
-          <UnitsManagement embedded />
-        </TabsContent>
+        {canManageCatalogSettings && (
+          <TabsContent value="units" className="mt-6">
+            <UnitsManagement embedded />
+          </TabsContent>
+        )}
       </Tabs>
     </PageContainer>
   );

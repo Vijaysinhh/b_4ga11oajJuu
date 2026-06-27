@@ -60,7 +60,7 @@ export function SalesTransaction() {
   const { createSale, updateStockAfterSale } = useSales(currentShopId);
   const { customers, addCustomer, addCredit } = useUdhari(currentShopId);
   const { items: allItems } = useItems(currentShopId);
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
 
   const [items, setItems] = useState<LineItem[]>([]);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
@@ -206,7 +206,19 @@ export function SalesTransaction() {
 
       await updateStockAfterSale(saleItems);
 
-      toast.success(t("success"));
+      toast.success(
+        language === "mr"
+          ? `छान! ₹${formatMoney(totals.subtotal)} विक्री जोडली`
+          : `Nice! ₹${formatMoney(totals.subtotal)} sale added`,
+        {
+          description:
+            totals.totalProfit > 0
+              ? language === "mr"
+                ? `आजचा नफा +₹${formatMoney(totals.totalProfit)}`
+                : `Profit +₹${formatMoney(totals.totalProfit)}`
+              : undefined,
+        },
+      );
       resetSale();
       window.dispatchEvent(new Event('refresh-dukan-data'));
     } catch (error) {

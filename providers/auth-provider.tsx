@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { createClient } from '@/lib/supabase';
 import type { Database } from '@/lib/db-supabase-types';
 
@@ -32,6 +32,19 @@ export const DEFAULT_WORKER_PERMISSIONS: UserPermissions = {
   canManageStaff: false,
 };
 
+export const FULL_PERMISSIONS: UserPermissions = {
+  canViewDashboard: true,
+  canViewItems: true,
+  canManageItems: true,
+  canViewSales: true,
+  canCreateSales: true,
+  canViewUdhari: true,
+  canManageUdhari: true,
+  canViewReports: true,
+  canViewSettings: true,
+  canManageStaff: true,
+};
+
 // Convert Supabase types to match our old User/Shop types
 export type User = Database['public']['Tables']['users']['Row'] & {
   createdAt?: number;
@@ -50,6 +63,71 @@ export type Shop = Database['public']['Tables']['shops']['Row'] & {
   subscriptionEndDate?: number;
   lastPaymentDate?: number;
 };
+
+type PermissionRole = User['role'] | string | null | undefined;
+
+function toPermissionPatch(value: unknown): Partial<UserPermissions> | null {
+  if (!value || typeof value !== 'object') return null;
+  return value as Partial<UserPermissions>;
+}
+
+export function normalizeUserPermissions(
+  role: PermissionRole,
+  permissions?: Partial<UserPermissions> | null,
+): UserPermissions {
+  if (role === 'owner' || role === 'super_admin') {
+    return { ...FULL_PERMISSIONS };
+  }
+
+  return {
+    ...DEFAULT_WORKER_PERMISSIONS,
+    ...(permissions || {}),
+    canManageStaff: false,
+  };
+}
+
+export function getUserLandingPath(user: Pick<User, 'role' | 'permissions'> | null): string {
+  if (!user) return '/login';
+  if (user.role === 'super_admin') return '/super-admin';
+  if (user.role === 'owner') return '/dashboard';
+
+  const permissions = normalizeUserPermissions(user.role, user.permissions);
+  if (permissions.canViewDashboard) return '/dashboard';
+  if (permissions.canCreateSales || permissions.canViewSales) return '/sales';
+  if (permissions.canViewItems) return '/items';
+  if (permissions.canViewUdhari) return '/udhari';
+  if (permissions.canViewReports) return '/reports';
+  if (permissions.canViewSettings) return '/settings';
+  return '/sales';
+}
+
+export function canUserAccessPath(
+  user: Pick<User, 'role' | 'permissions'> | null,
+  pathname: string | null | undefined,
+): boolean {
+  if (!pathname || pathname === '/') return true;
+  if (pathname.startsWith('/login')) return true;
+  if (!user) return false;
+
+  if (user.role === 'super_admin') {
+    return pathname.startsWith('/super-admin') || pathname.startsWith('/profile');
+  }
+
+  if (user.role === 'owner') {
+    return !pathname.startsWith('/super-admin');
+  }
+
+  const permissions = normalizeUserPermissions(user.role, user.permissions);
+  if (pathname.startsWith('/profile')) return true;
+  if (pathname.startsWith('/dashboard')) return permissions.canViewDashboard;
+  if (pathname.startsWith('/sales')) return permissions.canCreateSales || permissions.canViewSales;
+  if (pathname.startsWith('/items')) return permissions.canViewItems;
+  if (pathname.startsWith('/udhari')) return permissions.canViewUdhari;
+  if (pathname.startsWith('/reports')) return permissions.canViewReports;
+  if (pathname.startsWith('/settings')) return permissions.canViewSettings;
+  if (pathname.startsWith('/staff') || pathname.startsWith('/super-admin')) return false;
+  return true;
+}
 
 interface AuthContextType {
   user: User | null;
@@ -101,64 +179,72 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [currentShop, setCurrentShop] = useState<Shop | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
+  const currentUserId = user?.id;
 
   // Expose current shop ID for easy access
-  const currentShopId = currentShop?.id;
+  const currentShopId = currentShop?.id ?? user?.shop_id ?? user?.shopId ?? undefined;
 
   // Helper to fetch user permissions
-  const fetchUserPermissions = async (userId: number, shopId: number | null): Promise<UserPermissions> => {
+  const fetchUserPermissions = useCallback(async (
+    userId: number,
+    shopId: number | null,
+    role?: PermissionRole,
+  ): Promise<UserPermissions> => {
     if (!shopId || userId === 0) {
-      // Super admin or no shop - full permissions
-      return {
-        canViewDashboard: true,
-        canViewItems: true,
-        canManageItems: true,
-        canViewSales: true,
-        canCreateSales: true,
-        canViewUdhari: true,
-        canManageUdhari: true,
-        canViewReports: true,
-        canViewSettings: true,
-        canManageStaff: true,
-      };
+      return normalizeUserPermissions(role || 'super_admin', FULL_PERMISSIONS);
     }
 
     try {
-      const { data } = await (supabase as any)
+      const { data, error } = await (supabase as any)
         .from('user_roles')
         .select('permissions')
         .eq('user_id', userId)
         .eq('shop_id', shopId)
-        .single();
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
 
-      if (data?.permissions) {
-        return data.permissions as UserPermissions;
+      if (error) {
+        console.warn('Permission lookup failed, using defaults:', error);
       }
+
+      return normalizeUserPermissions(role, toPermissionPatch(data?.permissions));
     } catch (e) {
-      console.log('No permissions found, using defaults');
+      console.warn('Permission lookup failed, using defaults:', e);
     }
 
-    // Return default permissions
-    return DEFAULT_WORKER_PERMISSIONS;
-  };
+    return normalizeUserPermissions(role, null);
+  }, [supabase]);
 
   // Refresh user data and permissions
   const refreshUser = useCallback(async () => {
-    if (!user) return;
+    if (currentUserId === undefined) return;
     try {
-      if (user.id === 0) {
-        // Super admin
+      if (currentUserId === 0) {
+        setUser((prevUser) => {
+          if (!prevUser) return prevUser;
+          const superAdminUser = {
+            ...prevUser,
+            permissions: normalizeUserPermissions('super_admin', FULL_PERMISSIONS),
+          };
+          localStorage.setItem('auth_user', JSON.stringify(superAdminUser));
+          return superAdminUser;
+        });
         return;
       } else {
-        const { data } = await (supabase as any)
+        const { data, error } = await (supabase as any)
           .from('users')
           .select('*')
-          .eq('id', user.id)
+          .eq('id', currentUserId)
           .single();
+
+        if (error) {
+          throw error;
+        }
           
         if (data) {
-          const permissions = await fetchUserPermissions(data.id, data.shop_id);
+          const permissions = await fetchUserPermissions(data.id, data.shop_id, data.role);
           const mappedUser = {
             ...mapUser(data),
             permissions
@@ -170,7 +256,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch (e) {
       console.error('Refresh user failed:', e);
     }
-  }, [user, supabase]);
+  }, [currentUserId, fetchUserPermissions, supabase]);
 
   useEffect(() => {
     checkAuth();
@@ -191,7 +277,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           filter: `user_id=eq.${user.id}`,
         },
         () => {
-          refreshUser();
+          void refreshUser();
         }
       )
       .subscribe();
@@ -207,7 +293,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           filter: `id=eq.${user.id}`,
         },
         () => {
-          refreshUser();
+          void refreshUser();
         }
       )
       .subscribe();
@@ -216,7 +302,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       userRolesChannel.unsubscribe();
       usersChannel.unsubscribe();
     };
-  }, [user, currentShopId, refreshUser, supabase]);
+  }, [currentShopId, refreshUser, supabase, user?.id]);
+
+  // Realtime is best-effort; this keeps staff permissions fresh even when
+  // Supabase realtime is disabled for the table or the browser missed an event.
+  useEffect(() => {
+    if (!user || user.id === 0) return;
+
+    const refreshIfVisible = () => {
+      if (document.visibilityState !== 'hidden') {
+        void refreshUser();
+      }
+    };
+
+    const intervalId = window.setInterval(refreshIfVisible, 10000);
+    window.addEventListener('focus', refreshIfVisible);
+    document.addEventListener('visibilitychange', refreshIfVisible);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', refreshIfVisible);
+      document.removeEventListener('visibilitychange', refreshIfVisible);
+    };
+  }, [refreshUser, user?.id]);
 
   const checkAuth = async () => {
     try {
@@ -229,18 +337,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           // Super admin
           const superAdminWithPerms = {
             ...parsedUser,
-            permissions: {
-              canViewDashboard: true,
-              canViewItems: true,
-              canManageItems: true,
-              canViewSales: true,
-              canCreateSales: true,
-              canViewUdhari: true,
-              canManageUdhari: true,
-              canViewReports: true,
-              canViewSettings: true,
-              canManageStaff: true,
-            } as UserPermissions
+            permissions: normalizeUserPermissions('super_admin', FULL_PERMISSIONS),
           };
           setUser(superAdminWithPerms);
           // Set auth cookie if not present
@@ -253,7 +350,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             .single();
             
           if (data) {
-            const permissions = await fetchUserPermissions(data.id, data.shop_id);
+            const permissions = await fetchUserPermissions(data.id, data.shop_id, data.role);
             const mappedUser = {
               ...mapUser(data),
               permissions
@@ -299,18 +396,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           updated_at: new Date().toISOString(),
           createdAt: Date.now(),
           updatedAt: Date.now(),
-          permissions: {
-            canViewDashboard: true,
-            canViewItems: true,
-            canManageItems: true,
-            canViewSales: true,
-            canCreateSales: true,
-            canViewUdhari: true,
-            canManageUdhari: true,
-            canViewReports: true,
-            canViewSettings: true,
-            canManageStaff: true,
-          }
+          permissions: normalizeUserPermissions('super_admin', FULL_PERMISSIONS),
         };
         setUser(superAdminUser);
         localStorage.setItem('auth_user', JSON.stringify(superAdminUser));
@@ -352,18 +438,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         
         if (ownerUser) {
-          const permissions = {
-            canViewDashboard: true,
-            canViewItems: true,
-            canManageItems: true,
-            canViewSales: true,
-            canCreateSales: true,
-            canViewUdhari: true,
-            canManageUdhari: true,
-            canViewReports: true,
-            canViewSettings: true,
-            canManageStaff: true,
-          } as UserPermissions;
+          const permissions = normalizeUserPermissions('owner', FULL_PERMISSIONS);
           
           const mappedUser = {
             ...mapUser(ownerUser),
@@ -389,7 +464,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       
       const worker = users?.[0];
       if (worker) {
-        const permissions = await fetchUserPermissions(worker.id, worker.shop_id);
+        const permissions = await fetchUserPermissions(worker.id, worker.shop_id, worker.role);
         const mappedUser = {
           ...mapUser(worker),
           permissions
@@ -419,7 +494,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.error('Login error:', e);
       return { success: false, error: 'An error occurred' };
     }
-  }, [supabase]);
+  }, [fetchUserPermissions, supabase]);
 
   const logout = useCallback(async () => {
     setUser(null);

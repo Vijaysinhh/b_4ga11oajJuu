@@ -3,7 +3,12 @@
 import { useMemo, useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
-import { useAuth } from '@/providers/auth-provider';
+import {
+  useAuth,
+  canUserAccessPath,
+  getUserLandingPath,
+  normalizeUserPermissions,
+} from '@/providers/auth-provider';
 import { useLanguage } from '@/providers/language-provider';
 import { cn } from '@/lib/utils';
 import { 
@@ -21,6 +26,7 @@ import {
   Search,
   X,
   User,
+  BarChart3,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { LanguageToggle } from '@/components/page-shell';
@@ -93,12 +99,22 @@ export function Navigation() {
   useEffect(() => {
     if (!isAuthenticated || pathname === '/login') return;
 
-    if (pathname === '/' || pathname === '/dashboard') {
-      if (user?.role === 'super_admin') {
-        router.push('/super-admin');
-      } else if (user?.role === 'worker') {
-        router.push('/sales');
+    if (user?.role === 'super_admin') {
+      if (pathname === '/' || !canUserAccessPath(user, pathname)) {
+        router.replace('/super-admin');
       }
+      return;
+    }
+
+    if (user?.role === 'worker') {
+      if (pathname === '/' || !canUserAccessPath(user, pathname)) {
+        router.replace(getUserLandingPath(user));
+      }
+      return;
+    }
+
+    if (pathname === '/') {
+      router.replace('/dashboard');
     }
   }, [user, pathname, router, isAuthenticated]);
 
@@ -124,6 +140,14 @@ export function Navigation() {
     return null;
   }
 
+  const permissions = normalizeUserPermissions(user?.role, user?.permissions);
+  const canCreateSale =
+    user?.role === 'owner' ||
+    (user?.role === 'worker' && permissions.canCreateSales);
+  const canOpenSales =
+    user?.role === 'owner' ||
+    (user?.role === 'worker' && (permissions.canCreateSales || permissions.canViewSales));
+
   // Navigation items based on role and permissions
   const getNavItems = () => {
     if (user?.role === 'super_admin') {
@@ -131,15 +155,21 @@ export function Navigation() {
         { href: '/super-admin', icon: Shield, label: 'Dashboard' },
       ];
     }
-
-    const permissions = user?.permissions || { canViewDashboard: false, canViewItems: false, canViewSales: true, canViewUdhari: false, canViewReports: false, canViewSettings: false, canManageStaff: false };
     
     if (user?.role === 'worker') {
       const items: any[] = [];
       if (permissions.canViewDashboard) items.push({ href: '/dashboard', icon: Home, label: t('home') });
-      if (permissions.canViewSales) items.push({ href: '/sales', icon: ShoppingCart, label: 'Sell' });
+      if (permissions.canCreateSales || permissions.canViewSales) {
+        items.push({
+          href: '/sales',
+          icon: ShoppingCart,
+          label: permissions.canCreateSales ? 'Sell' : 'Sales',
+        });
+      }
       if (permissions.canViewItems) items.push({ href: '/items', icon: Package, label: t('stock') });
       if (permissions.canViewUdhari) items.push({ href: '/udhari', icon: Users, label: t('udhari') });
+      if (permissions.canViewReports) items.push({ href: '/reports', icon: BarChart3, label: t('reports') });
+      if (permissions.canViewSettings) items.push({ href: '/settings', icon: Settings, label: t('settings') });
       return items.length > 0 ? items : [{ href: '/sales', icon: ShoppingCart, label: 'Sell' }];
     }
 
@@ -311,14 +341,14 @@ export function Navigation() {
         </div>
       </header>
 
-      {/* Left Sidebar - Desktop (Collapsible) - Only for non-workers & non-super-admins */}
-      {(user?.role === 'owner' || user?.role === 'super_admin') && (
+      {/* Left Sidebar - Desktop (Collapsible) */}
+      {(user?.role === 'owner' || user?.role === 'worker' || user?.role === 'super_admin') && (
         <div className="hidden sm:flex fixed left-0 top-20 h-[calc(100vh-5rem)] z-30 flex-col">
           <nav className={cn(
             "bg-background border-r border-border overflow-y-auto transition-all duration-300 flex flex-col p-3 gap-2",
             sidebarCollapsed ? "w-20" : "w-56"
           )}>
-            {user?.role === 'owner' && (
+            {user?.role === 'owner' && canCreateSale && (
               <Link
                 href="/sales"
                 title={sidebarCollapsed ? t('new_sale') : undefined}
@@ -368,8 +398,8 @@ export function Navigation() {
         </div>
       )}
 
-      {/* Bottom Navigation - Mobile Only (Quick Access) - For Owners */}
-      {user?.role === 'owner' && (
+      {/* Bottom Navigation - Mobile Only (Quick Access) */}
+      {(user?.role === 'owner' || user?.role === 'worker') && (
         <nav className="sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-background border-t border-border h-16 flex items-center shadow-lg">
           <div className="flex items-center justify-around w-full h-full">
             {navItems.map((item) => {
@@ -401,8 +431,8 @@ export function Navigation() {
         </nav>
       )}
 
-      {/* Floating Sale Button - Only for Owners and Workers */}
-      {(user?.role === 'owner' || user?.role === 'worker') && pathname !== '/sales' && (
+      {/* Floating Sale Button - Only for users who can create sales */}
+      {canCreateSale && canOpenSales && pathname !== '/sales' && (
         <Link
           href="/sales"
           className="fixed bottom-20 right-4 z-50 inline-flex h-12 items-center gap-2 rounded-full bg-green-600 px-4 text-sm font-bold text-white shadow-lg transition active:scale-95 hover:bg-green-700 sm:bottom-6 sm:right-6"

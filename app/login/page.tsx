@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { useAuth } from '@/providers/auth-provider';
+import { getUserLandingPath, useAuth } from '@/providers/auth-provider';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Lock, User, Store } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
@@ -28,7 +28,7 @@ export default function LoginPage() {
           if (parsedUser.role === 'super_admin') {
             redirectPath = '/super-admin';
           } else if (parsedUser.role === 'worker') {
-            redirectPath = '/sales';
+            redirectPath = getUserLandingPath(parsedUser);
           }
         } catch (e) {
           console.error('Failed to parse user:', e);
@@ -59,7 +59,7 @@ export default function LoginPage() {
             if (parsedUser.role === 'super_admin') {
               router.push('/super-admin');
             } else if (parsedUser.role === 'worker') {
-              router.push('/sales');
+              router.push(getUserLandingPath(parsedUser));
             } else {
               router.push('/dashboard');
             }

@@ -5,13 +5,20 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/providers/auth-provider";
 import { useLanguage } from "@/providers/language-provider";
 import {
-  useDashboardStats,
   useItems,
   useUnits,
   useSales,
   useUdhari,
   usePriceTiers,
 } from "@/hooks/use-supabase";
+import {
+  getCreditPressure,
+  getPreviousDateKey,
+  getSalesStreak,
+  getSignedPercentChange,
+  getTopSellingItem,
+  summarizeSales,
+} from "@/lib/dukan-insights";
 import { downloadSimplePdf, type PdfSection } from "@/lib/simple-pdf";
 import { downloadPremiumPdf } from "@/lib/premium-pdf";
 import {
@@ -488,12 +495,11 @@ export function Dashboard() {
   const router = useRouter();
   const { user, isLoading: authLoading, isAuthenticated, currentShopId, currentShop } = useAuth();
   const { t, language } = useLanguage();
-  const stats = useDashboardStats(currentShopId);
   const { items } = useItems(currentShopId);
   const { units } = useUnits(currentShopId);
   const { sales, updateSale, deleteSale } = useSales(currentShopId);
   const { priceTiers } = usePriceTiers(currentShopId);
-  const { totalPending, customers } = useUdhari(currentShopId);
+  const { totalPending, customers, entries } = useUdhari(currentShopId);
   const [isClientReady, setIsClientReady] = useState(false);
 
   // --- Date navigation state ---
@@ -582,9 +588,7 @@ export function Dashboard() {
   }, [sales, selectedDayKey]);
 
   const daySummary = useMemo(() => {
-    const revenue = daySales.reduce((sum, s) => sum + s.subtotal, 0);
-    const cost = daySales.reduce((sum, s) => sum + s.totalCost, 0);
-    const profit = revenue - cost;
+    const summary = summarizeSales(daySales);
     const totalItems = daySales.reduce(
       (sum, s) =>
         sum +
@@ -595,11 +599,7 @@ export function Dashboard() {
       0,
     );
     return {
-      transactions: daySales.length,
-      revenue,
-      cost,
-      profit,
-      margin: revenue > 0 ? (profit / revenue) * 100 : 0,
+      ...summary,
       totalItems,
     };
   }, [daySales]);
@@ -607,6 +607,15 @@ export function Dashboard() {
   // --- Low stock items ---
   const lowStockItems = useMemo(
     () => items.filter((item) => item.quantity <= item.lowStockLimit),
+    [items],
+  );
+
+  const totalStockValue = useMemo(
+    () =>
+      items.reduce(
+        (sum, item) => sum + Number(item.quantity || 0) * Number(item.buyPrice || 0),
+        0,
+      ),
     [items],
   );
 
@@ -731,23 +740,239 @@ export function Dashboard() {
     return makeReport(reportLabel, filteredSales);
   }, [sales, selectedDate, selectedReportType, selectedMonth, t, language]);
 
-  const todayReport = useMemo(() => {
-    // Still keep todayReport for the top cards
-    const selectedDateKey = dateKey(selectedDate);
-    const todaySales = sales.filter((sale) => sale.date === selectedDateKey);
-    
-    const revenue = todaySales.reduce((sum, s) => sum + s.subtotal, 0);
-    const cost = todaySales.reduce((sum, s) => sum + s.totalCost, 0);
-    const profit = revenue - cost;
-    const margin = revenue > 0 ? (profit / revenue) * 100 : 0;
-    
-    return {
-      revenue,
-      profit,
-      margin,
-      transactions: todaySales.length,
-    };
+  const previousDaySummary = useMemo(() => {
+    const previousSales = sales.filter(
+      (sale) => sale.date === getPreviousDateKey(selectedDate),
+    );
+    return summarizeSales(previousSales);
   }, [sales, selectedDate]);
+
+  const profitChangePercent = useMemo(
+    () => getSignedPercentChange(daySummary.profit, previousDaySummary.profit),
+    [daySummary.profit, previousDaySummary.profit],
+  );
+
+  const revenueChangePercent = useMemo(
+    () => getSignedPercentChange(daySummary.revenue, previousDaySummary.revenue),
+    [daySummary.revenue, previousDaySummary.revenue],
+  );
+
+  const salesStreak = useMemo(() => getSalesStreak(sales), [sales]);
+
+  const dayTopProduct = useMemo(() => getTopSellingItem(daySales), [daySales]);
+
+  const urgentStockInsight = useMemo(() => {
+    const expiredTarget = [...expiredItems].sort(
+      (a, b) =>
+        new Date(a.expiryDate || 0).getTime() -
+        new Date(b.expiryDate || 0).getTime(),
+    )[0];
+    const expiringTarget = [...expiringItems].sort(
+      (a, b) =>
+        new Date(a.expiryDate || 0).getTime() -
+        new Date(b.expiryDate || 0).getTime(),
+    )[0];
+    const expiringValue = expiringItems.reduce(
+      (sum, item) => sum + Number(item.quantity || 0) * Number(item.buyPrice || 0),
+      0,
+    );
+    const expiredValue = expiredItems.reduce(
+      (sum, item) => sum + Number(item.quantity || 0) * Number(item.buyPrice || 0),
+      0,
+    );
+    const lowestStockItem = [...lowStockItems].sort(
+      (a, b) => Number(a.quantity || 0) - Number(b.quantity || 0),
+    )[0];
+
+    return {
+      expiringValue,
+      expiredValue,
+      lowestStockItem,
+      targetItem: expiredTarget || expiringTarget || lowestStockItem || null,
+      targetFilter: expiredTarget
+        ? "expired"
+        : expiringTarget
+          ? "expiring"
+          : lowestStockItem
+            ? "lowStock"
+            : null,
+    };
+  }, [expiredItems, expiringItems, lowStockItems]);
+
+  const udhariPressures = useMemo(
+    () =>
+      customers
+        .filter((customer) => Number(customer.balance || 0) > 0)
+        .map((customer) => ({
+          customer,
+          pressure: getCreditPressure(
+            customer.id,
+            Number(customer.balance || 0),
+            entries,
+          ),
+        }))
+        .sort((a, b) => {
+          if (b.pressure.daysPending !== a.pressure.daysPending) {
+            return b.pressure.daysPending - a.pressure.daysPending;
+          }
+          return Number(b.customer.balance || 0) - Number(a.customer.balance || 0);
+        }),
+    [customers, entries],
+  );
+
+  const urgentUdhari = udhariPressures[0] || null;
+
+  const weeklySummary = useMemo(() => {
+    const today = new Date();
+    today.setHours(23, 59, 59, 999);
+    const currentStart = new Date(today);
+    currentStart.setDate(currentStart.getDate() - 6);
+    currentStart.setHours(0, 0, 0, 0);
+
+    const previousEnd = new Date(currentStart);
+    previousEnd.setMilliseconds(previousEnd.getMilliseconds() - 1);
+    const previousStart = new Date(previousEnd);
+    previousStart.setDate(previousStart.getDate() - 6);
+    previousStart.setHours(0, 0, 0, 0);
+
+    const inRange = (key: string, start: Date, end: Date) => {
+      const time = new Date(`${key}T12:00:00`).getTime();
+      return time >= start.getTime() && time <= end.getTime();
+    };
+
+    const currentWeekSales = sales.filter((sale) =>
+      inRange(sale.date, currentStart, today),
+    );
+    const previousWeekSales = sales.filter((sale) =>
+      inRange(sale.date, previousStart, previousEnd),
+    );
+    const currentWeek = summarizeSales(currentWeekSales);
+    const previousWeek = summarizeSales(previousWeekSales);
+    const currentWeekUdhari = entries
+      .filter((entry) => entry.type === "credit")
+      .filter((entry) => {
+        const entryDate = new Date(entry.timestamp);
+        return entryDate >= currentStart && entryDate <= today;
+      })
+      .reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+    const previousWeekUdhari = entries
+      .filter((entry) => entry.type === "credit")
+      .filter((entry) => {
+        const entryDate = new Date(entry.timestamp);
+        return entryDate >= previousStart && entryDate <= previousEnd;
+      })
+      .reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+
+    return {
+      show: new Date().getDay() === 0 && (currentWeek.transactions > 0 || currentWeekUdhari > 0),
+      salesChange: getSignedPercentChange(currentWeek.revenue, previousWeek.revenue),
+      profitChange: getSignedPercentChange(currentWeek.profit, previousWeek.profit),
+      udhariChange: getSignedPercentChange(currentWeekUdhari, previousWeekUdhari),
+    };
+  }, [entries, sales]);
+
+  const signedPercent = (value: number) =>
+    `${value >= 0 ? "+" : ""}${formatPercent(value)}%`;
+
+  const selectedDayLabel = isToday
+    ? language === "mr"
+      ? "आजचा"
+      : "Today's"
+    : formatDateLabel(selectedDate, language);
+  const comparisonLabel = language === "mr" ? "कालपेक्षा" : "vs yesterday";
+  const profitPraise =
+    daySummary.transactions === 0
+      ? language === "mr"
+        ? "विक्री झाली की नफा दिसेल"
+        : "Profit appears after sales"
+      : daySummary.profit > previousDaySummary.profit
+        ? language === "mr"
+          ? "नफा कालपेक्षा जास्त आहे"
+          : "Profit is higher than yesterday"
+        : language === "mr"
+          ? "आज छान विक्री झाली"
+          : "Good sales recorded today";
+  const streakText =
+    salesStreak > 0
+      ? language === "mr"
+        ? `${salesStreak} दिवस सतत विक्री`
+        : `${salesStreak} days continuous sales`
+      : language === "mr"
+        ? "आजची विक्री अजून सुरू नाही"
+        : "No sales streak yet";
+  const streakSubtext =
+    daySummary.transactions > 0
+      ? language === "mr"
+        ? `${daySummary.transactions} व्यवहार झाले`
+        : `${daySummary.transactions} transactions done`
+      : language === "mr"
+        ? "पहिली विक्री जोडा"
+        : "Add the first sale";
+  const stockUnit = urgentStockInsight.lowestStockItem
+    ? units.find((unit) => unit.id === urgentStockInsight.lowestStockItem?.unitId)
+        ?.shortForm
+    : "";
+  const stockTargetName = urgentStockInsight.targetItem
+    ? language === "mr"
+      ? urgentStockInsight.targetItem.nameMarathi ||
+        urgentStockInsight.targetItem.name
+      : urgentStockInsight.targetItem.name ||
+        urgentStockInsight.targetItem.nameMarathi
+    : "";
+  const stockRiskTitle =
+    urgentStockInsight.expiredValue > 0
+      ? language === "mr"
+        ? `${stockTargetName}: ₹${formatMoney(urgentStockInsight.expiredValue)} चा माल एक्सपायर झाला`
+        : `${stockTargetName}: ₹${formatMoney(urgentStockInsight.expiredValue)} stock expired`
+      : urgentStockInsight.expiringValue > 0
+        ? language === "mr"
+          ? `${stockTargetName}: ₹${formatMoney(urgentStockInsight.expiringValue)} चा माल एक्सपायर होण्याच्या मार्गावर आहे`
+          : `${stockTargetName}: ₹${formatMoney(urgentStockInsight.expiringValue)} stock near expiry`
+        : urgentStockInsight.lowestStockItem
+          ? language === "mr"
+            ? `${stockTargetName}: फक्त ${formatWholeNumber(urgentStockInsight.lowestStockItem.quantity)} ${stockUnit} बाकी`
+            : `${stockTargetName}: Only ${formatWholeNumber(urgentStockInsight.lowestStockItem.quantity)} ${stockUnit} left`
+          : language === "mr"
+            ? "Stock ठीक आहे"
+            : "Stock is healthy";
+  const stockRiskSubtext =
+    urgentStockInsight.expiredValue > 0 || urgentStockInsight.expiringValue > 0
+      ? language === "mr"
+        ? `${expiredItems.length + expiringItems.length} expiry alert`
+        : `${expiredItems.length + expiringItems.length} expiry alerts`
+      : lowStockItems.length > 0
+        ? language === "mr"
+          ? `${lowStockItems.length} माल कमी आहे`
+          : `${lowStockItems.length} low-stock items`
+        : language === "mr"
+          ? "सध्या मोठा धोका नाही"
+          : "No urgent stock risk";
+  const udhariRiskLabel =
+    urgentUdhari?.pressure.riskLevel === "high"
+      ? "🔴 High risk"
+      : urgentUdhari?.pressure.riskLevel === "recover"
+        ? language === "mr"
+          ? "🟠 लवकर वसूल करा"
+          : "🟠 Recover soon"
+        : language === "mr"
+          ? "🟢 Fresh"
+          : "🟢 Fresh";
+  const udhariSubtext = urgentUdhari
+    ? language === "mr"
+      ? `₹${formatMoney(urgentUdhari.customer.balance)} ${urgentUdhari.pressure.daysPending} दिवस pending`
+      : `₹${formatMoney(urgentUdhari.customer.balance)} pending for ${urgentUdhari.pressure.daysPending} days`
+    : language === "mr"
+      ? "उधारी pending नाही"
+      : "No pending udhari";
+  const itemFocusHref = (itemId?: number, filter?: string | null) => {
+    if (!itemId) return "/items";
+    const params = new URLSearchParams({ focusItemId: String(itemId) });
+    if (filter) params.set("filter", filter);
+    return `/items?${params.toString()}`;
+  };
+  const customerFocusHref = (customerId?: number) =>
+    customerId ? `/udhari?focusCustomerId=${customerId}` : "/udhari";
+
   const topMarginItems = useMemo(
     () =>
       [...items]
@@ -810,7 +1035,7 @@ export function Dashboard() {
         margin: report.margin,
         topItems: report.topItems,
         shopName: currentShop?.shopName || "Dukan",
-        totalStockValue: stats.totalStockValue,
+        totalStockValue,
         productsCount: items.length,
         lowStockItems: lowStockItems.map(item => ({
           name: item.name,
@@ -860,7 +1085,7 @@ export function Dashboard() {
             ["Highest Udhari", highestUdharCustomer ? `${highestUdharCustomer.name} - Rs. ${formatMoney(highestUdharCustomer.balance)}` : "N/A"],
           ] },
         { heading: "Stock Summary", rows: [
-            ["Total Stock Worth", `Rs. ${formatMoney(stats.totalStockValue)}`],
+            ["Total Stock Worth", `Rs. ${formatMoney(totalStockValue)}`],
             ["Products", `${items.length}`],
             ["Low Stock Items", `${lowStockItems.length}`],
           ] },
@@ -906,19 +1131,28 @@ export function Dashboard() {
 
       {/* ─── Top 4 Summary Cards ─── */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Card className="border-2">
+        <Card className="border-2 border-green-200 bg-green-50/70 dark:border-green-900/50 dark:bg-green-950/20">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
-              {t("today_sales")}
+              🟢 {selectedDayLabel} {t("profit_amount")}
             </CardTitle>
             <TrendingUp className="h-4 w-4 text-green-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              Rs. {formatMoney(todayReport.revenue)}
+            <div className="text-2xl font-bold text-green-800 dark:text-green-300">
+              ₹{formatMoney(daySummary.profit)}
             </div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {todayReport.transactions} {t("transactions")}
+            <p
+              className={`mt-1 text-xs font-semibold ${
+                profitChangePercent >= 0
+                  ? "text-green-700 dark:text-green-300"
+                  : "text-red-700 dark:text-red-300"
+              }`}
+            >
+              {comparisonLabel} {signedPercent(profitChangePercent)}
+            </p>
+            <p className="mt-1 truncate text-xs text-green-800/80 dark:text-green-200/80">
+              {profitPraise}
             </p>
           </CardContent>
         </Card>
@@ -926,50 +1160,152 @@ export function Dashboard() {
         <Card className="border-2">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
-              {t("today_profit")}
+              🔥 Streak
             </CardTitle>
-            <TrendingUp className="h-4 w-4 text-blue-600" />
+            <Clock className="h-4 w-4 text-orange-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              Rs. {formatMoney(todayReport.profit)}
+            <div className="text-xl font-bold leading-tight">
+              {streakText}
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
-              {formatPercent(todayReport.margin)}% {t("margin")}
+              {streakSubtext}
+            </p>
+            <p
+              className={`mt-1 text-xs font-semibold ${
+                revenueChangePercent >= 0
+                  ? "text-green-700 dark:text-green-300"
+                  : "text-red-700 dark:text-red-300"
+              }`}
+            >
+              {comparisonLabel} {signedPercent(revenueChangePercent)}
             </p>
           </CardContent>
         </Card>
 
-        <Card className="border-2">
+        <Card
+          className="cursor-pointer border-2 border-orange-200 bg-orange-50/70 transition hover:border-orange-400 dark:border-orange-900/50 dark:bg-orange-950/20"
+          onClick={() =>
+            router.push(
+              itemFocusHref(
+                urgentStockInsight.targetItem?.id,
+                urgentStockInsight.targetFilter,
+              ),
+            )
+          }
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              router.push(
+                itemFocusHref(
+                  urgentStockInsight.targetItem?.id,
+                  urgentStockInsight.targetFilter,
+                ),
+              );
+            }
+          }}
+          role="button"
+          tabIndex={0}
+        >
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">{t("udhari")}</CardTitle>
+            <CardTitle className="text-sm font-medium">⚠️ Risk</CardTitle>
+            <AlertTriangle className="h-4 w-4 text-orange-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="line-clamp-2 text-lg font-bold leading-tight text-orange-900 dark:text-orange-200">
+              {stockRiskTitle}
+            </div>
+            <p className="mt-2 text-xs text-orange-800/80 dark:text-orange-200/80">
+              {stockRiskSubtext}
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card
+          className="cursor-pointer border-2 transition hover:border-orange-400"
+          onClick={() => router.push(customerFocusHref(urgentUdhari?.customer.id))}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              router.push(customerFocusHref(urgentUdhari?.customer.id));
+            }
+          }}
+          role="button"
+          tabIndex={0}
+        >
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">
+              {t("udhari")}
+            </CardTitle>
             <WalletCards className="h-4 w-4 text-orange-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              Rs. {formatMoney(totalPending)}
-            </div>
-            <p className="mt-1 text-xs text-muted-foreground">{t("pending")}</p>
-          </CardContent>
-        </Card>
-
-        <Card className="border-2">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              {t("total_value_label")}
-            </CardTitle>
-            <Package className="h-4 w-4 text-purple-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              Rs. {formatMoney(stats.totalStockValue)}
+            <div className="text-xl font-bold">
+              {udhariRiskLabel}
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
-              {items.length} {t("products")}
+              {udhariSubtext}
             </p>
+            {urgentUdhari && (
+              <p className="mt-1 truncate text-xs font-semibold text-orange-700 dark:text-orange-300">
+                {urgentUdhari.customer.name}
+              </p>
+            )}
           </CardContent>
         </Card>
       </div>
+
+      {weeklySummary.show && (
+        <Card className="border-2 border-blue-200 bg-blue-50/70 dark:border-blue-900/50 dark:bg-blue-950/20">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">
+              {language === "mr" ? "या आठवड्यात" : "This week"}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-3 gap-2 text-sm">
+              <div>
+                <p className="text-xs text-muted-foreground">Sales</p>
+                <p
+                  className={`font-bold ${
+                    weeklySummary.salesChange >= 0
+                      ? "text-green-700"
+                      : "text-red-700"
+                  }`}
+                >
+                  {signedPercent(weeklySummary.salesChange)}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">
+                  {t("profit_amount")}
+                </p>
+                <p
+                  className={`font-bold ${
+                    weeklySummary.profitChange >= 0
+                      ? "text-green-700"
+                      : "text-red-700"
+                  }`}
+                >
+                  {signedPercent(weeklySummary.profitChange)}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">{t("udhari")}</p>
+                <p
+                  className={`font-bold ${
+                    weeklySummary.udhariChange <= 0
+                      ? "text-green-700"
+                      : "text-orange-700"
+                  }`}
+                >
+                  {signedPercent(weeklySummary.udhariChange)}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* ═══════════════════════════════════════════════════════ */}
       {/* ─── DAILY SALES TIMELINE (new section) ─── */}
@@ -1039,6 +1375,32 @@ export function Dashboard() {
                   <p className="text-muted-foreground">{t("transactions")}</p>
                   <p className="text-sm font-bold">{daySummary.transactions}</p>
                 </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {dayTopProduct && (
+          <Card className="border-2 border-amber-200 bg-amber-50/80 dark:border-amber-900/50 dark:bg-amber-950/20">
+            <CardContent className="flex items-center justify-between gap-3 py-3">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-amber-800 dark:text-amber-200">
+                  🏆{" "}
+                  {language === "mr"
+                    ? "आजचा बेस्ट विकणारा माल"
+                    : "Today's best seller"}
+                </p>
+                <p className="truncate text-base font-bold">
+                  {dayTopProduct.name}
+                </p>
+              </div>
+              <div className="shrink-0 text-right">
+                <p className="text-sm font-bold text-amber-800 dark:text-amber-200">
+                  ₹{formatMoney(dayTopProduct.revenue)}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {formatNumber(dayTopProduct.quantity)} {t("sold")}
+                </p>
               </div>
             </CardContent>
           </Card>
@@ -1396,7 +1758,15 @@ export function Dashboard() {
           <h2 className="text-xl font-bold">{t("highest_udhar")}</h2>
           <Card 
             className="border-2 cursor-pointer hover:border-orange-400 transition-all"
-            onClick={() => router.push('/udhari')}
+            onClick={() => router.push(customerFocusHref(highestUdharCustomer.id))}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                router.push(customerFocusHref(highestUdharCustomer.id));
+              }
+            }}
+            role="button"
+            tabIndex={0}
           >
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">
@@ -1482,13 +1852,24 @@ export function Dashboard() {
               return (
                 <div
                   key={item.id}
-                  className={`flex items-center justify-between rounded-md border-2 px-3 py-3 ${
+                  className={`flex cursor-pointer items-center justify-between rounded-md border-2 px-3 py-3 transition hover:shadow-sm ${
                     isVeryLow
                       ? "border-red-500 bg-red-50"
                       : isCritical
                         ? "border-orange-400 bg-orange-50"
                         : "border-yellow-300 bg-yellow-50"
                   }`}
+                  onClick={() =>
+                    router.push(itemFocusHref(item.id, "lowStock"))
+                  }
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      router.push(itemFocusHref(item.id, "lowStock"));
+                    }
+                  }}
+                  role="button"
+                  tabIndex={0}
                 >
                   <div className="min-w-0 flex-1">
                     <p
@@ -1598,7 +1979,18 @@ export function Dashboard() {
                   return (
                     <div
                       key={item.id}
-                      className="flex items-center justify-between rounded-md border-2 border-red-400 bg-red-50 px-3 py-3"
+                      className="flex cursor-pointer items-center justify-between rounded-md border-2 border-red-400 bg-red-50 px-3 py-3 transition hover:shadow-sm"
+                      onClick={() =>
+                        router.push(itemFocusHref(item.id, "expired"))
+                      }
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          router.push(itemFocusHref(item.id, "expired"));
+                        }
+                      }}
+                      role="button"
+                      tabIndex={0}
                     >
                       <div className="min-w-0 flex-1">
                         <p className="truncate font-semibold text-red-900">
@@ -1647,7 +2039,18 @@ export function Dashboard() {
                   return (
                     <div
                       key={item.id}
-                      className="flex items-center justify-between rounded-md border-2 border-orange-400 bg-orange-50 px-3 py-3"
+                      className="flex cursor-pointer items-center justify-between rounded-md border-2 border-orange-400 bg-orange-50 px-3 py-3 transition hover:shadow-sm"
+                      onClick={() =>
+                        router.push(itemFocusHref(item.id, "expiring"))
+                      }
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          router.push(itemFocusHref(item.id, "expiring"));
+                        }
+                      }}
+                      role="button"
+                      tabIndex={0}
                     >
                       <div className="min-w-0 flex-1">
                         <p className="truncate font-semibold text-orange-900">

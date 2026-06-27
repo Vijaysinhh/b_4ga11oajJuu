@@ -34,7 +34,15 @@ export default function StaffManagementPage() {
 
   const handleAddStaff = async () => {
     if (!newUsername || !newPassword) return;
-    await addStaff(newUsername, newPassword);
+    const success = await addStaff(newUsername, newPassword);
+    if (!success) {
+      toast({
+        title: "Error",
+        description: "Could not add staff member. Please try again.",
+        variant: "destructive",
+      });
+      return;
+    }
     setNewUsername('');
     setNewPassword('');
     toast({
@@ -43,7 +51,7 @@ export default function StaffManagementPage() {
     });
   };
 
-  const handleTogglePermission = (userId: number, key: keyof UserPermissions, currentValue: boolean) => {
+  const handleTogglePermission = async (userId: number, key: keyof UserPermissions, currentValue: boolean) => {
     const staffMember = staff.find(s => s.id === userId);
     if (!staffMember) return;
 
@@ -51,35 +59,62 @@ export default function StaffManagementPage() {
       ...(staffMember.permissions || DEFAULT_WORKER_PERMISSIONS),
       [key]: !currentValue
     };
-    updateStaffPermissions(userId, newPermissions);
+    const success = await updateStaffPermissions(userId, newPermissions);
+    if (!success) {
+      toast({
+        title: "Error",
+        description: "Permission update failed. Please try again.",
+        variant: "destructive",
+      });
+      return;
+    }
     toast({
       title: "Success",
       description: "Permission updated!",
     });
   };
 
-  const handleSetAllPermissions = (userId: number, enabled: boolean) => {
-    const newPermissions: UserPermissions = {
-      canViewDashboard: enabled,
-      canViewItems: enabled,
-      canManageItems: enabled,
-      canViewSales: enabled,
-      canCreateSales: enabled,
-      canViewUdhari: enabled,
-      canManageUdhari: enabled,
-      canViewReports: enabled,
-      canViewSettings: enabled,
-      canManageStaff: false, // Never allow staff to manage other staff
-    };
-    updateStaffPermissions(userId, newPermissions);
+  const handleSetAllPermissions = async (userId: number, enabled: boolean) => {
+    const newPermissions: UserPermissions = enabled
+      ? {
+          canViewDashboard: true,
+          canViewItems: true,
+          canManageItems: true,
+          canViewSales: true,
+          canCreateSales: true,
+          canViewUdhari: true,
+          canManageUdhari: true,
+          canViewReports: true,
+          canViewSettings: true,
+          canManageStaff: false,
+        }
+      : DEFAULT_WORKER_PERMISSIONS;
+
+    const success = await updateStaffPermissions(userId, newPermissions);
+    if (!success) {
+      toast({
+        title: "Error",
+        description: "Permission update failed. Please try again.",
+        variant: "destructive",
+      });
+      return;
+    }
     toast({
       title: "Success",
-      description: "All permissions updated!",
+      description: enabled ? "All permissions updated!" : "Default permissions restored!",
     });
   };
 
   const handleRemoveStaff = async (userId: number) => {
-    await removeStaff(userId);
+    const success = await removeStaff(userId);
+    if (!success) {
+      toast({
+        title: "Error",
+        description: "Could not remove staff member. Please try again.",
+        variant: "destructive",
+      });
+      return;
+    }
     toast({
       title: "Success",
       description: "Staff member removed!",
@@ -95,7 +130,15 @@ export default function StaffManagementPage() {
 
   const handleUpdateStaff = async () => {
     if (!editingStaff) return;
-    await updateStaff(editingStaff.id, editUsername, editPassword);
+    const success = await updateStaff(editingStaff.id, editUsername, editPassword);
+    if (!success) {
+      toast({
+        title: "Error",
+        description: "Could not update staff member. Please try again.",
+        variant: "destructive",
+      });
+      return;
+    }
     setEditDialogOpen(false);
     setEditingStaff(null);
     toast({

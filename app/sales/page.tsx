@@ -4,7 +4,7 @@ import { SalesTransaction } from "./components";
 import { HelpTooltip } from "@/components/help-tooltip";
 import { PageContainer, PageHeader } from "@/components/page-shell";
 import { useLanguage } from "@/providers/language-provider";
-import { useAuth } from "@/providers/auth-provider";
+import { normalizeUserPermissions, useAuth } from "@/providers/auth-provider";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSales, useItems, useUnits, usePriceTiers, useUdhari } from "@/hooks/use-supabase";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -499,7 +499,9 @@ function formatDateLabel(date: Date, lang: "en" | "mr") {
 export default function SalesPage() {
   const { t } = useLanguage();
   const { user, currentShopId } = useAuth();
-  const isWorker = user?.role === "worker";
+  const permissions = normalizeUserPermissions(user?.role, user?.permissions);
+  const canCreateSales = permissions.canCreateSales;
+  const canViewSales = permissions.canViewSales;
   const { sales, deleteSale } = useSales(currentShopId);
   const { items } = useItems(currentShopId);
   const { units } = useUnits(currentShopId);
@@ -680,6 +682,17 @@ export default function SalesPage() {
     }
   };
 
+  if (!canCreateSales && !canViewSales) {
+    return (
+      <PageContainer size="wide">
+        <PageHeader
+          title="Access Denied"
+          description="You do not have permission to access sales."
+        />
+      </PageContainer>
+    );
+  }
+
   return (
     <PageContainer size="wide">
       <PageHeader
@@ -689,8 +702,10 @@ export default function SalesPage() {
       />
 
       <div className="space-y-6">
-        <SalesTransaction />
+        {canCreateSales && <SalesTransaction />}
 
+        {canViewSales && (
+          <>
         {/* Search & Filters section */}
         <section className="space-y-3">
           <div className="flex gap-2 flex-wrap">
@@ -1051,6 +1066,8 @@ export default function SalesPage() {
               })}
             </div>
           </section>
+          </>
+        )}
       </div>
 
       {editingSale && (

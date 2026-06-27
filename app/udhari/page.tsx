@@ -25,6 +25,7 @@ import {
   formatMoney,
   formatPercent,
 } from '@/lib/number-format';
+import { getCreditPressure } from '@/lib/dukan-insights';
 import { formatSaleLineSubtitle, formatSaleLineQuantity } from '@/lib/sale-item-display';
 import { SalesItemSearch } from '@/components/sales-item-search';
 import {
@@ -61,7 +62,7 @@ export default function UdhariPage() {
   const { items: allItems } = useItems(currentShopId);
   const { units } = useUnits(currentShopId);
   const { priceTiers } = usePriceTiers(currentShopId);
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   
   // Get current shop for name
   const { currentShop } = useAuth();
@@ -132,6 +133,7 @@ export default function UdhariPage() {
   const [deletingCustomerId, setDeletingCustomerId] = useState<number | null>(null);
   const [deletingEntryId, setDeletingEntryId] = useState<number | null>(null);
   const [expandedCustomerId, setExpandedCustomerId] = useState<number | null>(null);
+  const [focusedCustomerId, setFocusedCustomerId] = useState<number | null>(null);
   const [entryMode, setEntryMode] = useState<EntryMode>('credit');
   const [editingSaleId, setEditingSaleId] = useState<number | null>(null);
   const [deletingSaleId, setDeletingSaleId] = useState<number | null>(null);
@@ -257,6 +259,34 @@ export default function UdhariPage() {
 
   const recentEntries = entries.slice(0, 4);
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const customerId = Number(params.get('focusCustomerId'));
+
+    if (Number.isFinite(customerId) && customerId > 0) {
+      setFocusedCustomerId(customerId);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!focusedCustomerId) return;
+    if (!customers.some((customer) => customer.id === focusedCustomerId)) return;
+
+    setExpandedCustomerId(focusedCustomerId);
+
+    const scrollTimer = window.setTimeout(() => {
+      document
+        .getElementById(`udhari-customer-${focusedCustomerId}`)
+        ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 150);
+    const clearTimer = window.setTimeout(() => setFocusedCustomerId(null), 5000);
+
+    return () => {
+      window.clearTimeout(scrollTimer);
+      window.clearTimeout(clearTimer);
+    };
+  }, [customers, focusedCustomerId]);
+
   const resetCustomerForm = () => {
     setCustomerName('');
     setCustomerPhone('');
@@ -352,10 +382,30 @@ export default function UdhariPage() {
 
       if (entryMode === 'credit') {
         await addCredit(selectedCustomer.id!, value, note.trim() || undefined);
-        toast.success(t('success'));
+        toast.success(
+          language === 'mr'
+            ? `₹${formatMoney(value)} उधारी जोडली`
+            : `₹${formatMoney(value)} udhari added`,
+        );
       } else {
+        const willClearBalance = value >= selectedCustomer.balance;
         await receivePayment(selectedCustomer.id!, value, note.trim() || undefined);
-        toast.success(t('success'));
+        toast.success(
+          willClearBalance
+            ? language === 'mr'
+              ? '🎉 उधारी पूर्ण वसूल'
+              : '🎉 Udhari fully recovered'
+            : language === 'mr'
+            ? `✅ ${selectedCustomer.name} ने ₹${formatMoney(value)} भरले`
+            : `✅ ${selectedCustomer.name} paid ₹${formatMoney(value)}`,
+          {
+            description: willClearBalance
+              ? selectedCustomer.name
+              : language === 'mr'
+              ? `बाकी ₹${formatMoney(selectedCustomer.balance - value)}`
+              : `₹${formatMoney(selectedCustomer.balance - value)} remaining`,
+          },
+        );
       }
     }
 
@@ -433,9 +483,46 @@ export default function UdhariPage() {
           {customers.map((customer) => {
             const customerEntries = getCustomerEntries(customer.id!).slice(0, 6);
             const isExpanded = expandedCustomerId === customer.id;
+            const creditPressure = getCreditPressure(
+              customer.id,
+              Number(customer.balance || 0),
+              entries,
+            );
+            const pressureLabel =
+              customer.balance <= 0
+                ? '✅ Clear'
+                : creditPressure.riskLevel === 'high'
+                ? '🔴 High risk'
+                : creditPressure.riskLevel === 'recover'
+                ? '🟠 Recover soon'
+                : '🟢 Fresh';
+            const pressureClass =
+              customer.balance <= 0
+                ? 'border-green-200 bg-green-50 text-green-700'
+                : creditPressure.riskLevel === 'high'
+                ? 'border-red-200 bg-red-50 text-red-700'
+                : creditPressure.riskLevel === 'recover'
+                ? 'border-orange-200 bg-orange-50 text-orange-700'
+                : 'border-green-200 bg-green-50 text-green-700';
+            const pendingAgeText =
+              customer.balance <= 0
+                ? language === 'mr'
+                  ? 'उधारी clear'
+                  : 'Udhari clear'
+                : language === 'mr'
+                ? `₹${formatMoney(customer.balance)} ${creditPressure.daysPending} दिवस pending`
+                : `₹${formatMoney(customer.balance)} pending for ${creditPressure.daysPending} days`;
 
             return (
-              <Card key={customer.id} className="overflow-hidden border-2">
+              <Card
+                key={customer.id}
+                id={`udhari-customer-${customer.id}`}
+                className={`overflow-hidden border-2 transition-all ${
+                  focusedCustomerId === customer.id
+                    ? 'border-orange-400 bg-orange-50 ring-4 ring-orange-300'
+                    : ''
+                }`}
+              >
                 <CardContent className="p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
@@ -450,6 +537,15 @@ export default function UdhariPage() {
                     <div className="text-right">
                       <p className="text-xs text-muted-foreground">{t('balance')}</p>
                       <p className="text-lg font-bold text-orange-700">Rs. {formatMoney(customer.balance)}</p>
+                    </div>
+                  </div>
+
+                  <div
+                    className={`mt-3 rounded-md border px-3 py-2 text-xs font-semibold ${pressureClass}`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span>{pressureLabel}</span>
+                      <span className="text-right">{pendingAgeText}</span>
                     </div>
                   </div>
 
@@ -1030,4 +1126,3 @@ export default function UdhariPage() {
     </div>
   );
 }
-

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useLanguage } from '@/providers/language-provider';
 import { useItems as useSupabaseItems, useCategories as useSupabaseCategories, useUnits as useSupabaseUnits, usePriceTiers } from '@/hooks/use-supabase';
 import { useAuth } from '@/providers/auth-provider';
@@ -90,6 +90,7 @@ export function ItemsManagement() {
   const [sortBy, setSortBy] = useState<string>('name-asc'); // 'name-asc', 'qty-asc', 'expiry-asc', 'margin-desc'
   const [activeTab, setActiveTab] = useState('basic');
   const [selectedItems, setSelectedItems] = useState<Set<number>>(new Set());
+  const [focusedItemId, setFocusedItemId] = useState<number | null>(null);
 
   const [formData, setFormData] = useState<ItemFormData>({
     name: '',
@@ -188,6 +189,45 @@ export function ItemsManagement() {
       return sum + qty * cost;
     }, 0);
   }, [items]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const itemId = Number(params.get('focusItemId'));
+    const filter = params.get('filter');
+
+    if (!Number.isFinite(itemId) || itemId <= 0) return;
+
+    setFocusedItemId(itemId);
+    setSearchTerm('');
+    setSelectedCategoryId(null);
+
+    if (filter === 'lowStock') {
+      setSelectedStockStatus('lowStock');
+      setSelectedExpiryStatus(null);
+      setSortBy('qty-asc');
+    } else if (filter === 'expired' || filter === 'expiring') {
+      setSelectedExpiryStatus(filter);
+      setSelectedStockStatus(null);
+      setSortBy('expiry-asc');
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!focusedItemId) return;
+    if (!filteredItems.some((item) => item.id === focusedItemId)) return;
+
+    const scrollTimer = window.setTimeout(() => {
+      document
+        .getElementById(`stock-item-${focusedItemId}`)
+        ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 150);
+    const clearTimer = window.setTimeout(() => setFocusedItemId(null), 5000);
+
+    return () => {
+      window.clearTimeout(scrollTimer);
+      window.clearTimeout(clearTimer);
+    };
+  }, [filteredItems, focusedItemId]);
 
   const handleOpenDialog = (item?: (typeof items)[0]) => {
     if (item) {
@@ -294,6 +334,13 @@ export function ItemsManagement() {
 
     try {
       const expiryDateIso = expiryDate ? new Date(`${expiryDate}T23:59:59`).toISOString() : null;
+      const savedName = language === 'mr' ? nameMarathi || name : name || nameMarathi;
+      const lowStockDescription =
+        formData.lowStockLimit > 0 && formData.quantity <= formData.lowStockLimit
+          ? language === 'mr'
+            ? `⚠️ फक्त ${formatWholeNumber(formData.quantity)} बाकी`
+            : `⚠️ Only ${formatWholeNumber(formData.quantity)} left`
+          : undefined;
       if (editingId) {
         await updateItem(editingId, {
           name: formData.name,
@@ -308,7 +355,10 @@ export function ItemsManagement() {
           sellPrice: formData.sellPrice,
           lowStockLimit: formData.lowStockLimit,
         });
-        toast.success('Item updated successfully');
+        toast.success(
+          language === 'mr' ? `${savedName} अपडेट झाले` : `${savedName} updated`,
+          { description: lowStockDescription },
+        );
       } else {
         const newId = await addItem({
           name: formData.name,
@@ -326,7 +376,10 @@ export function ItemsManagement() {
         if (!newId) {
           throw new Error('Item saved but could not be loaded');
         }
-        toast.success('Item added successfully');
+        toast.success(
+          language === 'mr' ? `${savedName} stock मध्ये जोडले` : `${savedName} added to stock`,
+          { description: lowStockDescription },
+        );
       }
       resetForm();
     } catch (error) {
@@ -864,6 +917,28 @@ export function ItemsManagement() {
                 : item.brandMarathi;
             const showSecondaryBrandName =
               Boolean(secondaryBrandName) && secondaryBrandName !== primaryBrandName;
+            const itemUnitName = getUnitName(item.unitId);
+            const itemStockValue =
+              Number(item.quantity || 0) * Number(item.buyPrice || 0);
+            const isLowStock = item.quantity <= item.lowStockLimit;
+            const stockUrgencyText =
+              item.quantity <= 0
+                ? language === 'mr'
+                  ? 'स्टॉक संपला'
+                  : 'Out of stock'
+                : language === 'mr'
+                ? `फक्त ${formatWholeNumber(item.quantity)} ${itemUnitName} बाकी`
+                : `Only ${formatWholeNumber(item.quantity)} ${itemUnitName} left`;
+            const expiryUrgencyText =
+              expiryStatus === 'expired'
+                ? language === 'mr'
+                  ? `₹${formatMoney(itemStockValue)} चा माल एक्सपायर झाला`
+                  : `₹${formatMoney(itemStockValue)} stock expired`
+                : expiryStatus === 'expiring'
+                ? language === 'mr'
+                  ? `₹${formatMoney(itemStockValue)} चा माल एक्सपायर होण्याच्या मार्गावर आहे`
+                  : `₹${formatMoney(itemStockValue)} stock near expiry`
+                : '';
             
             // Calculate days left
             let daysLeftText = '';
@@ -885,7 +960,16 @@ export function ItemsManagement() {
                   onChange={() => toggleItemSelection(item.id)}
                   className="w-4 h-4 cursor-pointer mt-4"
                 />
-                <Card className={`flex-1 overflow-hidden ${isSelected ? 'border-blue-300 bg-blue-50' : ''}`}>
+                <Card
+                  id={`stock-item-${item.id}`}
+                  className={`flex-1 overflow-hidden transition-all ${
+                    isSelected ? 'border-blue-300 bg-blue-50' : ''
+                  } ${
+                    focusedItemId === item.id
+                      ? 'ring-4 ring-orange-300 border-orange-400 bg-orange-50'
+                      : ''
+                  }`}
+                >
                 <CardContent className="p-4">
                   <div className="space-y-2">
                     {/* Item Name and Category */}
@@ -922,11 +1006,30 @@ export function ItemsManagement() {
                             {daysLeftText}
                           </p>
                         )}
+                        {expiryUrgencyText && (
+                          <p
+                            className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-xs font-bold ${
+                              expiryStatus === 'expired'
+                                ? 'bg-red-100 text-red-700'
+                                : 'bg-orange-100 text-orange-700'
+                            }`}
+                          >
+                            ⚠️ {expiryUrgencyText}
+                          </p>
+                        )}
                       </div>
                       <div className="text-right">
-                        <p className="text-sm font-semibold text-blue-600">{formatWholeNumber(item.quantity)} {getUnitName(item.unitId)}</p>
-                        {item.quantity <= item.lowStockLimit && (
-                          <p className="text-xs font-semibold text-orange-600">{t('low_stock_alert')}</p>
+                        <p className="text-sm font-semibold text-blue-600">
+                          {formatWholeNumber(item.quantity)} {itemUnitName}
+                        </p>
+                        {isLowStock && (
+                          <p
+                            className={`text-xs font-bold ${
+                              item.quantity <= 0 ? 'text-red-600' : 'text-orange-600'
+                            }`}
+                          >
+                            ⚠️ {stockUrgencyText}
+                          </p>
                         )}
                       </div>
                     </div>

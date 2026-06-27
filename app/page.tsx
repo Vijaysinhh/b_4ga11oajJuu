@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { useAuth } from "@/providers/auth-provider";
+import { getUserLandingPath, useAuth } from "@/providers/auth-provider";
 import { useLanguage } from "@/providers/language-provider";
 
 export default function Home() {
@@ -16,13 +16,7 @@ export default function Home() {
       router.replace("/login");
       return;
     }
-    if (user?.role === "super_admin") {
-      router.replace("/super-admin");
-    } else if (user?.role === "worker") {
-      router.replace("/sales");
-    } else {
-      router.replace("/dashboard");
-    }
+    router.replace(getUserLandingPath(user));
   }, [isAuthenticated, isLoading, user, router]);
 
   return (

@@ -1,8 +1,13 @@
 'use client';
 
-import { useCallback, useState, useEffect } from 'react';
+import { useCallback, useMemo, useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase';
-import { useAuth, UserPermissions, DEFAULT_WORKER_PERMISSIONS } from '@/providers/auth-provider';
+import {
+  useAuth,
+  UserPermissions,
+  DEFAULT_WORKER_PERMISSIONS,
+  normalizeUserPermissions,
+} from '@/providers/auth-provider';
 import type { Database } from '@/lib/db-supabase-types';
 
 type StaffUser = Database['public']['Tables']['users']['Row'] & {
@@ -13,40 +18,48 @@ export function useStaff() {
   const { user, currentShopId } = useAuth();
   const [staff, setStaff] = useState<StaffUser[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
 
   const fetchStaff = useCallback(async () => {
     if (!currentShopId || user?.role !== 'owner') return;
     
     setIsLoading(true);
     try {
-      const { data: users } = await (supabase as any)
+      const { data: users, error } = await (supabase as any)
         .from('users')
         .select('*')
         .eq('shop_id', currentShopId)
         .eq('role', 'worker')
         .order('created_at', { ascending: false });
+
+      if (error) throw error;
       
       if (users) {
         // Fetch permissions for each user
         const staffWithPermissions = await Promise.all(
           users.map(async (staffUser: StaffUser) => {
             try {
-              const { data: userRole } = await (supabase as any)
+              const { data: userRole, error: roleError } = await (supabase as any)
                 .from('user_roles')
                 .select('permissions')
                 .eq('user_id', staffUser.id)
                 .eq('shop_id', currentShopId)
-                .single();
+                .order('updated_at', { ascending: false })
+                .limit(1)
+                .maybeSingle();
+
+              if (roleError) {
+                console.warn('Error fetching staff permissions:', roleError);
+              }
                 
               return {
                 ...staffUser,
-                permissions: userRole?.permissions || DEFAULT_WORKER_PERMISSIONS
+                permissions: normalizeUserPermissions('worker', userRole?.permissions as Partial<UserPermissions> | null)
               };
             } catch {
               return {
                 ...staffUser,
-                permissions: DEFAULT_WORKER_PERMISSIONS
+                permissions: normalizeUserPermissions('worker', DEFAULT_WORKER_PERMISSIONS)
               };
             }
           })
@@ -65,7 +78,7 @@ export function useStaff() {
     if (!currentShopId || user?.role !== 'owner') return;
     
     try {
-      const { data: newUser } = await (supabase as any)
+      const { data: newUser, error: userError } = await (supabase as any)
         .from('users')
         .insert({
           shop_id: currentShopId,
@@ -75,23 +88,30 @@ export function useStaff() {
         })
         .select('*')
         .single();
+
+      if (userError) throw userError;
       
       if (newUser) {
         // Add default permissions
-        await (supabase as any)
+        const { error: roleError } = await (supabase as any)
           .from('user_roles')
           .insert({
             user_id: newUser.id,
             shop_id: currentShopId,
             role: 'worker',
-            permissions: DEFAULT_WORKER_PERMISSIONS,
+            permissions: normalizeUserPermissions('worker', DEFAULT_WORKER_PERMISSIONS),
           });
+
+        if (roleError) throw roleError;
         
         await fetchStaff();
+        return true;
       }
     } catch (error) {
       console.error('Error adding staff:', error);
+      return false;
     }
+    return false;
   }, [currentShopId, user?.role, supabase, fetchStaff]);
 
   const updateStaff = useCallback(async (userId: number, username: string, password: string) => {
@@ -102,49 +122,69 @@ export function useStaff() {
       if (username) updateData.username = username;
       if (password) updateData.password = password;
       
-      await (supabase as any)
+      const { error } = await (supabase as any)
         .from('users')
         .update(updateData)
         .eq('id', userId);
+
+      if (error) throw error;
       
       await fetchStaff();
+      return true;
     } catch (error) {
       console.error('Error updating staff:', error);
+      return false;
     }
+    return false;
   }, [currentShopId, user?.role, supabase, fetchStaff]);
 
   const updateStaffPermissions = useCallback(async (userId: number, permissions: UserPermissions) => {
     if (!currentShopId || user?.role !== 'owner') return;
     
     try {
-      // Check if user role exists
-      const { data: existingRole } = await (supabase as any)
+      const nextPermissions = normalizeUserPermissions('worker', permissions);
+      const now = new Date().toISOString();
+
+      // Check if user role exists. Use limit instead of single so duplicate
+      // role rows cannot make future permission reads fall back to defaults.
+      const { data: existingRoles, error: lookupError } = await (supabase as any)
         .from('user_roles')
-        .select('*')
+        .select('id')
         .eq('user_id', userId)
         .eq('shop_id', currentShopId)
-        .single();
+        .limit(1);
+
+      if (lookupError) throw lookupError;
       
-      if (existingRole) {
-        await (supabase as any)
+      if (existingRoles && existingRoles.length > 0) {
+        const { error } = await (supabase as any)
           .from('user_roles')
-          .update({ permissions })
-          .eq('id', existingRole.id);
+          .update({ permissions: nextPermissions, updated_at: now })
+          .eq('user_id', userId)
+          .eq('shop_id', currentShopId);
+
+        if (error) throw error;
       } else {
-        await (supabase as any)
+        const { error } = await (supabase as any)
           .from('user_roles')
           .insert({
             user_id: userId,
             shop_id: currentShopId,
             role: 'worker',
-            permissions,
+            permissions: nextPermissions,
+            updated_at: now,
           });
+
+        if (error) throw error;
       }
       
       await fetchStaff();
+      return true;
     } catch (error) {
       console.error('Error updating staff permissions:', error);
+      return false;
     }
+    return false;
   }, [currentShopId, user?.role, supabase, fetchStaff]);
 
   const removeStaff = useCallback(async (userId: number) => {
@@ -152,22 +192,29 @@ export function useStaff() {
     
     try {
       // Delete user roles first
-      await (supabase as any)
+      const { error: roleError } = await (supabase as any)
         .from('user_roles')
         .delete()
         .eq('user_id', userId)
         .eq('shop_id', currentShopId);
+
+      if (roleError) throw roleError;
       
       // Delete user
-      await (supabase as any)
+      const { error: userError } = await (supabase as any)
         .from('users')
         .delete()
         .eq('id', userId);
+
+      if (userError) throw userError;
       
       await fetchStaff();
+      return true;
     } catch (error) {
       console.error('Error removing staff:', error);
+      return false;
     }
+    return false;
   }, [currentShopId, user?.role, supabase, fetchStaff]);
 
   useEffect(() => {
