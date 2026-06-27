@@ -21,13 +21,9 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   cleanWholeNumberInput,
-  cleanNumberInput,
+  parseWholeNumberInput,
   formatMoney,
   formatPercent,
-  formatNumber,
-  formatWholeNumber,
-  parseNumberInput,
-  parseWholeNumberInput,
 } from '@/lib/number-format';
 import { formatSaleLineSubtitle, formatSaleLineQuantity } from '@/lib/sale-item-display';
 import { SalesItemSearch } from '@/components/sales-item-search';
@@ -112,8 +108,6 @@ export default function UdhariPage() {
     message += `%0AKirpiya jald se jald payment kar dein.%0A%0A`;
     if (currentShop?.shopName) {
       message += `Dhanyavaad!%0A${currentShop.shopName}`;
-    } else if (currentShop?.name) {
-      message += `Dhanyavaad!%0A${currentShop.name}`;
     } else {
       message += `Dhanyavaad!`;
     }

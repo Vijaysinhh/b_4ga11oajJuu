@@ -3,7 +3,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase';
 import type { Database } from '@/lib/db-supabase-types';
-import bcrypt from 'bcryptjs';
 
 // Define permission types
 export type UserPermissions = {
