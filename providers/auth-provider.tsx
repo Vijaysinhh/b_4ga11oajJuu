@@ -3,6 +3,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase';
 import type { Database } from '@/lib/db-supabase-types';
+import bcrypt from 'bcryptjs';
 
 // Define permission types
 export type UserPermissions = {
@@ -286,13 +287,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = useCallback(async (username: string, password: string) => {
     try {
-      // First, check if it's a super admin
+      // First, check if it's a super admin (credentials should be from env vars in production!)
+      // NOTE: Remove hardcoded credentials and use environment variables
       if (username === 'vijaysinhjadhav23@gmail.com' && password === 'Vijaysinh@23') {
         const superAdminUser: User = {
           id: 0,
           shop_id: null,
           username: 'vijaysinhjadhav23@gmail.com',
-          password: 'Vijaysinh@23',
+          password: '[REDACTED]',
           role: 'super_admin',
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),

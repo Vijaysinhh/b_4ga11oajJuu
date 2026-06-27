@@ -3,7 +3,9 @@
 import { useCallback, useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase';
 import { useAuth, UserPermissions, DEFAULT_WORKER_PERMISSIONS } from '@/providers/auth-provider';
+import { hashPassword } from '@/lib/password-utils';
 import type { Database } from '@/lib/db-supabase-types';
+import { hashPassword } from '@/lib/password-utils';
 
 type StaffUser = Database['public']['Tables']['users']['Row'] & {
   permissions?: UserPermissions;
@@ -181,6 +183,10 @@ export function useStaff() {
     updateStaff,
     updateStaffPermissions,
     removeStaff,
+    refreshStaff: fetchStaff,
+  };
+}
+}
     refreshStaff: fetchStaff,
   };
 }

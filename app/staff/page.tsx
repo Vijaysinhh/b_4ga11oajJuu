@@ -221,22 +221,25 @@ export default function StaffManagementPage() {
                     { key: 'canManageUdhari', label: 'Manage Udhari', desc: 'Add, edit credit entries' },
                     { key: 'canViewReports', label: 'View Reports', desc: 'Access reports' },
                     { key: 'canViewSettings', label: 'View Settings', desc: 'Access settings' },
-                  ].map((perm) => (
+                  ].map((perm) => {
+                    const currentValue = !!(staffMember.permissions || DEFAULT_WORKER_PERMISSIONS)[perm.key as keyof UserPermissions];
+                    return (
                     <div key={perm.key} className="flex items-center justify-between p-3 bg-secondary/30 rounded-lg">
                       <div>
                         <p className="font-medium text-sm">{perm.label}</p>
                         <p className="text-xs text-muted-foreground">{perm.desc}</p>
                       </div>
                       <Switch
-                        checked={!!(staffMember.permissions || DEFAULT_WORKER_PERMISSIONS)[perm.key as keyof UserPermissions]}
-                        onCheckedChange={(checked) => handleTogglePermission(
+                        checked={currentValue}
+                        onCheckedChange={() => handleTogglePermission(
                           staffMember.id, 
                           perm.key as keyof UserPermissions, 
-                          !checked
+                          currentValue // Pass existing value to toggle!
                         )}
                       />
                     </div>
-                  ))}
+                  );
+                  })}
                 </div>
               </CardContent>
             </Card>

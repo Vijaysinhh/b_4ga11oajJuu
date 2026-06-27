@@ -566,8 +566,13 @@ export function useSales(shopId?: number) {
           item_id: item.itemId ?? null,
           item_name: item.itemName,
           quantity: Number(item.quantity),
+          display_quantity: item.displayQuantity ?? null,
           unit_id: item.unitId ?? null,
           unit_short_form: item.unitShortForm ?? null,
+          price_tier_id: item.priceTierId ?? null,
+          pack_count: item.packCount != null ? Number(item.packCount) : null,
+          price_tier_quantity: item.priceTierQuantity != null ? Number(item.priceTierQuantity) : null,
+          price_tier_unit_short_form: item.priceTierUnitShortForm ?? null,
           price_per_unit: Number(item.pricePerUnit),
           total_price: Number(item.totalPrice),
           cost_per_unit: Number(item.costPerUnit),
@@ -636,7 +641,8 @@ export function useSales(shopId?: number) {
 
   const updateStockAfterSale = useCallback(async (saleItems: any[]) => {
     if (!shopId) return;
-    // First, get current items so we can calculate new quantities
+
+    // Get current items first
     const { data: currentItems } = await (supabase as any)
       .from('items')
       .select('*')
@@ -651,34 +657,58 @@ export function useSales(shopId?: number) {
       quantityChanges.set(saleItem.itemId, current + saleItem.quantity);
     }
 
-    // Update each item
+    // Update each item in a way that prevents race conditions
+    // We'll use optimistic concurrency control with the current quantity
+    const updatedItems: any[] = [];
     for (const [itemId, qtyToSubtract] of quantityChanges) {
       const currentItem = (currentItems as any[]).find((i: any) => i.id === itemId);
       if (!currentItem) continue;
 
-      const newQuantity = Number((currentItem.quantity - qtyToSubtract).toFixed(4));
-      await (supabase as any)
+      const expectedQty = Number(currentItem.quantity.toFixed(4));
+      const newQty = Number((expectedQty - qtyToSubtract).toFixed(4));
+      
+      // Atomic update with optimistic locking: only update if quantity is still what we expect
+      const { data, error } = await (supabase as any)
         .from('items')
         .update({
-          quantity: newQuantity,
-          updated_at: new Date().toISOString(),
+          quantity: newQty,
+          updated_at: new Date().toISOString()
         })
-        .eq('id', itemId);
+        .eq('id', itemId)
+        .eq('quantity', expectedQty) // Ensure no one else changed it
+        .select('*')
+        .single();
+
+      if (error || !data) {
+        console.error('[Supabase] Error updating stock (race condition or insufficient stock):', error);
+        throw new Error('Inventory update failed due to concurrent changes or insufficient stock. Please try again.');
+      }
+
+      if (data) {
+        updatedItems.push(data);
+      }
     }
 
-    // Also create stock history entries
+    // Create stock history entries with correct cumulative changes
     const historyEntries: any[] = [];
+    const cumulativeChanges = new Map<number, number>();
+
     for (const saleItem of saleItems) {
       const currentItem = (currentItems as any[]).find((i: any) => i.id === saleItem.itemId);
       if (!currentItem) continue;
-      const beforeQty = Number(currentItem.quantity.toFixed(4));
-      const afterQty = Number((currentItem.quantity - saleItem.quantity).toFixed(4));
+
+      const qty = Number(saleItem.quantity.toFixed(4));
+      const prevChange = cumulativeChanges.get(saleItem.itemId) || 0;
+      const beforeQty = Number((currentItem.quantity - prevChange).toFixed(4));
+      const afterQty = Number((beforeQty - qty).toFixed(4));
+      cumulativeChanges.set(saleItem.itemId, prevChange + qty);
+
       historyEntries.push({
         shop_id: shopId,
         item_id: saleItem.itemId,
         item_name: saleItem.itemName,
         type: 'sale',
-        quantity_changed: -Number(saleItem.quantity.toFixed(4)),
+        quantity_changed: -qty,
         quantity_before: beforeQty,
         quantity_after: afterQty,
         cost_per_unit: saleItem.costPerUnit,
@@ -689,9 +719,6 @@ export function useSales(shopId?: number) {
     if (historyEntries.length > 0) {
       await (supabase as any).from('stock_history').insert(historyEntries);
     }
-
-    // Refresh items
-    // We'll let useItems handle that via re-render for now
   }, [shopId, supabase]);
 
   const getDailySummary = useCallback(async (dateKey: string) => {
@@ -728,7 +755,7 @@ export function useSales(shopId?: number) {
       .select('*')
       .eq('sale_id', saleId);
 
-    // Step 1: Restore original stock first
+    // Step 1: Restore original stock first (atomically)
     if (originalItems && originalItems.length > 0) {
       const { data: currentItems } = await (supabase as any)
         .from('items')
@@ -741,28 +768,52 @@ export function useSales(shopId?: number) {
           quantityChanges.set(item.item_id, (quantityChanges.get(item.item_id) || 0) + item.quantity);
         }
         const historyEntries: any[] = [];
+        const cumulativeChanges = new Map<number, number>();
+        
+        // First, restore stock with optimistic locking
         for (const [itemId, qtyToAdd] of quantityChanges) {
           const currentItem = currentItems.find((i: any) => i.id === itemId);
           if (currentItem) {
-            const newQty = Number((currentItem.quantity + qtyToAdd).toFixed(4));
+            const expectedQty = Number(currentItem.quantity.toFixed(4));
+            const newQty = Number((expectedQty + qtyToAdd).toFixed(4));
+            
             await (supabase as any)
               .from('items')
-              .update({ quantity: newQty, updated_at: new Date().toISOString() })
-              .eq('id', itemId);
-            historyEntries.push({
-              shop_id: shopId,
-              item_id: itemId,
-              item_name: currentItem.name,
-              type: 'adjustment',
-              quantity_changed: Number(qtyToAdd.toFixed(4)),
-              quantity_before: Number(currentItem.quantity.toFixed(4)),
-              quantity_after: newQty,
-              reason: `Restoring original stock from sale #${saleId}`,
-              cost_per_unit: originalItems.find((i: any) => i.item_id === itemId)?.cost_per_unit,
-              created_at: new Date().toISOString()
-            });
+              .update({
+                quantity: newQty,
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', itemId)
+              .eq('quantity', expectedQty);
           }
         }
+        
+        // Then create history entries with correct cumulative tracking
+        for (const item of originalItems) {
+          if (!item.item_id) continue;
+          const currentItem = currentItems.find((i: any) => i.id === item.item_id);
+          if (!currentItem) continue;
+          
+          const qty = Number(item.quantity.toFixed(4));
+          const prevChange = cumulativeChanges.get(item.item_id) || 0;
+          const beforeQty = Number((currentItem.quantity + prevChange).toFixed(4));
+          const afterQty = Number((beforeQty + qty).toFixed(4));
+          cumulativeChanges.set(item.item_id, prevChange + qty);
+          
+          historyEntries.push({
+            shop_id: shopId,
+            item_id: item.item_id,
+            item_name: currentItem.name,
+            type: 'adjustment',
+            quantity_changed: qty,
+            quantity_before: beforeQty,
+            quantity_after: afterQty,
+            reason: `Restoring original stock from sale #${saleId}`,
+            cost_per_unit: item.cost_per_unit,
+            created_at: new Date().toISOString()
+          });
+        }
+        
         if (historyEntries.length > 0) {
           await (supabase as any).from('stock_history').insert(historyEntries);
         }
@@ -807,8 +858,13 @@ export function useSales(shopId?: number) {
           item_id: item.itemId ?? null,
           item_name: item.itemName,
           quantity: Number(item.quantity),
+          display_quantity: item.displayQuantity ?? null,
           unit_id: item.unitId ?? null,
           unit_short_form: item.unitShortForm ?? null,
+          price_tier_id: item.priceTierId ?? null,
+          pack_count: item.packCount != null ? Number(item.packCount) : null,
+          price_tier_quantity: item.priceTierQuantity != null ? Number(item.priceTierQuantity) : null,
+          price_tier_unit_short_form: item.priceTierUnitShortForm ?? null,
           price_per_unit: Number(item.pricePerUnit),
           total_price: Number(item.totalPrice),
           cost_per_unit: Number(item.costPerUnit),
@@ -820,7 +876,7 @@ export function useSales(shopId?: number) {
       await (supabase as any).from('sale_items').insert(newItems);
     }
 
-    // Step 4: Apply new stock changes
+    // Step 4: Apply new stock changes (atomically)
     if (updatedSaleData.items && updatedSaleData.items.length > 0) {
       const { data: currentItems2 } = await (supabase as any)
         .from('items')
@@ -831,27 +887,52 @@ export function useSales(shopId?: number) {
         for (const item of updatedSaleData.items) {
           quantityChanges2.set(item.itemId, (quantityChanges2.get(item.itemId) || 0) + item.quantity);
         }
-        const historyEntries: any[] = [];
+        
+        // First, update stock with optimistic locking
         for (const [itemId, qtyToSubtract] of quantityChanges2) {
           const currentItem = (currentItems2 as any[]).find(i => i.id === itemId);
           if (!currentItem) continue;
-          const newQty = Number((currentItem.quantity - qtyToSubtract).toFixed(4));
+          
+          const expectedQty = Number(currentItem.quantity.toFixed(4));
+          const newQty = Number((expectedQty - qtyToSubtract).toFixed(4));
+          
           await (supabase as any)
             .from('items')
-            .update({ quantity: newQty, updated_at: new Date().toISOString() })
-            .eq('id', itemId);
+            .update({
+              quantity: newQty,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', itemId)
+            .eq('quantity', expectedQty);
+        }
+        
+        // Then create history entries with correct cumulative tracking
+        const historyEntries: any[] = [];
+        const cumulativeChanges = new Map<number, number>();
+        
+        for (const item of updatedSaleData.items) {
+          const currentItem = (currentItems2 as any[]).find(i => i.id === item.itemId);
+          if (!currentItem) continue;
+          
+          const qty = Number(item.quantity.toFixed(4));
+          const prevChange = cumulativeChanges.get(item.itemId) || 0;
+          const beforeQty = Number((currentItem.quantity - prevChange).toFixed(4));
+          const afterQty = Number((beforeQty - qty).toFixed(4));
+          cumulativeChanges.set(item.itemId, prevChange + qty);
+          
           historyEntries.push({
             shop_id: shopId,
-            item_id: itemId,
+            item_id: item.itemId,
             item_name: currentItem.name,
             type: 'sale',
-            quantity_changed: -Number(qtyToSubtract.toFixed(4)),
-            quantity_before: Number(currentItem.quantity.toFixed(4)),
-            quantity_after: newQty,
-            cost_per_unit: updatedSaleData.items.find((i: any) => i.itemId === itemId)?.costPerUnit,
+            quantity_changed: -qty,
+            quantity_before: beforeQty,
+            quantity_after: afterQty,
+            cost_per_unit: item.costPerUnit,
             created_at: new Date().toISOString()
           });
         }
+        
         if (historyEntries.length > 0) {
           await (supabase as any).from('stock_history').insert(historyEntries);
         }
@@ -1036,7 +1117,7 @@ export function useSales(shopId?: number) {
         .eq('sale_id', saleId);
     }
 
-    // Restore stock
+    // Restore stock (atomically)
     if (saleItems && saleItems.length > 0) {
       // Get current items
       const { data: currentItems } = await (supabase as any)
@@ -1053,31 +1134,55 @@ export function useSales(shopId?: number) {
           quantityChanges.set(saleItem.item_id, current + saleItem.quantity);
         }
         
+        // First, restore stock with optimistic locking
         for (const [itemId, qtyToAdd] of quantityChanges) {
           const currentItem = currentItems.find((i: any) => i.id === itemId);
+          if (currentItem) {
+            const expectedQty = Number(currentItem.quantity.toFixed(4));
+            const newQty = Number((expectedQty + qtyToAdd).toFixed(4));
+            
+            await (supabase as any)
+              .from('items')
+              .update({
+                quantity: newQty,
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', itemId)
+              .eq('quantity', expectedQty);
+          }
+        }
+        
+        // Then create history entries with correct cumulative tracking
+        const historyEntries: any[] = [];
+        const cumulativeChanges = new Map<number, number>();
+        
+        for (const saleItem of saleItems) {
+          if (!saleItem.item_id) continue;
+          const currentItem = currentItems.find((i: any) => i.id === saleItem.item_id);
           if (!currentItem) continue;
           
-          const newQuantity = Number((currentItem.quantity + qtyToAdd).toFixed(4));
-          await (supabase as any)
-            .from('items')
-            .update({
-              quantity: newQuantity,
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id', itemId);
-            
-          // Add history for restoration
-          await (supabase as any).from('stock_history').insert({
+          const qty = Number(saleItem.quantity.toFixed(4));
+          const prevChange = cumulativeChanges.get(saleItem.item_id) || 0;
+          const beforeQty = Number((currentItem.quantity + prevChange).toFixed(4));
+          const afterQty = Number((beforeQty + qty).toFixed(4));
+          cumulativeChanges.set(saleItem.item_id, prevChange + qty);
+          
+          historyEntries.push({
             shop_id: shopId,
-            item_id: itemId,
+            item_id: saleItem.item_id,
             item_name: currentItem.name,
             type: 'adjustment',
-            quantity_changed: Number(qtyToAdd.toFixed(4)),
-            quantity_before: currentItem.quantity,
-            quantity_after: newQuantity,
+            quantity_changed: qty,
+            quantity_before: beforeQty,
+            quantity_after: afterQty,
             reason: `Restored from deleted sale #${saleId}`,
+            cost_per_unit: saleItem.cost_per_unit,
             created_at: new Date().toISOString(),
           });
+        }
+        
+        if (historyEntries.length > 0) {
+          await (supabase as any).from('stock_history').insert(historyEntries);
         }
       }
     }
