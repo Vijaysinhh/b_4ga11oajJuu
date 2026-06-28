@@ -306,21 +306,32 @@ async function ensureItem(supabase, shopId, item) {
 
 async function cleanupDemoData(supabase, shopId) {
   const cleanupTargets = [
-    { table: "alerts", field: "message", value: "%Demo seed%" },
-    { table: "stock_history", field: "reference", value: "demo-seed" },
-    { table: "sale_items", field: "item_name", value: "%Demo%" },
-    { table: "sales", field: "notes", value: "Demo seed" },
-    { table: "credit_entries", field: "note", value: "Demo seed" },
+    { table: "alerts", field: "message", value: "%Demo seed%", useLike: true },
+    {
+      table: "stock_history",
+      field: "reference",
+      value: "demo-seed",
+      useLike: false,
+    },
+    { table: "sale_items", field: "item_name", value: "%Demo%", useLike: true },
+    { table: "sales", field: "notes", value: "Demo seed", useLike: true },
+    {
+      table: "credit_entries",
+      field: "note",
+      value: "Demo seed",
+      useLike: true,
+    },
   ];
 
   for (const target of cleanupTargets) {
-    const query = supabase.from(target.table).delete().eq("shop_id", shopId);
-    if (target.field === "message") {
-      await query.ilike(target.field, target.value);
-    } else if (target.field === "reference") {
-      await query.eq(target.field, target.value);
+    const baseQuery = supabase
+      .from(target.table)
+      .delete()
+      .eq("shop_id", shopId);
+    if (target.useLike) {
+      await baseQuery.ilike(target.field, target.value);
     } else {
-      await query.ilike(target.field, target.value);
+      await baseQuery.eq(target.field, target.value);
     }
   }
 }
