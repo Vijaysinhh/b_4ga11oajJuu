@@ -4,9 +4,9 @@ import { createClient } from "@supabase/supabase-js";
 
 const targetPhone = process.env.DEMO_TARGET_PHONE || "8605094584";
 const targetPassword = process.env.DEMO_TARGET_PASSWORD || "pratap123";
-const targetShopName = process.env.DEMO_SHOP_NAME || "Pratap Demo Dukaan";
-const targetOwnerName = process.env.DEMO_OWNER_NAME || "Pratap Demo";
-const targetAddress = process.env.DEMO_ADDRESS || "Demo Street, Pune";
+const targetShopName = process.env.DEMO_SHOP_NAME || "Zopolo";
+const targetOwnerName = process.env.DEMO_OWNER_NAME || "Pratapsinh";
+const targetAddress = process.env.DEMO_ADDRESS || "Tirhe North Solapur Solapur";
 
 function loadEnvFile(filePath) {
   try {
