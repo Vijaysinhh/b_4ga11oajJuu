@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/providers/auth-provider";
@@ -19,7 +18,6 @@ import { formatMoney, formatNumber, formatPercent } from "@/lib/number-format";
 import {
   Activity,
   AlertTriangle,
-  ArrowRight,
   BellRing,
   Clock3,
   CreditCard,
@@ -28,9 +26,11 @@ import {
   X,
 } from "lucide-react";
 
+type NotificationCategory = "stock" | "expiry" | "credit" | "sale" | "activity";
+
 interface NotificationItem {
   id: string;
-  category: "stock" | "expiry" | "credit" | "activity";
+  category: NotificationCategory;
   severity: "info" | "warning" | "critical";
   title: string;
   message: string;
@@ -51,6 +51,87 @@ function getExpiryStatus(item: any, today: Date) {
   if (expiryStart < today) return "expired";
   if (expiryStart <= sevenDaysAhead) return "expiring";
   return null;
+}
+
+function getItemFocusHref(itemId?: number | string | null, filter?: string) {
+  const numericId = Number(itemId);
+  if (!Number.isFinite(numericId) || numericId <= 0) return "/items";
+
+  const params = new URLSearchParams({ focusItemId: String(numericId) });
+  if (filter) params.set("filter", filter);
+  return `/items?${params.toString()}`;
+}
+
+function getSaleFocusHref(saleId?: number | string | null) {
+  const numericId = Number(saleId);
+  return Number.isFinite(numericId) && numericId > 0
+    ? `/sales?focusSaleId=${numericId}`
+    : "/sales";
+}
+
+function getCustomerFocusHref(customerId?: number | string | null) {
+  const numericId = Number(customerId);
+  return Number.isFinite(numericId) && numericId > 0
+    ? `/udhari?focusCustomerId=${numericId}`
+    : "/udhari";
+}
+
+function getAlertItemFilter(alertType: string) {
+  if (alertType === "low_stock") return "lowStock";
+  if (alertType === "expired") return "expired";
+  if (alertType === "expiring") return "expiring";
+  return undefined;
+}
+
+const notificationCategoryStyles: Record<
+  NotificationCategory,
+  {
+    border: string;
+    icon: string;
+    dot: string;
+    badge: string;
+  }
+> = {
+  stock: {
+    border: "#f59e0b",
+    icon: "bg-amber-100 text-amber-700",
+    dot: "bg-amber-500",
+    badge: "bg-amber-100 text-amber-800",
+  },
+  expiry: {
+    border: "#ef4444",
+    icon: "bg-red-100 text-red-700",
+    dot: "bg-red-500",
+    badge: "bg-red-100 text-red-800",
+  },
+  credit: {
+    border: "#f97316",
+    icon: "bg-orange-100 text-orange-700",
+    dot: "bg-orange-500",
+    badge: "bg-orange-100 text-orange-800",
+  },
+  sale: {
+    border: "#22c55e",
+    icon: "bg-green-100 text-green-700",
+    dot: "bg-green-500",
+    badge: "bg-green-100 text-green-800",
+  },
+  activity: {
+    border: "#3b82f6",
+    icon: "bg-blue-100 text-blue-700",
+    dot: "bg-blue-500",
+    badge: "bg-blue-100 text-blue-800",
+  },
+};
+
+function NotificationIcon({ category, size }: { category: NotificationCategory; size: "sm" | "md" }) {
+  const iconClass = size === "sm" ? "h-3.5 w-3.5" : "h-4 w-4";
+
+  if (category === "stock") return <Package className={iconClass} />;
+  if (category === "expiry") return <AlertTriangle className={iconClass} />;
+  if (category === "credit") return <CreditCard className={iconClass} />;
+  if (category === "sale") return <Activity className={iconClass} />;
+  return <Activity className={iconClass} />;
 }
 
 export function NotificationCenter({ compact = false }: { compact?: boolean }) {
@@ -94,7 +175,7 @@ export function NotificationCenter({ compact = false }: { compact?: boolean }) {
           message: `${item.name || item.nameMarathi || "Item"} ${language === "mr" ? "खूप कमी आहे" : "is running low"}`,
           meta: `${formatNumber(qty)} ${item.unitShortForm || ""}`.trim(),
           createdAt: item.updatedAt || Date.now(),
-          href: "/items",
+          href: getItemFocusHref(item.id, "lowStock"),
         });
       }
 
@@ -119,7 +200,7 @@ export function NotificationCenter({ compact = false }: { compact?: boolean }) {
               )
             : undefined,
           createdAt: item.updatedAt || Date.now(),
-          href: "/items",
+          href: getItemFocusHref(item.id, expiryStatus),
         });
       }
     });
@@ -150,7 +231,7 @@ export function NotificationCenter({ compact = false }: { compact?: boolean }) {
             meta: `₹${formatMoney(balance)}`,
             createdAt:
               lastActivity?.timestamp || customer.updatedAt || Date.now(),
-            href: "/udhari",
+            href: getCustomerFocusHref(customer.id),
           });
         }
       }
@@ -159,13 +240,13 @@ export function NotificationCenter({ compact = false }: { compact?: boolean }) {
     sales.slice(0, 8).forEach((sale) => {
       derived.push({
         id: `sale-${sale.id}`,
-        category: "activity",
+        category: "sale",
         severity: "info",
         title: language === "mr" ? "विक्री नोंदवली" : "Sale recorded",
         message: `${sale.creditCustomerName ? `${sale.creditCustomerName} • ` : ""}₹${formatMoney(sale.subtotal || 0)} • ${language === "mr" ? "कर्मचारी" : "staff"}: ${actorName}`,
         meta: sale.date,
         createdAt: sale.timestamp || sale.createdAt || Date.now(),
-        href: `/sales?focusSaleId=${sale.id}`,
+        href: getSaleFocusHref(sale.id),
         staffName: actorName,
       });
     });
@@ -173,7 +254,7 @@ export function NotificationCenter({ compact = false }: { compact?: boolean }) {
     stockHistory.slice(0, 8).forEach((entry) => {
       derived.push({
         id: `stock-${entry.id}`,
-        category: "activity",
+        category: "stock",
         severity:
           entry.quantityChanged && entry.quantityChanged < 0
             ? "warning"
@@ -182,7 +263,7 @@ export function NotificationCenter({ compact = false }: { compact?: boolean }) {
         message: `${entry.itemName || "Item"} ${entry.quantityChanged > 0 ? (language === "mr" ? "जोडले" : "added") : language === "mr" ? "कमी झाले" : "updated"} • ${language === "mr" ? "कर्मचारी" : "staff"}: ${actorName}`,
         meta: `${entry.type || "adjustment"}`,
         createdAt: entry.createdAt || Date.now(),
-        href: "/items",
+        href: getItemFocusHref(entry.itemId),
         staffName: actorName,
       });
     });
@@ -193,26 +274,29 @@ export function NotificationCenter({ compact = false }: { compact?: boolean }) {
       .forEach((entry) => {
         derived.push({
           id: `udhari-${entry.id}`,
-          category: "activity",
+          category: "credit",
           severity: "info",
           title: language === "mr" ? "उधारी नोंद" : "Udhari entry",
           message: `${entry.customerName || "Customer"} ${language === "mr" ? "कडून उधारी नोंदवली" : "credit entry recorded"} • ${language === "mr" ? "कर्मचारी" : "staff"}: ${actorName}`,
           meta: `₹${formatMoney(entry.amount || 0)}`,
           createdAt: entry.timestamp || entry.createdAt || Date.now(),
-          href: "/udhari",
+          href: getCustomerFocusHref(entry.customerId),
           staffName: actorName,
         });
       });
 
     const persisted: NotificationItem[] = alerts.map((alert: any) => {
       const category: NotificationItem["category"] =
-        alert.alertType === "low_stock" ||
-        alert.alertType === "expiring" ||
-        alert.alertType === "expired"
-          ? "stock"
-          : "activity";
+        alert.alertType === "expiring" || alert.alertType === "expired"
+          ? "expiry"
+          : "stock";
       const severity: NotificationItem["severity"] =
         (alert.severity || "warning") as NotificationItem["severity"];
+      const itemId =
+        alert.itemId ||
+        alert.data?.itemId ||
+        alert.data?.item_id ||
+        alert.data?.id;
 
       return {
         id: `alert-${alert.id}`,
@@ -233,12 +317,7 @@ export function NotificationCenter({ compact = false }: { compact?: boolean }) {
         message: alert.message || "",
         meta: alert.data ? `${alert.data?.itemName || ""}`.trim() : undefined,
         createdAt: alert.createdAt || Date.now(),
-        href:
-          alert.alertType === "low_stock" ||
-          alert.alertType === "expiring" ||
-          alert.alertType === "expired"
-            ? "/items"
-            : "/reports",
+        href: getItemFocusHref(itemId, getAlertItemFilter(alert.alertType)),
       };
     });
 
@@ -515,13 +594,6 @@ export function NotificationCenter({ compact = false }: { compact?: boolean }) {
                   {language === "mr" ? "साफ करा" : "Clear"}
                 </button>
               )}
-              <Link
-                href="/reports"
-                className="flex items-center gap-1 text-sm font-medium text-primary"
-              >
-                {language === "mr" ? "सर्व पहा" : "View all"}
-                <ArrowRight className="h-4 w-4" />
-              </Link>
             </div>
           </div>
 
@@ -533,10 +605,14 @@ export function NotificationCenter({ compact = false }: { compact?: boolean }) {
             </div>
           ) : (
             <div className="space-y-1.5">
-              {visibleNotifications.slice(0, 3).map((item) => (
+              {visibleNotifications.slice(0, 3).map((item) => {
+                const styles = notificationCategoryStyles[item.category];
+
+                return (
                 <div
                   key={item.id}
-                  className="rounded-lg border bg-background p-2.5"
+                  className="rounded-lg border bg-background p-2.5 transition-colors hover:bg-muted/40"
+                  style={{ borderLeftColor: styles.border, borderLeftWidth: 4 }}
                 >
                   <div className="flex items-start gap-2">
                     <button
@@ -544,19 +620,8 @@ export function NotificationCenter({ compact = false }: { compact?: boolean }) {
                       onClick={() => handleOpenNotification(item)}
                       className="flex flex-1 items-start gap-2 text-left"
                     >
-                      <div className="mt-0.5 rounded-full bg-muted p-1.5">
-                        {item.category === "stock" && (
-                          <Package className="h-3.5 w-3.5" />
-                        )}
-                        {item.category === "expiry" && (
-                          <AlertTriangle className="h-3.5 w-3.5" />
-                        )}
-                        {item.category === "credit" && (
-                          <CreditCard className="h-3.5 w-3.5" />
-                        )}
-                        {item.category === "activity" && (
-                          <Activity className="h-3.5 w-3.5" />
-                        )}
+                      <div className={`mt-0.5 rounded-full p-1.5 ${styles.icon}`}>
+                        <NotificationIcon category={item.category} size="sm" />
                       </div>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
@@ -564,15 +629,7 @@ export function NotificationCenter({ compact = false }: { compact?: boolean }) {
                             {item.title}
                           </p>
                           <span
-                            className="h-2 w-2 rounded-full"
-                            style={{
-                              backgroundColor:
-                                item.severity === "critical"
-                                  ? "#ef4444"
-                                  : item.severity === "warning"
-                                    ? "#f59e0b"
-                                    : "#3b82f6",
-                            }}
+                            className={`h-2 w-2 rounded-full ${styles.dot}`}
                           />
                         </div>
                         <p className="mt-1 text-xs text-muted-foreground">
@@ -605,7 +662,8 @@ export function NotificationCenter({ compact = false }: { compact?: boolean }) {
                     </button>
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -667,18 +725,14 @@ export function NotificationCenter({ compact = false }: { compact?: boolean }) {
             </Card>
           ) : (
             <div className="space-y-3">
-              {visibleNotifications.map((item) => (
+              {visibleNotifications.map((item) => {
+                const styles = notificationCategoryStyles[item.category];
+
+                return (
                 <Card
                   key={item.id}
                   className="border-l-4"
-                  style={{
-                    borderLeftColor:
-                      item.severity === "critical"
-                        ? "#ef4444"
-                        : item.severity === "warning"
-                          ? "#f59e0b"
-                          : "#3b82f6",
-                  }}
+                  style={{ borderLeftColor: styles.border }}
                 >
                   <CardContent className="flex flex-col gap-2 py-4 sm:flex-row sm:items-start sm:justify-between">
                     <button
@@ -686,24 +740,13 @@ export function NotificationCenter({ compact = false }: { compact?: boolean }) {
                       onClick={() => handleOpenNotification(item)}
                       className="flex flex-1 gap-3 text-left"
                     >
-                      <div className="mt-0.5 rounded-full bg-muted p-2">
-                        {item.category === "stock" && (
-                          <Package className="h-4 w-4" />
-                        )}
-                        {item.category === "expiry" && (
-                          <AlertTriangle className="h-4 w-4" />
-                        )}
-                        {item.category === "credit" && (
-                          <CreditCard className="h-4 w-4" />
-                        )}
-                        {item.category === "activity" && (
-                          <Activity className="h-4 w-4" />
-                        )}
+                      <div className={`mt-0.5 rounded-full p-2 ${styles.icon}`}>
+                        <NotificationIcon category={item.category} size="md" />
                       </div>
                       <div className="flex-1">
                         <div className="flex items-center gap-2">
                           <p className="font-semibold">{item.title}</p>
-                          <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] uppercase tracking-wide text-muted-foreground">
+                          <span className={`rounded-full px-2 py-0.5 text-[11px] uppercase tracking-wide ${styles.badge}`}>
                             {item.category}
                           </span>
                         </div>
@@ -737,7 +780,8 @@ export function NotificationCenter({ compact = false }: { compact?: boolean }) {
                     </button>
                   </CardContent>
                 </Card>
-              ))}
+                );
+              })}
             </div>
           )}
         </>

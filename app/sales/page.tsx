@@ -538,6 +538,7 @@ function SalesPageContent() {
   // --- Date navigation state ---
   const [selectedDate, setSelectedDate] = useState(() => new Date());
   const [expandedSaleId, setExpandedSaleId] = useState<number | null>(null);
+  const [focusedSaleId, setFocusedSaleId] = useState<number | null>(null);
   const [editingSale, setEditingSale] = useState<any | null>(null);
   const [deleteSaleId, setDeleteSaleId] = useState<number | null>(null);
   const focusSaleId = searchParams?.get("focusSaleId");
@@ -557,10 +558,25 @@ function SalesPageContent() {
   useEffect(() => {
     if (!focusSaleId) return;
     const id = Number(focusSaleId);
-    if (!Number.isNaN(id)) {
-      setExpandedSaleId(id);
+    if (!Number.isFinite(id) || id <= 0) return;
+
+    setFocusedSaleId(id);
+    setExpandedSaleId(id);
+    setSearchQuery("");
+    setPaymentMethodFilter(null);
+    setCustomerFilter(null);
+
+    const sale = sales.find((item) => item.id === id);
+    if (!sale?.date) return;
+
+    const saleDate = new Date(`${sale.date}T00:00:00`);
+    if (!Number.isNaN(saleDate.getTime())) {
+      setSelectedDate(saleDate);
+      setDateRangePreset("custom");
+      setCustomStartDate(sale.date);
+      setCustomEndDate(sale.date);
     }
-  }, [focusSaleId]);
+  }, [focusSaleId, sales]);
 
   const isToday = dateKey(selectedDate) === dateKey(new Date());
   const selectedDayKey = dateKey(selectedDate);
@@ -703,6 +719,25 @@ function SalesPageContent() {
       totalItems,
     };
   }, [filteredSales]);
+
+  useEffect(() => {
+    if (!focusedSaleId) return;
+    if (!filteredSales.some((sale) => sale.id === focusedSaleId)) return;
+
+    setExpandedSaleId(focusedSaleId);
+
+    const scrollTimer = window.setTimeout(() => {
+      document
+        .getElementById(`sale-${focusedSaleId}`)
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 150);
+    const clearTimer = window.setTimeout(() => setFocusedSaleId(null), 5000);
+
+    return () => {
+      window.clearTimeout(scrollTimer);
+      window.clearTimeout(clearTimer);
+    };
+  }, [filteredSales, focusedSaleId]);
 
   const goToPreviousDay = useCallback(() => {
     setSelectedDate((prev) => {
@@ -931,8 +966,13 @@ function SalesPageContent() {
                   return (
                     <Card
                       key={sale.id ?? index}
+                      id={sale.id ? `sale-${sale.id}` : undefined}
                       className={`overflow-hidden border-2 transition-all duration-200 ${
                         isUdhar ? "border-orange-200" : ""
+                      } ${
+                        focusedSaleId === sale.id
+                          ? "border-green-400 bg-green-50 ring-4 ring-green-300"
+                          : ""
                       }`}
                     >
                       {/* Collapsed header – always visible */}
