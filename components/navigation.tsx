@@ -34,6 +34,7 @@ import { LanguageToggle } from "@/components/page-shell";
 import { Input } from "@/components/ui/input";
 import { useItems, useSales, useUdhari } from "@/hooks/use-supabase";
 import { NotificationCenter } from "@/components/notification-center";
+import { OfflineStatus } from "@/components/offline-status";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -337,6 +338,8 @@ export function Navigation() {
                 </div>
               )}
             </div>
+
+            <OfflineStatus />
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>

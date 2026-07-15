@@ -12,9 +12,11 @@ import {
   useUdhari,
 } from "@/hooks/use-supabase";
 import { Button } from "@/components/ui/button";
+import { PushNotificationToggle } from "@/components/push-notification-toggle";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { downloadPremiumPdf } from "@/lib/premium-pdf";
 import { formatMoney, formatNumber, formatPercent } from "@/lib/number-format";
+import { showBackgroundNotification } from "@/lib/push-notifications";
 import {
   Activity,
   AlertTriangle,
@@ -124,7 +126,13 @@ const notificationCategoryStyles: Record<
   },
 };
 
-function NotificationIcon({ category, size }: { category: NotificationCategory; size: "sm" | "md" }) {
+function NotificationIcon({
+  category,
+  size,
+}: {
+  category: NotificationCategory;
+  size: "sm" | "md";
+}) {
   const iconClass = size === "sm" ? "h-3.5 w-3.5" : "h-4 w-4";
 
   if (category === "stock") return <Package className={iconClass} />;
@@ -148,13 +156,11 @@ export function NotificationCenter({ compact = false }: { compact?: boolean }) {
   const lastNotifiedRef = useRef<string[]>([]);
   const actorName = useMemo(() => {
     const currentUser = user as any;
-    return (
-      currentUser?.fullName ||
+    return (currentUser?.fullName ||
       currentUser?.username ||
       currentUser?.name ||
       currentUser?.email ||
-      "staff"
-    ) as string;
+      "staff") as string;
   }, [user]);
 
   const notifications = useMemo(() => {
@@ -290,8 +296,8 @@ export function NotificationCenter({ compact = false }: { compact?: boolean }) {
         alert.alertType === "expiring" || alert.alertType === "expired"
           ? "expiry"
           : "stock";
-      const severity: NotificationItem["severity"] =
-        (alert.severity || "warning") as NotificationItem["severity"];
+      const severity: NotificationItem["severity"] = (alert.severity ||
+        "warning") as NotificationItem["severity"];
       const itemId =
         alert.itemId ||
         alert.data?.itemId ||
@@ -380,19 +386,10 @@ export function NotificationCenter({ compact = false }: { compact?: boolean }) {
     if (
       typeof window === "undefined" ||
       typeof window.Notification === "undefined"
-    )
+    ) {
       return;
-    if (Notification.permission === "default") {
-      Notification.requestPermission().catch(() => undefined);
     }
-  }, []);
 
-  useEffect(() => {
-    if (
-      typeof window === "undefined" ||
-      typeof window.Notification === "undefined"
-    )
-      return;
     const incoming = visibleNotifications.filter(
       (item) => !lastNotifiedRef.current.includes(item.id),
     );
@@ -403,9 +400,11 @@ export function NotificationCenter({ compact = false }: { compact?: boolean }) {
       Notification.permission === "granted"
     ) {
       incoming.slice(0, 3).forEach((item) => {
-        new Notification(item.title, {
+        void showBackgroundNotification({
+          title: item.title,
           body: item.message,
           tag: item.id,
+          url: item.href || "/dashboard",
         });
       });
     }
@@ -585,6 +584,7 @@ export function NotificationCenter({ compact = false }: { compact?: boolean }) {
               </p>
             </div>
             <div className="flex items-center gap-2">
+              <PushNotificationToggle compact />
               {visibleNotifications.length > 0 && (
                 <button
                   type="button"
@@ -609,59 +609,69 @@ export function NotificationCenter({ compact = false }: { compact?: boolean }) {
                 const styles = notificationCategoryStyles[item.category];
 
                 return (
-                <div
-                  key={item.id}
-                  className="rounded-lg border bg-background p-2.5 transition-colors hover:bg-muted/40"
-                  style={{ borderLeftColor: styles.border, borderLeftWidth: 4 }}
-                >
-                  <div className="flex items-start gap-2">
-                    <button
-                      type="button"
-                      onClick={() => handleOpenNotification(item)}
-                      className="flex flex-1 items-start gap-2 text-left"
-                    >
-                      <div className={`mt-0.5 rounded-full p-1.5 ${styles.icon}`}>
-                        <NotificationIcon category={item.category} size="sm" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <p className="truncate text-sm font-semibold">
-                            {item.title}
-                          </p>
-                          <span
-                            className={`h-2 w-2 rounded-full ${styles.dot}`}
+                  <div
+                    key={item.id}
+                    className="rounded-lg border bg-background p-2.5 transition-colors hover:bg-muted/40"
+                    style={{
+                      borderLeftColor: styles.border,
+                      borderLeftWidth: 4,
+                    }}
+                  >
+                    <div className="flex items-start gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleOpenNotification(item)}
+                        className="flex flex-1 items-start gap-2 text-left"
+                      >
+                        <div
+                          className={`mt-0.5 rounded-full p-1.5 ${styles.icon}`}
+                        >
+                          <NotificationIcon
+                            category={item.category}
+                            size="sm"
                           />
                         </div>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          {item.message}
-                        </p>
-                        {item.meta ? (
-                          <p className="mt-1 text-[11px] text-muted-foreground">
-                            {item.meta}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <p className="truncate text-sm font-semibold">
+                              {item.title}
+                            </p>
+                            <span
+                              className={`h-2 w-2 rounded-full ${styles.dot}`}
+                            />
+                          </div>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {item.message}
                           </p>
-                        ) : null}
-                        {item.staffName ? (
-                          <p className="mt-1 text-[11px] font-medium text-primary">
-                            {language === "mr"
-                              ? "कर्मचारी क्रिया"
-                              : "Staff action"}
-                            : {item.staffName}
-                          </p>
-                        ) : null}
-                      </div>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={(event) => handleDismiss(item.id, event)}
-                      className="rounded-full p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-                      aria-label={
-                        language === "mr" ? "सूचना हटवा" : "Clear notification"
-                      }
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </button>
+                          {item.meta ? (
+                            <p className="mt-1 text-[11px] text-muted-foreground">
+                              {item.meta}
+                            </p>
+                          ) : null}
+                          {item.staffName ? (
+                            <p className="mt-1 text-[11px] font-medium text-primary">
+                              {language === "mr"
+                                ? "कर्मचारी क्रिया"
+                                : "Staff action"}
+                              : {item.staffName}
+                            </p>
+                          ) : null}
+                        </div>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(event) => handleDismiss(item.id, event)}
+                        className="rounded-full p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                        aria-label={
+                          language === "mr"
+                            ? "सूचना हटवा"
+                            : "Clear notification"
+                        }
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
                   </div>
-                </div>
                 );
               })}
             </div>
@@ -729,57 +739,66 @@ export function NotificationCenter({ compact = false }: { compact?: boolean }) {
                 const styles = notificationCategoryStyles[item.category];
 
                 return (
-                <Card
-                  key={item.id}
-                  className="border-l-4"
-                  style={{ borderLeftColor: styles.border }}
-                >
-                  <CardContent className="flex flex-col gap-2 py-4 sm:flex-row sm:items-start sm:justify-between">
-                    <button
-                      type="button"
-                      onClick={() => handleOpenNotification(item)}
-                      className="flex flex-1 gap-3 text-left"
-                    >
-                      <div className={`mt-0.5 rounded-full p-2 ${styles.icon}`}>
-                        <NotificationIcon category={item.category} size="md" />
-                      </div>
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <p className="font-semibold">{item.title}</p>
-                          <span className={`rounded-full px-2 py-0.5 text-[11px] uppercase tracking-wide ${styles.badge}`}>
-                            {item.category}
-                          </span>
+                  <Card
+                    key={item.id}
+                    className="border-l-4"
+                    style={{ borderLeftColor: styles.border }}
+                  >
+                    <CardContent className="flex flex-col gap-2 py-4 sm:flex-row sm:items-start sm:justify-between">
+                      <button
+                        type="button"
+                        onClick={() => handleOpenNotification(item)}
+                        className="flex flex-1 gap-3 text-left"
+                      >
+                        <div
+                          className={`mt-0.5 rounded-full p-2 ${styles.icon}`}
+                        >
+                          <NotificationIcon
+                            category={item.category}
+                            size="md"
+                          />
                         </div>
-                        <p className="mt-1 text-sm text-muted-foreground">
-                          {item.message}
-                        </p>
-                        {item.meta ? (
-                          <p className="mt-1 text-xs text-muted-foreground">
-                            {item.meta}
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <p className="font-semibold">{item.title}</p>
+                            <span
+                              className={`rounded-full px-2 py-0.5 text-[11px] uppercase tracking-wide ${styles.badge}`}
+                            >
+                              {item.category}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-sm text-muted-foreground">
+                            {item.message}
                           </p>
-                        ) : null}
-                        {item.staffName ? (
-                          <p className="mt-1 text-xs font-medium text-primary">
-                            {language === "mr"
-                              ? "कर्मचारी क्रिया"
-                              : "Staff action"}
-                            : {item.staffName}
-                          </p>
-                        ) : null}
-                      </div>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={(event) => handleDismiss(item.id, event)}
-                      className="rounded-full p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
-                      aria-label={
-                        language === "mr" ? "सूचना हटवा" : "Clear notification"
-                      }
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
-                  </CardContent>
-                </Card>
+                          {item.meta ? (
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              {item.meta}
+                            </p>
+                          ) : null}
+                          {item.staffName ? (
+                            <p className="mt-1 text-xs font-medium text-primary">
+                              {language === "mr"
+                                ? "कर्मचारी क्रिया"
+                                : "Staff action"}
+                              : {item.staffName}
+                            </p>
+                          ) : null}
+                        </div>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(event) => handleDismiss(item.id, event)}
+                        className="rounded-full p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
+                        aria-label={
+                          language === "mr"
+                            ? "सूचना हटवा"
+                            : "Clear notification"
+                        }
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </CardContent>
+                  </Card>
                 );
               })}
             </div>

@@ -4,6 +4,7 @@ import { Analytics } from "@vercel/analytics/react";
 import { AuthProvider } from "@/providers/auth-provider";
 import { LanguageProvider } from "@/providers/language-provider";
 import { ServiceWorkerProvider } from "@/providers/service-worker-provider";
+import { OfflineSyncProvider } from "@/providers/offline-sync-provider";
 import { ToastProvider } from "@/providers/toast-provider";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { Navigation } from "@/components/navigation";
@@ -63,20 +64,22 @@ export default function RootLayout({
             enableSystem={false}
           >
             <AuthProvider>
-              <ServiceWorkerProvider>
-                <LanguageProvider>
-                  <SubscriptionCheck>
-                    <Navigation />
-                    <main className="pt-20 sm:pt-24 pb-24 sm:pb-10 px-3 sm:px-4 sm:ml-56 md:px-6 overflow-y-auto overflow-x-hidden min-h-screen transition-all duration-300" key="main-content">
-                      {children}
-                    </main>
-                    <Toaster />
-                    <ToastProvider />
-                  </SubscriptionCheck>
-                </LanguageProvider>
-              </ServiceWorkerProvider>
+              <OfflineSyncProvider>
+                <ServiceWorkerProvider>
+                  <LanguageProvider>
+                    <SubscriptionCheck>
+                      <Navigation />
+                      <main className="pt-20 sm:pt-24 pb-24 sm:pb-10 px-3 sm:px-4 sm:ml-56 md:px-6 overflow-y-auto overflow-x-hidden min-h-screen transition-all duration-300" key="main-content">
+                        {children}
+                      </main>
+                      <Toaster />
+                      <ToastProvider />
+                    </SubscriptionCheck>
+                  </LanguageProvider>
+                </ServiceWorkerProvider>
+              </OfflineSyncProvider>
             </AuthProvider>
-          </ThemeProvider>
+            </ThemeProvider>
         </ErrorBoundary>
         {process.env.NODE_ENV === "production" && <Analytics />}
       </body>
