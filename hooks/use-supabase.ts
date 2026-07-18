@@ -19,6 +19,17 @@ type Category = Database["public"]["Tables"]["categories"]["Row"];
 type Unit = Database["public"]["Tables"]["units"]["Row"];
 type Item = Database["public"]["Tables"]["items"]["Row"];
 
+function getStoredShopId() {
+  if (typeof window === "undefined") return undefined;
+  const value = window.localStorage.getItem("dukan-current-shop-id");
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+function resolveShopId(shopId?: number) {
+  return shopId ?? getStoredShopId();
+}
+
 // Helper to map Supabase types to old types with camelCase
 const mapCategory = (row: Partial<Category> | Record<string, unknown>) => ({
   id: row.id,
@@ -64,12 +75,18 @@ export function useCategories(shopId?: number) {
   const [categories, setCategories] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const supabase = createClient();
+  const resolvedShopId = resolveShopId(shopId);
 
   const loadCategories = useCallback(async () => {
-    if (!shopId) return;
-    if (!isBrowserOnline()) {
-      const cached = await readCachedCollection(shopId, "categories");
+    if (!resolvedShopId) return;
+
+    const cached = await readCachedCollection(resolvedShopId, "categories");
+    if (cached.length > 0) {
       setCategories(cached.map(mapCategory));
+      setIsLoading(false);
+    }
+
+    if (!isBrowserOnline()) {
       setIsLoading(false);
       return;
     }
@@ -78,25 +95,23 @@ export function useCategories(shopId?: number) {
       const { data, error } = await (supabase as any)
         .from("categories")
         .select("*")
-        .eq("shop_id", shopId)
+        .eq("shop_id", resolvedShopId)
         .order("id");
       if (error) throw error;
 
       if (data) {
-        await writeCachedCollection(shopId, "categories", data);
+        await writeCachedCollection(resolvedShopId, "categories", data);
         setCategories(data.map(mapCategory));
-      } else {
-        const cached = await readCachedCollection(shopId, "categories");
-        setCategories(cached.map(mapCategory));
       }
     } catch (error) {
-      console.warn("[Supabase] Falling back to cached categories:", error);
-      const cached = await readCachedCollection(shopId, "categories");
-      setCategories(cached.map(mapCategory));
+      const fallback = await readCachedCollection(resolvedShopId, "categories");
+      if (fallback.length > 0) {
+        setCategories(fallback.map(mapCategory));
+      }
     } finally {
       setIsLoading(false);
     }
-  }, [shopId, supabase]);
+  }, [resolvedShopId, supabase]);
 
   useEffect(() => {
     void loadCategories();
@@ -115,12 +130,13 @@ export function useCategories(shopId?: number) {
   }, [loadCategories]);
 
   const addCategory = async (category: any) => {
-    if (!shopId) return;
+    const effectiveShopId = resolveShopId(shopId);
+    if (!effectiveShopId) return;
     const now = new Date().toISOString();
     const { data } = await (supabase as any)
       .from("categories")
       .insert({
-        shop_id: shopId,
+        shop_id: effectiveShopId,
         name: category.name,
         name_marathi: category.nameMarathi || null,
         color: category.color || null,
@@ -136,7 +152,8 @@ export function useCategories(shopId?: number) {
   };
 
   const updateCategory = async (id: number, updates: any) => {
-    if (!shopId) return;
+    const effectiveShopId = resolveShopId(shopId);
+    if (!effectiveShopId) return;
     const now = new Date().toISOString();
     const { data } = await (supabase as any)
       .from("categories")
@@ -157,7 +174,8 @@ export function useCategories(shopId?: number) {
   };
 
   const deleteCategory = async (id: number) => {
-    if (!shopId) return;
+    const effectiveShopId = resolveShopId(shopId);
+    if (!effectiveShopId) return;
     await (supabase as any).from("categories").delete().eq("id", id);
     setCategories((prev) => prev.filter((c) => c.id !== id));
   };
@@ -175,12 +193,18 @@ export function useUnits(shopId?: number) {
   const [units, setUnits] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const supabase = createClient();
+  const resolvedShopId = resolveShopId(shopId);
 
   const loadUnits = useCallback(async () => {
-    if (!shopId) return;
-    if (!isBrowserOnline()) {
-      const cached = await readCachedCollection(shopId, "units");
+    if (!resolvedShopId) return;
+
+    const cached = await readCachedCollection(resolvedShopId, "units");
+    if (cached.length > 0) {
       setUnits(cached.map(mapUnit));
+      setIsLoading(false);
+    }
+
+    if (!isBrowserOnline()) {
       setIsLoading(false);
       return;
     }
@@ -189,25 +213,23 @@ export function useUnits(shopId?: number) {
       const { data, error } = await (supabase as any)
         .from("units")
         .select("*")
-        .eq("shop_id", shopId)
+        .eq("shop_id", resolvedShopId)
         .order("id");
       if (error) throw error;
 
       if (data) {
-        await writeCachedCollection(shopId, "units", data);
+        await writeCachedCollection(resolvedShopId, "units", data);
         setUnits(data.map(mapUnit));
-      } else {
-        const cached = await readCachedCollection(shopId, "units");
-        setUnits(cached.map(mapUnit));
       }
     } catch (error) {
-      console.warn("[Supabase] Falling back to cached units:", error);
-      const cached = await readCachedCollection(shopId, "units");
-      setUnits(cached.map(mapUnit));
+      const fallback = await readCachedCollection(resolvedShopId, "units");
+      if (fallback.length > 0) {
+        setUnits(fallback.map(mapUnit));
+      }
     } finally {
       setIsLoading(false);
     }
-  }, [shopId, supabase]);
+  }, [resolvedShopId, supabase]);
 
   useEffect(() => {
     void loadUnits();
@@ -226,12 +248,13 @@ export function useUnits(shopId?: number) {
   }, [loadUnits]);
 
   const addUnit = async (unit: any) => {
-    if (!shopId) return;
+    const effectiveShopId = resolveShopId(shopId);
+    if (!effectiveShopId) return;
     const now = new Date().toISOString();
     const { data } = await (supabase as any)
       .from("units")
       .insert({
-        shop_id: shopId,
+        shop_id: effectiveShopId,
         name: unit.name,
         name_marathi: unit.nameMarathi || null,
         short_form: unit.shortForm,
@@ -247,7 +270,8 @@ export function useUnits(shopId?: number) {
   };
 
   const updateUnit = async (id: number, updates: any) => {
-    if (!shopId) return;
+    const effectiveShopId = resolveShopId(shopId);
+    if (!effectiveShopId) return;
     const now = new Date().toISOString();
     const { data } = await (supabase as any)
       .from("units")
@@ -266,7 +290,8 @@ export function useUnits(shopId?: number) {
   };
 
   const deleteUnit = async (id: number) => {
-    if (!shopId) return;
+    const effectiveShopId = resolveShopId(shopId);
+    if (!effectiveShopId) return;
     await (supabase as any).from("units").delete().eq("id", id);
     setUnits((prev) => prev.filter((u) => u.id !== id));
   };
@@ -284,16 +309,22 @@ export function useItems(shopId?: number) {
   const [items, setItems] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const supabase = createClient();
+  const resolvedShopId = resolveShopId(shopId);
 
   const loadItems = useCallback(async () => {
-    if (!shopId) {
+    if (!resolvedShopId) {
       setItems([]);
       setIsLoading(false);
       return;
     }
-    if (!isBrowserOnline()) {
-      const cached = await readCachedCollection(shopId, "items");
+
+    const cached = await readCachedCollection(resolvedShopId, "items");
+    if (cached.length > 0) {
       setItems(cached.map(mapItem));
+      setIsLoading(false);
+    }
+
+    if (!isBrowserOnline()) {
       setIsLoading(false);
       return;
     }
@@ -302,19 +333,20 @@ export function useItems(shopId?: number) {
       const { data, error } = await (supabase as any)
         .from("items")
         .select("*")
-        .eq("shop_id", shopId)
+        .eq("shop_id", resolvedShopId)
         .order("id");
       if (error) throw error;
-      await writeCachedCollection(shopId, "items", data || []);
+      await writeCachedCollection(resolvedShopId, "items", data || []);
       setItems(data ? data.map(mapItem) : []);
     } catch (error) {
-      console.warn("[Supabase] Falling back to cached items:", error);
-      const cached = await readCachedCollection(shopId, "items");
-      setItems(cached.map(mapItem));
+      const fallback = await readCachedCollection(resolvedShopId, "items");
+      if (fallback.length > 0) {
+        setItems(fallback.map(mapItem));
+      }
     } finally {
       setIsLoading(false);
     }
-  }, [shopId, supabase]);
+  }, [resolvedShopId, supabase]);
 
   useEffect(() => {
     void loadItems();
@@ -344,7 +376,8 @@ export function useItems(shopId?: number) {
   };
 
   const addItem = async (item: any) => {
-    if (!shopId) {
+    const effectiveShopId = resolveShopId(shopId);
+    if (!effectiveShopId) {
       throw new Error("Shop not selected");
     }
     const now = new Date().toISOString();
@@ -354,7 +387,7 @@ export function useItems(shopId?: number) {
     );
     const offlineRow = {
       id: createOfflineId(),
-      shop_id: shopId,
+      shop_id: effectiveShopId,
       name: item.name,
       name_marathi: item.nameMarathi || null,
       brand: item.brand || null,
@@ -372,7 +405,7 @@ export function useItems(shopId?: number) {
       updated_at: now,
     };
     const { data } = await executeWithOfflineUpsert({
-      shopId,
+      shopId: effectiveShopId,
       table: "items",
       row: offlineRow,
       request: async () => {
@@ -396,7 +429,8 @@ export function useItems(shopId?: number) {
   };
 
   const updateItem = async (id: number, updates: any) => {
-    if (!shopId) {
+    const effectiveShopId = resolveShopId(shopId);
+    if (!effectiveShopId) {
       throw new Error("Shop not selected");
     }
     const now = new Date().toISOString();
@@ -420,7 +454,7 @@ export function useItems(shopId?: number) {
     // Convert camelCase to snake_case for Supabase
     const row = {
       id,
-      shop_id: shopId,
+      shop_id: effectiveShopId,
       name: updateData.name ?? existingItem?.name ?? null,
       name_marathi: updateData.nameMarathi ?? existingItem?.nameMarathi ?? null,
       brand: updateData.brand ?? existingItem?.brand ?? null,
@@ -444,7 +478,7 @@ export function useItems(shopId?: number) {
       updated_at: now,
     };
     const { data } = await executeWithOfflineUpsert({
-      shopId,
+      shopId: effectiveShopId,
       table: "items",
       row,
       request: async () => {
@@ -466,11 +500,12 @@ export function useItems(shopId?: number) {
   };
 
   const deleteItem = async (id: number) => {
-    if (!shopId) {
+    const effectiveShopId = resolveShopId(shopId);
+    if (!effectiveShopId) {
       throw new Error("Shop not selected");
     }
     await executeWithOfflineDelete({
-      shopId,
+      shopId: effectiveShopId,
       table: "items",
       id,
       request: async () => {
@@ -511,11 +546,12 @@ export function usePriceTiers(shopId?: number) {
   const [priceTiers, setPriceTiers] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const supabase = createClient();
+  const resolvedShopId = resolveShopId(shopId);
 
   const loadPriceTiers = useCallback(async () => {
-    if (!shopId) return;
+    if (!resolvedShopId) return;
     if (!isBrowserOnline()) {
-      const cached = await readCachedCollection(shopId, "price_tiers");
+      const cached = await readCachedCollection(resolvedShopId, "price_tiers");
       setPriceTiers(cached.map(mapPriceTier));
       setIsLoading(false);
       return;
@@ -524,16 +560,16 @@ export function usePriceTiers(shopId?: number) {
     const { data, error } = await (supabase as any)
       .from("price_tiers")
       .select("*")
-      .eq("shop_id", shopId);
+      .eq("shop_id", resolvedShopId);
     if (data) {
-      await writeCachedCollection(shopId, "price_tiers", data);
+      await writeCachedCollection(resolvedShopId, "price_tiers", data);
       setPriceTiers(data.map(mapPriceTier));
     } else if (error) {
-      const cached = await readCachedCollection(shopId, "price_tiers");
+      const cached = await readCachedCollection(resolvedShopId, "price_tiers");
       setPriceTiers(cached.map(mapPriceTier));
     }
     setIsLoading(false);
-  }, [shopId, supabase]);
+  }, [resolvedShopId, supabase]);
 
   useEffect(() => {
     loadPriceTiers();
@@ -541,12 +577,13 @@ export function usePriceTiers(shopId?: number) {
 
   const addPriceTier = useCallback(
     async (tierData: any) => {
-      if (!shopId) return null;
+      const effectiveShopId = resolvedShopId;
+      if (!effectiveShopId) return null;
       const now = new Date().toISOString();
       const { data, error } = await (supabase as any)
         .from("price_tiers")
         .insert({
-          shop_id: shopId,
+          shop_id: effectiveShopId,
           item_id: tierData.itemId,
           quantity: tierData.quantity,
           unit_id: tierData.unitId,
@@ -574,12 +611,13 @@ export function usePriceTiers(shopId?: number) {
 
   const deletePriceTier = useCallback(
     async (tierId: number) => {
-      if (!shopId) return;
+      const effectiveShopId = resolvedShopId;
+      if (!effectiveShopId) return;
       const { error } = await (supabase as any)
         .from("price_tiers")
         .delete()
         .eq("id", tierId)
-        .eq("shop_id", shopId);
+        .eq("shop_id", effectiveShopId);
 
       if (error) {
         console.error("[Supabase] Error deleting price tier:", error);
@@ -588,7 +626,7 @@ export function usePriceTiers(shopId?: number) {
 
       setPriceTiers((prev) => prev.filter((tier) => tier.id !== tierId));
     },
-    [shopId, supabase],
+    [resolvedShopId, supabase],
   );
 
   return { priceTiers, isLoading, addPriceTier, deletePriceTier };
@@ -643,13 +681,14 @@ export function useSales(shopId?: number) {
   const [saleItems, setSaleItems] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const supabase = createClient();
+  const resolvedShopId = resolveShopId(shopId);
 
   const loadSales = useCallback(async () => {
-    if (!shopId) return;
+    if (!resolvedShopId) return;
     if (!isBrowserOnline()) {
       const [cachedSales, cachedSaleItems] = await Promise.all([
-        readCachedCollection(shopId, "sales"),
-        readCachedCollection(shopId, "sale_items"),
+        readCachedCollection(resolvedShopId, "sales"),
+        readCachedCollection(resolvedShopId, "sale_items"),
       ]);
       setSales(cachedSales.map(mapSale));
       setSaleItems(cachedSaleItems.map(mapSaleItem));
@@ -664,16 +703,21 @@ export function useSales(shopId?: number) {
       (supabase as any)
         .from("sales")
         .select("*")
-        .eq("shop_id", shopId)
+        .eq("shop_id", resolvedShopId)
         .order("timestamp", { ascending: false }),
-      (supabase as any).from("sale_items").select("*").eq("shop_id", shopId),
+      (supabase as any)
+        .from("sale_items")
+        .select("*")
+        .eq("shop_id", resolvedShopId),
     ]);
     const cachedSales =
-      salesData || (await readCachedCollection(shopId, "sales"));
+      salesData || (await readCachedCollection(resolvedShopId, "sales"));
     const cachedSaleItems =
-      itemsData || (await readCachedCollection(shopId, "sale_items"));
-    if (salesData) await writeCachedCollection(shopId, "sales", salesData);
-    if (itemsData) await writeCachedCollection(shopId, "sale_items", itemsData);
+      itemsData || (await readCachedCollection(resolvedShopId, "sale_items"));
+    if (salesData)
+      await writeCachedCollection(resolvedShopId, "sales", salesData);
+    if (itemsData)
+      await writeCachedCollection(resolvedShopId, "sale_items", itemsData);
     if (salesError)
       console.warn("[Supabase] Using cached sales:", salesError.message);
     if (itemsError)
@@ -681,7 +725,7 @@ export function useSales(shopId?: number) {
     setSales(cachedSales.map(mapSale));
     setSaleItems(cachedSaleItems.map(mapSaleItem));
     setIsLoading(false);
-  }, [shopId, supabase]);
+  }, [resolvedShopId, supabase]);
 
   useEffect(() => {
     loadSales();
@@ -702,7 +746,8 @@ export function useSales(shopId?: number) {
 
   const createSale = useCallback(
     async (saleData: any) => {
-      if (!shopId) return null;
+      const effectiveShopId = resolveShopId(shopId);
+      if (!effectiveShopId) return null;
       const now = new Date().toISOString();
       const saleTimestamp =
         typeof saleData.timestamp === "number"
@@ -712,7 +757,7 @@ export function useSales(shopId?: number) {
         saleData.paymentMethod === "udhar" ? "udhari" : saleData.paymentMethod;
       const saleRow = {
         id: createOfflineId(),
-        shop_id: shopId,
+        shop_id: effectiveShopId,
         date: saleData.date,
         timestamp: saleTimestamp,
         total_quantity_items: saleData.totalQuantityItems,
@@ -728,7 +773,7 @@ export function useSales(shopId?: number) {
         updated_at: now,
       };
       const { data } = await executeWithOfflineUpsert({
-        shopId,
+        shopId: effectiveShopId,
         table: "sales",
         row: saleRow,
         request: async () => {
@@ -746,7 +791,7 @@ export function useSales(shopId?: number) {
 
       const saleItemRows = (saleData.items || []).map((item: any) => ({
         id: createOfflineId(),
-        shop_id: shopId,
+        shop_id: effectiveShopId,
         sale_id: savedSale.id,
         item_id: item.itemId ?? null,
         item_name: item.itemName,
@@ -771,7 +816,7 @@ export function useSales(shopId?: number) {
 
       for (const row of saleItemRows) {
         await executeWithOfflineUpsert({
-          shopId,
+          shopId: effectiveShopId,
           table: "sale_items",
           row,
           request: async () => {
@@ -789,7 +834,7 @@ export function useSales(shopId?: number) {
 
       if (paymentMethod === "udhari" && saleData.creditCustomerId) {
         const cachedCustomers = await readCachedCollection(
-          shopId,
+          effectiveShopId,
           "credit_customers",
         );
         let customer = cachedCustomers.find(
@@ -814,7 +859,7 @@ export function useSales(shopId?: number) {
             updated_at: now,
           };
           await executeWithOfflineUpsert({
-            shopId,
+            shopId: effectiveShopId,
             table: "credit_customers",
             row: updatedCustomer,
             request: async () => {
@@ -831,7 +876,7 @@ export function useSales(shopId?: number) {
 
         const entryRow = {
           id: createOfflineId(),
-          shop_id: shopId,
+          shop_id: effectiveShopId,
           customer_id: saleData.creditCustomerId,
           customer_name: saleData.creditCustomerName || "",
           type: "credit",
@@ -851,7 +896,7 @@ export function useSales(shopId?: number) {
           created_at: now,
         };
         await executeWithOfflineUpsert({
-          shopId,
+          shopId: effectiveShopId,
           table: "credit_entries",
           row: entryRow,
           request: async () => {
@@ -883,17 +928,19 @@ export function useSales(shopId?: number) {
 
   const updateStockAfterSale = useCallback(
     async (saleItems: any[]) => {
-      if (!shopId) return;
+      const effectiveShopId = resolveShopId(shopId);
+      if (!effectiveShopId) return;
 
       let currentItems: any[] = [];
       if (isBrowserOnline()) {
         const { data } = await (supabase as any)
           .from("items")
           .select("*")
-          .eq("shop_id", shopId);
-        currentItems = data || (await readCachedCollection(shopId, "items"));
+          .eq("shop_id", effectiveShopId);
+        currentItems =
+          data || (await readCachedCollection(effectiveShopId, "items"));
       } else {
-        currentItems = await readCachedCollection(shopId, "items");
+        currentItems = await readCachedCollection(effectiveShopId, "items");
       }
 
       if (!currentItems) return;
@@ -919,7 +966,7 @@ export function useSales(shopId?: number) {
           updated_at: new Date().toISOString(),
         };
         await executeWithOfflineUpsert({
-          shopId,
+          shopId: effectiveShopId,
           table: "items",
           row: updatedItem,
           request: async () => {
@@ -963,7 +1010,7 @@ export function useSales(shopId?: number) {
 
         historyEntries.push({
           id: createOfflineId(),
-          shop_id: shopId,
+          shop_id: effectiveShopId,
           item_id: saleItem.itemId,
           item_name: saleItem.itemName,
           type: "sale",
@@ -978,7 +1025,7 @@ export function useSales(shopId?: number) {
       if (historyEntries.length > 0) {
         for (const row of historyEntries) {
           await executeWithOfflineUpsert({
-            shopId,
+            shopId: effectiveShopId,
             table: "stock_history",
             row,
             request: async () => {
@@ -1001,7 +1048,8 @@ export function useSales(shopId?: number) {
 
   const getDailySummary = useCallback(
     async (dateKey: string) => {
-      if (!shopId) return null;
+      const effectiveShopId = resolveShopId(shopId);
+      if (!effectiveShopId) return null;
       const dailySales = salesWithItems.filter((s) => s.date === dateKey);
       const totalRevenue = dailySales.reduce((sum, s) => sum + s.subtotal, 0);
       const totalCost = dailySales.reduce((sum, s) => sum + s.totalCost, 0);
@@ -1023,7 +1071,8 @@ export function useSales(shopId?: number) {
 
   const updateSale = useCallback(
     async (saleId: number, updatedSaleData: any) => {
-      if (!shopId) return;
+      const effectiveShopId = resolveShopId(shopId);
+      if (!effectiveShopId) return;
 
       // First get the original sale and items
       const { data: originalSale } = await (supabase as any)
@@ -1091,7 +1140,7 @@ export function useSales(shopId?: number) {
             cumulativeChanges.set(item.item_id, prevChange + qty);
 
             historyEntries.push({
-              shop_id: shopId,
+              shop_id: effectiveShopId,
               item_id: item.item_id,
               item_name: currentItem.name,
               type: "adjustment",
@@ -1150,7 +1199,7 @@ export function useSales(shopId?: number) {
           const calculatedProfit =
             item.profit ?? Number(item.totalPrice) - Number(item.totalCost);
           return {
-            shop_id: shopId,
+            shop_id: effectiveShopId,
             sale_id: saleId,
             item_id: item.itemId ?? null,
             item_name: item.itemName,
@@ -1181,7 +1230,7 @@ export function useSales(shopId?: number) {
         const { data: currentItems2 } = await (supabase as any)
           .from("items")
           .select("*")
-          .eq("shop_id", shopId);
+          .eq("shop_id", effectiveShopId);
         if (currentItems2) {
           const quantityChanges2 = new Map<number, number>();
           for (const item of updatedSaleData.items) {
@@ -1230,7 +1279,7 @@ export function useSales(shopId?: number) {
             cumulativeChanges.set(item.itemId, prevChange + qty);
 
             historyEntries.push({
-              shop_id: shopId,
+              shop_id: effectiveShopId,
               item_id: item.itemId,
               item_name: currentItem.name,
               type: "sale",
@@ -1305,7 +1354,7 @@ export function useSales(shopId?: number) {
           const entryTimestamp =
             originalCreditEntry?.timestamp ?? originalSale.timestamp;
           await (supabase as any).from("credit_entries").insert({
-            shop_id: shopId,
+            shop_id: effectiveShopId,
             customer_id: updatedSaleData.creditCustomerId,
             customer_name: updatedSaleData.creditCustomerName,
             type: "credit",
@@ -1345,7 +1394,7 @@ export function useSales(shopId?: number) {
             const entryDate = dateKey(new Date(originalSale.timestamp));
             const entryTimestamp = originalSale.timestamp;
             await (supabase as any).from("credit_entries").insert({
-              shop_id: shopId,
+              shop_id: effectiveShopId,
               customer_id: updatedSaleData.creditCustomerId,
               customer_name: updatedSaleData.creditCustomerName,
               type: "credit",
@@ -1388,7 +1437,7 @@ export function useSales(shopId?: number) {
           const entryDate = dateKey(new Date(originalSale.timestamp));
           const entryTimestamp = originalSale.timestamp;
           await (supabase as any).from("credit_entries").insert({
-            shop_id: shopId,
+            shop_id: effectiveShopId,
             customer_id: updatedSaleData.creditCustomerId,
             customer_name: updatedSaleData.creditCustomerName,
             type: "credit",
@@ -1418,7 +1467,8 @@ export function useSales(shopId?: number) {
 
   const deleteSale = useCallback(
     async (saleId: number) => {
-      if (!shopId) return;
+      const effectiveShopId = resolveShopId(shopId);
+      if (!effectiveShopId) return;
 
       // Fetch sale and its items
       const { data: sale } = await (supabase as any)
@@ -1514,7 +1564,7 @@ export function useSales(shopId?: number) {
             cumulativeChanges.set(saleItem.item_id, prevChange + qty);
 
             historyEntries.push({
-              shop_id: shopId,
+              shop_id: effectiveShopId,
               item_id: saleItem.item_id,
               item_name: currentItem.name,
               type: "adjustment",
@@ -1578,11 +1628,15 @@ export function useStockHistory(shopId?: number) {
   const [stockHistory, setStockHistory] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const supabase = createClient();
+  const resolvedShopId = resolveShopId(shopId);
 
   const loadStockHistory = useCallback(async () => {
-    if (!shopId) return;
+    if (!resolvedShopId) return;
     if (!isBrowserOnline()) {
-      const cached = await readCachedCollection(shopId, "stock_history");
+      const cached = await readCachedCollection(
+        resolvedShopId,
+        "stock_history",
+      );
       setStockHistory(cached.map(mapStockHistory));
       setIsLoading(false);
       return;
@@ -1590,13 +1644,15 @@ export function useStockHistory(shopId?: number) {
     const { data } = await (supabase as any)
       .from("stock_history")
       .select("*")
-      .eq("shop_id", shopId)
+      .eq("shop_id", resolvedShopId)
       .order("created_at", { ascending: false });
-    if (data) await writeCachedCollection(shopId, "stock_history", data);
-    const rows = data || (await readCachedCollection(shopId, "stock_history"));
+    if (data)
+      await writeCachedCollection(resolvedShopId, "stock_history", data);
+    const rows =
+      data || (await readCachedCollection(resolvedShopId, "stock_history"));
     setStockHistory(rows.map(mapStockHistory));
     setIsLoading(false);
-  }, [shopId, supabase]);
+  }, [resolvedShopId, supabase]);
 
   useEffect(() => {
     loadStockHistory();
@@ -1628,17 +1684,18 @@ export function useBatches(shopId?: number) {
   const [batches, setBatches] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const supabase = createClient();
+  const resolvedShopId = resolveShopId(shopId);
 
   const loadBatches = useCallback(async () => {
-    if (!shopId) return;
+    if (!resolvedShopId) return;
     const { data } = await (supabase as any)
       .from("batches")
       .select("*")
-      .eq("shop_id", shopId)
+      .eq("shop_id", resolvedShopId)
       .order("created_at", { ascending: false });
     setBatches(data ? data.map(mapBatch) : []);
     setIsLoading(false);
-  }, [shopId, supabase]);
+  }, [resolvedShopId, supabase]);
 
   useEffect(() => {
     loadBatches();
@@ -1646,12 +1703,12 @@ export function useBatches(shopId?: number) {
 
   const createBatch = useCallback(
     async (batchData: any) => {
-      if (!shopId) return;
+      if (!resolvedShopId) return;
       const now = new Date().toISOString();
       const { data } = await (supabase as any)
         .from("batches")
         .insert({
-          shop_id: shopId,
+          shop_id: resolvedShopId,
           item_id: batchData.itemId,
           item_name: batchData.itemName,
           batch_number: batchData.batchNumber || null,
@@ -1675,12 +1732,12 @@ export function useBatches(shopId?: number) {
         await loadBatches();
       }
     },
-    [shopId, loadBatches, supabase],
+    [resolvedShopId, loadBatches, supabase],
   );
 
   const deleteBatch = useCallback(
     async (batchId: number) => {
-      if (!shopId) return;
+      if (!resolvedShopId) return;
       await (supabase as any).from("batches").delete().eq("id", batchId);
       await loadBatches();
     },
@@ -1714,11 +1771,12 @@ export function useAlerts(shopId?: number) {
   const [alerts, setAlerts] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const supabase = createClient();
+  const resolvedShopId = resolveShopId(shopId);
 
   const loadAlerts = useCallback(async () => {
-    if (!shopId) return;
+    if (!resolvedShopId) return;
     if (!isBrowserOnline()) {
-      const cached = await readCachedCollection(shopId, "alerts");
+      const cached = await readCachedCollection(resolvedShopId, "alerts");
       setAlerts(cached.map(mapAlert));
       setIsLoading(false);
       return;
@@ -1726,20 +1784,20 @@ export function useAlerts(shopId?: number) {
     const { data } = await (supabase as any)
       .from("alerts")
       .select("*")
-      .eq("shop_id", shopId)
+      .eq("shop_id", resolvedShopId)
       .order("created_at", { ascending: false });
-    if (data) await writeCachedCollection(shopId, "alerts", data);
-    const rows = data || (await readCachedCollection(shopId, "alerts"));
+    if (data) await writeCachedCollection(resolvedShopId, "alerts", data);
+    const rows = data || (await readCachedCollection(resolvedShopId, "alerts"));
     setAlerts(rows.map(mapAlert));
     setIsLoading(false);
-  }, [shopId, supabase]);
+  }, [resolvedShopId, supabase]);
 
   useEffect(() => {
     loadAlerts();
   }, [loadAlerts]);
 
   const markRead = async (id: number) => {
-    if (!shopId) return;
+    if (!resolvedShopId) return;
     await (supabase as any).from("alerts").update({ read: true }).eq("id", id);
     setAlerts((prev) =>
       prev.map((a) => (a.id === id ? { ...a, read: true } : a)),
@@ -1781,13 +1839,14 @@ export function useUdhari(shopId?: number) {
   const [entries, setEntries] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const supabase = createClient();
+  const resolvedShopId = resolveShopId(shopId);
 
   const loadUdhari = useCallback(async () => {
-    if (!shopId) return;
+    if (!resolvedShopId) return;
     if (!isBrowserOnline()) {
       const [cachedCustomers, cachedEntries] = await Promise.all([
-        readCachedCollection(shopId, "credit_customers"),
-        readCachedCollection(shopId, "credit_entries"),
+        readCachedCollection(resolvedShopId, "credit_customers"),
+        readCachedCollection(resolvedShopId, "credit_entries"),
       ]);
       setCustomers(cachedCustomers.map(mapCreditCustomer));
       setEntries(cachedEntries.map(mapCreditEntry));
@@ -1799,22 +1858,30 @@ export function useUdhari(shopId?: number) {
       (supabase as any)
         .from("credit_customers")
         .select("*")
-        .eq("shop_id", shopId)
+        .eq("shop_id", resolvedShopId)
         .order("name"),
       (supabase as any)
         .from("credit_entries")
         .select("*")
-        .eq("shop_id", shopId)
+        .eq("shop_id", resolvedShopId)
         .order("timestamp", { ascending: false }),
     ]);
     if (customersData)
-      await writeCachedCollection(shopId, "credit_customers", customersData);
+      await writeCachedCollection(
+        resolvedShopId,
+        "credit_customers",
+        customersData,
+      );
     if (entriesData)
-      await writeCachedCollection(shopId, "credit_entries", entriesData);
+      await writeCachedCollection(
+        resolvedShopId,
+        "credit_entries",
+        entriesData,
+      );
     setCustomers(customersData ? customersData.map(mapCreditCustomer) : []);
     setEntries(entriesData ? entriesData.map(mapCreditEntry) : []);
     setIsLoading(false);
-  }, [shopId, supabase]);
+  }, [resolvedShopId, supabase]);
 
   useEffect(() => {
     loadUdhari();
@@ -1829,11 +1896,12 @@ export function useUdhari(shopId?: number) {
 
   const addCustomer = useCallback(
     async (customerData: any) => {
-      if (!shopId) return null;
+      const effectiveShopId = resolvedShopId;
+      if (!effectiveShopId) return null;
       const now = new Date().toISOString();
       const row = {
         id: createOfflineId(),
-        shop_id: shopId,
+        shop_id: effectiveShopId,
         name: customerData.name,
         phone: customerData.phone || null,
         balance: 0,
@@ -1842,7 +1910,7 @@ export function useUdhari(shopId?: number) {
         updated_at: now,
       };
       const { data } = await executeWithOfflineUpsert({
-        shopId,
+        shopId: effectiveShopId,
         table: "credit_customers",
         row,
         request: async () => {
@@ -1864,7 +1932,7 @@ export function useUdhari(shopId?: number) {
       window.dispatchEvent(new Event("refresh-dukan-data"));
       return Number(savedCustomer.id);
     },
-    [shopId, loadUdhari, supabase],
+    [resolvedShopId, loadUdhari, supabase],
   );
 
   const addCredit = useCallback(
@@ -1875,13 +1943,14 @@ export function useUdhari(shopId?: number) {
       billItems?: any[],
       saleId?: number,
     ) => {
-      if (!shopId) return;
+      const effectiveShopId = resolvedShopId;
+      if (!effectiveShopId) return;
       const now = new Date().toISOString();
       const today = dateKey(new Date());
       const customer = customers.find((c) => c.id === customerId);
       const entryRow = {
         id: createOfflineId(),
-        shop_id: shopId,
+        shop_id: effectiveShopId,
         customer_id: customerId,
         customer_name: customer?.name || "",
         type: "credit",
@@ -1894,7 +1963,7 @@ export function useUdhari(shopId?: number) {
         created_at: now,
       };
       await executeWithOfflineUpsert({
-        shopId,
+        shopId: effectiveShopId,
         table: "credit_entries",
         row: entryRow,
         request: async () => {
@@ -1912,7 +1981,7 @@ export function useUdhari(shopId?: number) {
       if (customer) {
         const updatedCustomer = {
           id: customer.id,
-          shop_id: shopId,
+          shop_id: effectiveShopId,
           name: customer.name,
           phone: customer.phone || null,
           balance: Number(customer.balance) + amount,
@@ -1921,7 +1990,7 @@ export function useUdhari(shopId?: number) {
           updated_at: now,
         };
         await executeWithOfflineUpsert({
-          shopId,
+          shopId: effectiveShopId,
           table: "credit_customers",
           row: updatedCustomer,
           request: async () => {
@@ -1945,18 +2014,19 @@ export function useUdhari(shopId?: number) {
       setEntries((prev) => [mapCreditEntry(entryRow), ...prev]);
       window.dispatchEvent(new Event("refresh-dukan-data"));
     },
-    [shopId, customers, loadUdhari, supabase],
+    [resolvedShopId, customers, loadUdhari, supabase],
   );
 
   const receivePayment = useCallback(
     async (customerId: number, amount: number, note?: string) => {
-      if (!shopId) return;
+      const effectiveShopId = resolvedShopId;
+      if (!effectiveShopId) return;
       const now = new Date().toISOString();
       const today = dateKey(new Date());
       const customer = customers.find((c) => c.id === customerId);
       const entryRow = {
         id: createOfflineId(),
-        shop_id: shopId,
+        shop_id: effectiveShopId,
         customer_id: customerId,
         customer_name: customer?.name || "",
         type: "payment",
@@ -1967,7 +2037,7 @@ export function useUdhari(shopId?: number) {
         created_at: now,
       };
       await executeWithOfflineUpsert({
-        shopId,
+        shopId: effectiveShopId,
         table: "credit_entries",
         row: entryRow,
         request: async () => {
@@ -1985,7 +2055,7 @@ export function useUdhari(shopId?: number) {
       if (customer) {
         const updatedCustomer = {
           id: customer.id,
-          shop_id: shopId,
+          shop_id: effectiveShopId,
           name: customer.name,
           phone: customer.phone || null,
           balance: Math.max(Number(customer.balance) - amount, 0),
@@ -1994,7 +2064,7 @@ export function useUdhari(shopId?: number) {
           updated_at: now,
         };
         await executeWithOfflineUpsert({
-          shopId,
+          shopId: effectiveShopId,
           table: "credit_customers",
           row: updatedCustomer,
           request: async () => {
@@ -2018,12 +2088,12 @@ export function useUdhari(shopId?: number) {
       setEntries((prev) => [mapCreditEntry(entryRow), ...prev]);
       window.dispatchEvent(new Event("refresh-dukan-data"));
     },
-    [shopId, customers, loadUdhari, supabase],
+    [resolvedShopId, customers, loadUdhari, supabase],
   );
 
   const updateCustomer = useCallback(
     async (customerId: number, updates: any) => {
-      if (!shopId) return;
+      if (!resolvedShopId) return;
       const now = new Date().toISOString();
       const { data } = await (supabase as any)
         .from("credit_customers")
@@ -2040,12 +2110,12 @@ export function useUdhari(shopId?: number) {
         await loadUdhari();
       }
     },
-    [shopId, supabase, loadUdhari],
+    [resolvedShopId, supabase, loadUdhari],
   );
 
   const deleteCustomer = useCallback(
     async (customerId: number) => {
-      if (!shopId) return;
+      if (!resolvedShopId) return;
       // Check if customer has balance
       const customer = customers.find((c) => c.id === customerId);
       if (customer && customer.balance !== 0) {
@@ -2062,12 +2132,12 @@ export function useUdhari(shopId?: number) {
       await loadUdhari();
       window.dispatchEvent(new Event("refresh-dukan-data"));
     },
-    [shopId, customers, supabase, loadUdhari],
+    [resolvedShopId, customers, supabase, loadUdhari],
   );
 
   const updateCreditEntry = useCallback(
     async (entryId: number, updates: any) => {
-      if (!shopId) return;
+      if (!resolvedShopId) return;
       const now = new Date().toISOString();
       // Get original entry
       const { data: originalEntry } = await (supabase as any)
@@ -2122,12 +2192,12 @@ export function useUdhari(shopId?: number) {
       await loadUdhari();
       window.dispatchEvent(new Event("refresh-dukan-data"));
     },
-    [shopId, customers, supabase, loadUdhari],
+    [resolvedShopId, customers, supabase, loadUdhari],
   );
 
   const deleteCreditEntry = useCallback(
     async (entryId: number) => {
-      if (!shopId) return;
+      if (!resolvedShopId) return;
       const { data: entry } = await (supabase as any)
         .from("credit_entries")
         .select("*")
