@@ -30,6 +30,48 @@ function resolveShopId(shopId?: number) {
   return shopId ?? getStoredShopId();
 }
 
+async function emitShopOwnerNotification(
+  shopId: number | undefined,
+  options: {
+    kind: string;
+    title: string;
+    body: string;
+    tag?: string;
+    url?: string;
+    itemId?: number | null;
+    itemName?: string;
+    alertType?: "low_stock" | "expiring" | "slow_moving" | "expired";
+    severity?: "info" | "warning" | "critical";
+    data?: Record<string, unknown>;
+    dedupeKey?: string;
+  },
+) {
+  if (!shopId || typeof window === "undefined" || !isBrowserOnline()) return;
+
+  try {
+    await fetch("/api/push/notify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        shopId,
+        kind: options.kind,
+        title: options.title,
+        body: options.body,
+        tag: options.tag,
+        url: options.url,
+        itemId: options.itemId ?? null,
+        itemName: options.itemName ?? "Shop activity",
+        alertType: options.alertType || "slow_moving",
+        severity: options.severity || "info",
+        data: options.data || {},
+        dedupeKey: options.dedupeKey,
+      }),
+    });
+  } catch (error) {
+    console.warn("[Notifications] Unable to send owner notification:", error);
+  }
+}
+
 // Helper to map Supabase types to old types with camelCase
 const mapCategory = (row: Partial<Category> | Record<string, unknown>) => ({
   id: row.id,
@@ -772,7 +814,7 @@ export function useSales(shopId?: number) {
         created_at: now,
         updated_at: now,
       };
-      const { data } = await executeWithOfflineUpsert({
+      const saleResult = await executeWithOfflineUpsert({
         shopId: effectiveShopId,
         table: "sales",
         row: saleRow,
@@ -787,7 +829,7 @@ export function useSales(shopId?: number) {
           return savedSale;
         },
       });
-      const savedSale = data || saleRow;
+      const savedSale = saleResult.data || saleRow;
 
       const saleItemRows = (saleData.items || []).map((item: any) => ({
         id: createOfflineId(),
@@ -909,6 +951,25 @@ export function useSales(shopId?: number) {
             if (error) throw error;
             return savedEntry;
           },
+        });
+      }
+
+      if (!saleResult.queued) {
+        void emitShopOwnerNotification(effectiveShopId, {
+          kind: "sale_recorded",
+          title: "New sale recorded",
+          body: `A new sale of ₹${Number(saleData.subtotal || 0).toFixed(2)} was recorded.`,
+          tag: `sale-${savedSale.id}`,
+          url: `/sales?focusSaleId=${savedSale.id}`,
+          itemName: saleData.items?.[0]?.itemName || "Sale",
+          alertType: "slow_moving",
+          severity: "info",
+          data: {
+            category: "sale",
+            saleId: savedSale.id,
+            subtotal: Number(saleData.subtotal || 0),
+          },
+          dedupeKey: `sale-${savedSale.id}`,
         });
       }
 
@@ -1040,6 +1101,22 @@ export function useSales(shopId?: number) {
             },
           });
         }
+        void emitShopOwnerNotification(effectiveShopId, {
+          kind: "stock_change",
+          title: "Stock updated",
+          body: `${historyEntries[0].item_name || "Item"} stock was adjusted after a sale.`,
+          tag: `stock-${historyEntries[0].item_id}`,
+          url: `/items?focusItemId=${historyEntries[0].item_id}`,
+          itemId: historyEntries[0].item_id,
+          itemName: historyEntries[0].item_name,
+          alertType: "slow_moving",
+          severity: "info",
+          data: {
+            category: "stock",
+            itemId: historyEntries[0].item_id,
+          },
+          dedupeKey: `stock-${historyEntries[0].item_id}`,
+        });
       }
       window.dispatchEvent(new Event("refresh-dukan-data"));
     },
@@ -1962,7 +2039,7 @@ export function useUdhari(shopId?: number) {
         timestamp: now,
         created_at: now,
       };
-      await executeWithOfflineUpsert({
+      const entryResult = await executeWithOfflineUpsert({
         shopId: effectiveShopId,
         table: "credit_entries",
         row: entryRow,
@@ -1977,6 +2054,26 @@ export function useUdhari(shopId?: number) {
           return data;
         },
       });
+
+      if (!entryResult.queued) {
+        void emitShopOwnerNotification(effectiveShopId, {
+          kind: "credit_entry",
+          title: "Udhari updated",
+          body: `${customer?.name || "Customer"} now has a new credit entry.`,
+          tag: `credit-${customerId}`,
+          url: `/udhari?focusCustomerId=${customerId}`,
+          itemId: customerId,
+          itemName: customer?.name || "Customer",
+          alertType: "slow_moving",
+          severity: "warning",
+          data: {
+            category: "credit",
+            customerId,
+            amount,
+          },
+          dedupeKey: `credit-${customerId}-${Date.now()}`,
+        });
+      }
 
       if (customer) {
         const updatedCustomer = {
@@ -2036,7 +2133,7 @@ export function useUdhari(shopId?: number) {
         timestamp: now,
         created_at: now,
       };
-      await executeWithOfflineUpsert({
+      const entryResult = await executeWithOfflineUpsert({
         shopId: effectiveShopId,
         table: "credit_entries",
         row: entryRow,
@@ -2051,6 +2148,26 @@ export function useUdhari(shopId?: number) {
           return data;
         },
       });
+
+      if (!entryResult.queued) {
+        void emitShopOwnerNotification(effectiveShopId, {
+          kind: "credit_payment",
+          title: "Payment received",
+          body: `${customer?.name || "Customer"} made a payment of ₹${Number(amount || 0).toFixed(2)}.`,
+          tag: `payment-${customerId}`,
+          url: `/udhari?focusCustomerId=${customerId}`,
+          itemId: customerId,
+          itemName: customer?.name || "Customer",
+          alertType: "slow_moving",
+          severity: "info",
+          data: {
+            category: "credit",
+            customerId,
+            amount,
+          },
+          dedupeKey: `payment-${customerId}-${Date.now()}`,
+        });
+      }
 
       if (customer) {
         const updatedCustomer = {
