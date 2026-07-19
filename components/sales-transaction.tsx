@@ -57,7 +57,7 @@ interface LineItem {
 
 export function SalesTransaction() {
   const { currentShopId } = useAuth();
-  const { createSale, updateStockAfterSale } = useSales(currentShopId);
+  const { createSale, updateStockAfterSale, deleteSale } = useSales(currentShopId);
   const { customers, addCustomer, addCredit } = useUdhari(currentShopId);
   const { items: allItems } = useItems(currentShopId);
   const { t, language } = useLanguage();
@@ -155,6 +155,7 @@ export function SalesTransaction() {
 
     setIsProcessing(true);
 
+    let createdSaleId: number | null = null;
     try {
       const saleItems: any[] = items.map((item) => ({
         itemId: item.itemId,
@@ -188,7 +189,7 @@ export function SalesTransaction() {
       }
 
       const today = dateKey(new Date());
-      const saleId = await createSale({
+      createdSaleId = await createSale({
         date: today,
         timestamp: Date.now(),
         items: saleItems,
@@ -203,6 +204,10 @@ export function SalesTransaction() {
           : undefined,
         creditCustomerName: isUdharSale ? finalCreditCustomerName : undefined,
       });
+
+      if (createdSaleId === null || createdSaleId === undefined) {
+        throw new Error("Sale could not be saved");
+      }
 
       await updateStockAfterSale(saleItems);
 
@@ -220,10 +225,31 @@ export function SalesTransaction() {
         },
       );
       resetSale();
-      window.dispatchEvent(new Event('refresh-dukan-data'));
+      window.dispatchEvent(new Event("refresh-dukan-data"));
     } catch (error) {
       console.error("Error completing sale:", error);
-      toast.error(t("error"));
+      if (createdSaleId !== null && createdSaleId !== undefined) {
+        const persistedSaleId = Number(createdSaleId);
+        if (persistedSaleId > 0) {
+          try {
+            await deleteSale(persistedSaleId);
+            toast.error(
+              language === "mr"
+                ? "विक्री पूर्ण होऊ शकली नाही, त्यामुळे अर्धवट नोंद काढून टाकण्यात आली."
+                : "The sale could not be completed cleanly, so the partial entry was rolled back.",
+            );
+          } catch (rollbackError) {
+            console.error("Error rolling back sale:", rollbackError);
+            toast.error(
+              language === "mr"
+                ? "विक्री पूर्ण होऊ शकली नाही आणि रोलबॅकही अपयशी ठरला."
+                : "The sale could not be completed and rollback may be incomplete.",
+            );
+          }
+        }
+      } else {
+        toast.error(t("error"));
+      }
     } finally {
       setIsProcessing(false);
     }

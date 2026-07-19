@@ -829,7 +829,14 @@ export function useSales(shopId?: number) {
           return savedSale;
         },
       });
+      if (saleResult.queued && !saleResult.data) {
+        return null;
+      }
+
       const savedSale = saleResult.data || saleRow;
+      if (!savedSale?.id) {
+        throw new Error("Sale record was not persisted");
+      }
 
       const saleItemRows = (saleData.items || []).map((item: any) => ({
         id: createOfflineId(),

@@ -150,6 +150,19 @@ export function Navigation() {
     user?.role === "owner" ||
     (user?.role === "worker" &&
       (permissions.canCreateSales || permissions.canViewSales));
+  const canViewDashboard =
+    user?.role === "owner" ||
+    (user?.role === "worker" && permissions.canViewDashboard);
+  const canViewItems =
+    user?.role === "owner" ||
+    (user?.role === "worker" && permissions.canViewItems);
+  const canViewUdhari =
+    user?.role === "owner" ||
+    (user?.role === "worker" && permissions.canViewUdhari);
+  const canViewSales =
+    user?.role === "owner" ||
+    (user?.role === "worker" &&
+      (permissions.canCreateSales || permissions.canViewSales));
 
   // Navigation items based on role and permissions
   const getNavItems = () => {
@@ -158,11 +171,20 @@ export function Navigation() {
     }
 
     if (user?.role === "worker") {
-      return [
-        { href: "/dashboard", icon: Home, label: t("home") },
-        { href: "/items", icon: Package, label: t("stock") },
-        { href: "/udhari", icon: Users, label: t("udhari") },
-      ];
+      const workerItems = [] as Array<{ href: string; icon: typeof Home; label: string }>;
+      if (canViewSales) {
+        workerItems.push({ href: "/sales", icon: ShoppingCart, label: "Sales" });
+      }
+      if (canViewDashboard) {
+        workerItems.push({ href: "/dashboard", icon: Home, label: t("home") });
+      }
+      if (canViewItems) {
+        workerItems.push({ href: "/items", icon: Package, label: t("stock") });
+      }
+      if (canViewUdhari) {
+        workerItems.push({ href: "/udhari", icon: Users, label: t("udhari") });
+      }
+      return workerItems;
     }
 
     // Owner role
