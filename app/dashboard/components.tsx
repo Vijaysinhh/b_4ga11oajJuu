@@ -702,11 +702,17 @@ export function Dashboard() {
 
     switch (selectedReportType) {
       case "today":
-        filteredSales = sales.filter((sale) => sale.date === selectedDateKey);
+        filteredSales = sales.filter((sale) => {
+          const saleDate = typeof sale?.date === "string" ? sale.date : "";
+          return saleDate === selectedDateKey;
+        });
         reportLabel = t("today");
         break;
       case "month":
-        filteredSales = sales.filter((sale) => sale.date.startsWith(thisMonth));
+        filteredSales = sales.filter((sale) => {
+          const saleDate = typeof sale?.date === "string" ? sale.date : "";
+          return saleDate.startsWith(thisMonth);
+        });
         reportLabel = t("this_month");
         break;
       case "sixMonths":
@@ -716,15 +722,24 @@ export function Dashboard() {
           1,
         );
         const sixMonthStart = dateKey(sixMonthsAgo);
-        filteredSales = sales.filter((sale) => sale.date >= sixMonthStart);
+        filteredSales = sales.filter((sale) => {
+          const saleDate = typeof sale?.date === "string" ? sale.date : "";
+          return saleDate >= sixMonthStart;
+        });
         reportLabel = t("six_months");
         break;
       case "year":
-        filteredSales = sales.filter((sale) => sale.date.startsWith(thisYear));
+        filteredSales = sales.filter((sale) => {
+          const saleDate = typeof sale?.date === "string" ? sale.date : "";
+          return saleDate.startsWith(thisYear);
+        });
         reportLabel = t("this_year");
         break;
       case "specificMonth":
-        filteredSales = sales.filter((sale) => sale.date.startsWith(selectedMonth));
+        filteredSales = sales.filter((sale) => {
+          const saleDate = typeof sale?.date === "string" ? sale.date : "";
+          return saleDate.startsWith(selectedMonth);
+        });
         const [year, monthNum] = selectedMonth.split("-");
         const monthDate = new Date(parseInt(year), parseInt(monthNum) - 1, 1);
         reportLabel = monthDate.toLocaleDateString(language === "mr" ? "mr-IN" : "en-IN", { 
@@ -733,7 +748,10 @@ export function Dashboard() {
         });
         break;
       default:
-        filteredSales = sales.filter((sale) => sale.date === selectedDateKey);
+        filteredSales = sales.filter((sale) => {
+          const saleDate = typeof sale?.date === "string" ? sale.date : "";
+          return saleDate === selectedDateKey;
+        });
         reportLabel = t("today");
     }
 
@@ -985,7 +1003,10 @@ export function Dashboard() {
   const availableMonths = useMemo(() => {
     const months = new Set<string>();
     for (const sale of sales) {
-      months.add(sale.date.slice(0, 7)); // Extract YYYY-MM part
+      const saleDate = typeof sale?.date === "string" ? sale.date : "";
+      if (saleDate.length >= 7) {
+        months.add(saleDate.slice(0, 7)); // Extract YYYY-MM part
+      }
     }
     return Array.from(months).sort().reverse(); // Newest first
   }, [sales]);
