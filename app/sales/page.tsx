@@ -114,12 +114,12 @@ function EditSaleDialog({
     totals.subtotal > 0 ? (totals.totalProfit / totals.subtotal) * 100 : 0;
 
   const handleItemAdded = (item: any) => {
-    setItems([...items, item]);
+    setItems((prev) => [...prev, item]);
     toast.success(`${item.itemName} ${t("success")}`);
   };
 
   const handleRemoveItem = (index: number) => {
-    setItems(items.filter((_, i) => i !== index));
+    setItems((prev) => prev.filter((_, i) => i !== index));
   };
 
   const handleEditItem = (index: number) => {
@@ -128,9 +128,11 @@ function EditSaleDialog({
 
   const handleItemEdited = (newItem: any) => {
     if (editingItemIndex === null) return;
-    const updatedItems = [...items];
-    updatedItems[editingItemIndex] = newItem;
-    setItems(updatedItems);
+    setItems((prev) => {
+      const updatedItems = [...prev];
+      updatedItems[editingItemIndex] = newItem;
+      return updatedItems;
+    });
     setEditingItemIndex(null);
   };
 
@@ -797,33 +799,34 @@ function SalesPageContent() {
         {canViewSales && (
           <>
             {/* Search & Filters section */}
-            <section className="space-y-3">
-              <div className="flex gap-2 flex-wrap">
-                <div className="relative flex-1 min-w-[200px]">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Search sales, customers, items..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-10"
-                  />
-                  {searchQuery && (
-                    <button
-                      onClick={() => setSearchQuery("")}
-                      className="absolute right-3 top-1/2 -translate-y-1/2"
-                    >
-                      <X className="w-4 h-4 text-muted-foreground" />
-                    </button>
-                  )}
+            <section className="rounded-2xl border border-border/70 bg-card/70 p-4 shadow-sm">
+              <div className="space-y-3">
+                <div className="flex flex-wrap gap-2">
+                  <div className="relative min-w-[200px] flex-1">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Search sales, customers, items..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="pl-10"
+                    />
+                    {searchQuery && (
+                      <button
+                        onClick={() => setSearchQuery("")}
+                        className="absolute right-3 top-1/2 -translate-y-1/2"
+                      >
+                        <X className="w-4 h-4 text-muted-foreground" />
+                      </button>
+                    )}
+                  </div>
                 </div>
-              </div>
 
-              <div className="flex gap-2 flex-wrap">
-                {/* Date Range */}
-                <Select
-                  value={dateRangePreset}
-                  onValueChange={(v: any) => setDateRangePreset(v)}
-                >
+                <div className="flex flex-wrap gap-2">
+                  {/* Date Range */}
+                  <Select
+                    value={dateRangePreset}
+                    onValueChange={(v: any) => setDateRangePreset(v)}
+                  >
                   <SelectTrigger className="w-full sm:w-[180px]">
                     <SelectValue placeholder="Date Range" />
                   </SelectTrigger>
@@ -898,13 +901,14 @@ function SalesPageContent() {
                   </SelectContent>
                 </Select>
               </div>
+              </div>
             </section>
 
             {/* Recent sales section for everyone */}
             <section className="space-y-3">
               {/* Filtered summary bar */}
               {filteredSales.length > 0 && (
-                <Card className="border-2 bg-gradient-to-r from-green-50 to-blue-50">
+                <Card className="border bg-gradient-to-r from-green-50 to-blue-50 shadow-sm">
                   <CardContent className="py-3">
                     <div className="grid grid-cols-4 gap-1 text-center text-xs">
                       <div>
@@ -938,7 +942,7 @@ function SalesPageContent() {
 
               {/* Empty state */}
               {filteredSales.length === 0 && (
-                <Card className="border-2 border-dashed">
+                <Card className="border border-dashed shadow-sm">
                   <CardContent className="py-10 text-center">
                     <ShoppingBag className="mx-auto mb-3 h-10 w-10 text-muted-foreground/50" />
                     <p className="font-medium text-muted-foreground">
@@ -967,11 +971,11 @@ function SalesPageContent() {
                     <Card
                       key={sale.id ?? index}
                       id={sale.id ? `sale-${sale.id}` : undefined}
-                      className={`overflow-hidden border-2 transition-all duration-200 ${
+                      className={`overflow-hidden border shadow-sm transition-all duration-200 ${
                         isUdhar ? "border-orange-200" : ""
                       } ${
                         focusedSaleId === sale.id
-                          ? "border-green-400 bg-green-50 ring-4 ring-green-300"
+                          ? "border-green-400 bg-green-50 ring-2 ring-green-200"
                           : ""
                       }`}
                     >

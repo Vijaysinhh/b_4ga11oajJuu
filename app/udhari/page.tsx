@@ -158,12 +158,12 @@ export default function UdhariPage() {
   }, [editingSale]);
 
   const handleItemAdded = (item: any) => {
-    setSaleEditItems([...saleEditItems, item]);
+    setSaleEditItems((prev) => [...prev, item]);
     toast.success(`${item.itemName} ${t('success')}`);
   };
 
   const handleRemoveItem = (index: number) => {
-    setSaleEditItems(saleEditItems.filter((_, i) => i !== index));
+    setSaleEditItems((prev) => prev.filter((_, i) => i !== index));
   };
 
   const handleEditItem = (index: number) => {
@@ -172,9 +172,11 @@ export default function UdhariPage() {
 
   const handleItemEdited = (newItem: any) => {
     if (editingItemIndex === null) return;
-    const updatedItems = [...saleEditItems];
-    updatedItems[editingItemIndex] = newItem;
-    setSaleEditItems(updatedItems);
+    setSaleEditItems((prev) => {
+      const updatedItems = [...prev];
+      updatedItems[editingItemIndex] = newItem;
+      return updatedItems;
+    });
     setEditingItemIndex(null);
   };
 
@@ -438,19 +440,21 @@ export default function UdhariPage() {
 
   return (
     <div className="mx-auto max-w-4xl space-y-6 pb-24 sm:pb-10">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">{t('udhari')}</h1>
-          <p className="mt-1 text-sm text-muted-foreground">{t('pending_amount')}</p>
+      <div className="rounded-2xl border border-border/70 bg-card/80 p-4 shadow-sm backdrop-blur sm:p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">{t('udhari')}</h1>
+            <p className="mt-1 text-sm text-muted-foreground">{t('pending_amount')}</p>
+          </div>
+          <Button onClick={openAddCustomerDialog} className="h-10 gap-2">
+            <Plus className="h-4 w-4" />
+            {t('customer')}
+          </Button>
         </div>
-        <Button onClick={openAddCustomerDialog} className="h-10 gap-2">
-          <Plus className="h-4 w-4" />
-          {t('customer')}
-        </Button>
       </div>
 
       <div className="grid grid-cols-2 gap-3">
-        <Card className="border-2">
+        <Card className="border shadow-sm">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium">{t('pending')}</CardTitle>
           </CardHeader>
@@ -458,7 +462,7 @@ export default function UdhariPage() {
             <div className="text-2xl font-bold">Rs. {formatMoney(totalPending)}</div>
           </CardContent>
         </Card>
-        <Card className="border-2">
+        <Card className="border shadow-sm">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium">{t('customers')}</CardTitle>
           </CardHeader>
@@ -469,7 +473,7 @@ export default function UdhariPage() {
       </div>
 
       {customers.length === 0 ? (
-        <Card className="border-dashed">
+        <Card className="border border-dashed shadow-sm">
           <CardContent className="py-10 text-center">
             <p className="text-sm text-muted-foreground">{t('no_udhari_customers')}</p>
             <Button onClick={openAddCustomerDialog} className="mt-4 gap-2">
@@ -517,9 +521,9 @@ export default function UdhariPage() {
               <Card
                 key={customer.id}
                 id={`udhari-customer-${customer.id}`}
-                className={`overflow-hidden border-2 transition-all ${
+                className={`overflow-hidden border shadow-sm transition-all ${
                   focusedCustomerId === customer.id
-                    ? 'border-orange-400 bg-orange-50 ring-4 ring-orange-300'
+                    ? 'border-orange-400 bg-orange-50 ring-2 ring-orange-200'
                     : ''
                 }`}
               >
@@ -699,7 +703,7 @@ export default function UdhariPage() {
       )}
 
       {recentEntries.length > 0 && (
-        <Card>
+        <Card className="border shadow-sm">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
               <ReceiptText className="h-4 w-4" />
@@ -708,7 +712,7 @@ export default function UdhariPage() {
           </CardHeader>
           <CardContent className="space-y-2">
             {recentEntries.map((entry) => (
-              <div key={entry.id} className="rounded-md bg-muted/50 px-3 py-2 text-sm">
+              <div key={entry.id} className="rounded-xl border bg-muted/40 px-3 py-2 text-sm shadow-sm">
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex-1">
                     <p className="font-semibold">{entry.customerName}</p>

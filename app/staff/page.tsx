@@ -1,8 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useStaff } from '@/hooks/use-staff';
-import { useAuth, UserPermissions, DEFAULT_WORKER_PERMISSIONS } from '@/providers/auth-provider';
+import {
+  useAuth,
+  UserPermissions,
+  DEFAULT_WORKER_PERMISSIONS,
+  normalizeUserPermissions,
+} from '@/providers/auth-provider';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -57,10 +62,11 @@ export default function StaffManagementPage() {
     const staffMember = staff.find(s => s.id === userId);
     if (!staffMember) return;
 
+    const normalizedPermissions = normalizeUserPermissions('worker', staffMember.permissions);
     const newPermissions = {
-      ...(staffMember.permissions || DEFAULT_WORKER_PERMISSIONS),
-      [key]: !currentValue
-    };
+      ...normalizedPermissions,
+      [key]: !currentValue,
+    } as UserPermissions;
     const success = await updateStaffPermissions(userId, newPermissions);
     if (!success) {
       toast({
@@ -79,18 +85,14 @@ export default function StaffManagementPage() {
   const handleSetAllPermissions = async (userId: number, enabled: boolean) => {
     const newPermissions: UserPermissions = enabled
       ? {
+          ...DEFAULT_WORKER_PERMISSIONS,
           canViewDashboard: true,
           canViewItems: true,
-          canManageItems: false,
           canViewSales: true,
           canCreateSales: true,
           canViewUdhari: true,
-          canManageUdhari: false,
-          canViewReports: false,
-          canViewSettings: false,
-          canManageStaff: false,
         }
-      : DEFAULT_WORKER_PERMISSIONS;
+      : { ...DEFAULT_WORKER_PERMISSIONS };
 
     const success = await updateStaffPermissions(userId, newPermissions);
     if (!success) {
@@ -148,6 +150,17 @@ export default function StaffManagementPage() {
       description: "Staff member updated!",
     });
   };
+
+  const permissionOptions = useMemo(
+    () => [
+      { key: 'canViewDashboard', label: 'View Dashboard', desc: 'Open the dashboard' },
+      { key: 'canViewItems', label: 'View Items', desc: 'See stock items' },
+      { key: 'canViewSales', label: 'View Sales', desc: 'See sales history' },
+      { key: 'canCreateSales', label: 'Create Sales', desc: 'Record new sales' },
+      { key: 'canViewUdhari', label: 'View Udhari', desc: 'See credit records' },
+    ] as const,
+    [],
+  );
 
   return (
     <PageContainer size="wide">
@@ -254,16 +267,10 @@ export default function StaffManagementPage() {
 
                 {/* Permissions Grid */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {[
-                    { key: 'canViewDashboard', label: 'View Dashboard', desc: 'Open the dashboard' },
-                    { key: 'canViewItems', label: 'View Items', desc: 'See stock items' },
-                    { key: 'canViewSales', label: 'View Sales', desc: 'See sales history' },
-                    { key: 'canCreateSales', label: 'Create Sales', desc: 'Record new sales' },
-                    { key: 'canViewUdhari', label: 'View Udhari', desc: 'See credit records' },
-                  ].map((perm) => {
-                    const currentValue = !!(staffMember.permissions || DEFAULT_WORKER_PERMISSIONS)[perm.key as keyof UserPermissions];
+                  {permissionOptions.map((perm) => {
+                    const currentValue = !!normalizeUserPermissions('worker', staffMember.permissions)[perm.key as keyof UserPermissions];
                     return (
-                      <div key={perm.key} className="flex items-center justify-between p-3 bg-secondary/30 rounded-lg">
+                      <div key={perm.key} className="flex items-center justify-between rounded-xl border border-border/60 bg-background/70 p-3 shadow-sm">
                         <div>
                           <p className="font-medium text-sm">{perm.label}</p>
                           <p className="text-xs text-muted-foreground">{perm.desc}</p>

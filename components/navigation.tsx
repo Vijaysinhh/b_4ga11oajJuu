@@ -150,6 +150,11 @@ export function Navigation() {
     user?.role === "owner" ||
     (user?.role === "worker" &&
       (permissions.canCreateSales || permissions.canViewSales));
+  const shouldShowFloatingAction =
+    canCreateSale &&
+    canOpenSales &&
+    pathname !== "/sales" &&
+    user?.role !== "worker";
   const canViewDashboard =
     user?.role === "owner" ||
     (user?.role === "worker" && permissions.canViewDashboard);
@@ -171,9 +176,17 @@ export function Navigation() {
     }
 
     if (user?.role === "worker") {
-      const workerItems = [] as Array<{ href: string; icon: typeof Home; label: string }>;
-      if (canViewSales) {
-        workerItems.push({ href: "/sales", icon: ShoppingCart, label: "Sales" });
+      const workerItems = [] as Array<{
+        href: string;
+        icon: typeof Home;
+        label: string;
+      }>;
+      if (canCreateSale || canViewSales) {
+        workerItems.push({
+          href: "/sales",
+          icon: ShoppingCart,
+          label: "Sales",
+        });
       }
       if (canViewDashboard) {
         workerItems.push({ href: "/dashboard", icon: Home, label: t("home") });
@@ -546,8 +559,8 @@ export function Navigation() {
         </nav>
       )}
 
-      {/* Floating Sale Button - Only for users who can create sales */}
-      {canCreateSale && canOpenSales && pathname !== "/sales" && (
+      {/* Floating Sale Button - Only for owner users who can create sales */}
+      {shouldShowFloatingAction && (
         <Link
           href="/sales"
           className="fixed bottom-20 right-4 z-50 inline-flex h-12 items-center gap-2 rounded-full bg-green-600 px-4 text-sm font-semibold text-white shadow-lg transition active:scale-95 hover:bg-green-700 sm:bottom-6 sm:right-6"

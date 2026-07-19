@@ -31,7 +31,7 @@ export function PageContainer({
   return (
     <div
       className={cn(
-        "mx-auto space-y-6 pb-24 pt-2 sm:pb-10 sm:pt-4",
+        "mx-auto space-y-6 pb-24 pt-3 sm:pb-10 sm:pt-4",
         sizeClasses[size],
         className,
       )}
@@ -53,10 +53,12 @@ export function PageHeader({
   actions?: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-4 rounded-2xl border border-border/70 bg-card/70 p-4 shadow-sm backdrop-blur sm:flex-row sm:items-start sm:justify-between sm:p-5">
+    <div className="flex flex-col gap-4 rounded-2xl border border-border/70 bg-card/80 p-4 shadow-sm backdrop-blur sm:flex-row sm:items-start sm:justify-between sm:p-5">
       <div className="min-w-0">
         <div className="flex items-center gap-2">
-          <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">{title}</h1>
+          <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+            {title}
+          </h1>
           {help}
         </div>
         {description ? (
