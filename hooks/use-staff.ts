@@ -182,11 +182,13 @@ export function useStaff() {
     async (userId: number, permissions: UserPermissions) => {
       if (!currentShopId || user?.role !== "owner") return;
 
-      const previousPermissions = staff.find(
-        (member) => member.id === userId,
-      )?.permissions;
+      let previousPermissions: UserPermissions | undefined;
 
       try {
+        previousPermissions = staff.find(
+          (member) => member.id === userId,
+        )?.permissions;
+
         const nextPermissions = normalizeUserPermissions("worker", permissions);
         const now = new Date().toISOString();
 

@@ -10,6 +10,7 @@ import { Switch } from '@/components/ui/switch';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Plus, Trash2, Users, Shield, Edit2 } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
+import { PageContainer, PageHeader } from '@/components/page-shell';
 
 export default function StaffManagementPage() {
   const { user } = useAuth();
@@ -24,11 +25,12 @@ export default function StaffManagementPage() {
 
   if (user?.role !== 'owner') {
     return (
-      <div className="container mx-auto px-4 py-8">
-        <div className="text-center">
-          <p className="text-lg text-muted-foreground">Only owners can access this page.</p>
-        </div>
-      </div>
+      <PageContainer size="wide">
+        <PageHeader
+          title="Access Denied"
+          description="Only owners can access this page."
+        />
+      </PageContainer>
     );
   }
 
@@ -148,14 +150,12 @@ export default function StaffManagementPage() {
   };
 
   return (
-    <div className="container mx-auto px-4 py-8 max-w-6xl">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold flex items-center gap-2">
-          <Users className="w-8 h-8 text-primary" />
-          Staff Management
-        </h1>
-        <p className="text-muted-foreground mt-1">Manage your team and their permissions</p>
-      </div>
+    <PageContainer size="wide">
+      <PageHeader
+        title="Staff Management"
+        description="Manage your team and their permissions"
+        help={<Users className="h-5 w-5 text-primary" />}
+      />
 
       {/* Add New Staff */}
       <Card className="mb-8">
@@ -317,6 +317,6 @@ export default function StaffManagementPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </PageContainer>
   );
 }

@@ -1122,9 +1122,9 @@ export function Dashboard() {
   // --- Loading state ---
   if (!isClientReady || authLoading) {
     return (
-      <div className="space-y-6 pb-24 sm:pb-10">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">{t("home")}</h1>
+      <div className="mx-auto max-w-5xl space-y-6 pb-24 pt-2 sm:pb-10 sm:pt-4">
+        <div className="rounded-2xl border border-border/70 bg-card/70 p-4 shadow-sm backdrop-blur sm:p-5">
+          <h1 className="text-2xl font-semibold tracking-tight">{t("home")}</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             {t("loading_shop_data")}
           </p>
@@ -1141,10 +1141,10 @@ export function Dashboard() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6 pb-24 sm:pb-10">
+    <div className="mx-auto max-w-5xl space-y-6 pb-24 pt-2 sm:pb-10 sm:pt-4">
       {/* ─── Header ─── */}
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">{t("home")}</h1>
+      <div className="rounded-2xl border border-border/70 bg-card/70 p-4 shadow-sm backdrop-blur sm:p-5">
+        <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">{t("home")}</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           {currentShop?.shopName || "Shop"}
         </p>
@@ -1152,7 +1152,7 @@ export function Dashboard() {
 
       {/* ─── Top 4 Summary Cards ─── */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Card className="border-2 border-green-200 bg-green-50/70 dark:border-green-900/50 dark:bg-green-950/20">
+        <Card className="border border-green-200 bg-green-50/70 shadow-sm dark:border-green-900/50 dark:bg-green-950/20">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
               🟢 {selectedDayLabel} {t("profit_amount")}
@@ -1205,7 +1205,7 @@ export function Dashboard() {
         </Card>
 
         <Card
-          className="cursor-pointer border-2 border-orange-200 bg-orange-50/70 transition hover:border-orange-400 dark:border-orange-900/50 dark:bg-orange-950/20"
+          className="cursor-pointer border border-orange-200 bg-orange-50/70 shadow-sm transition hover:border-orange-400 dark:border-orange-900/50 dark:bg-orange-950/20"
           onClick={() =>
             router.push(
               itemFocusHref(
@@ -1243,7 +1243,7 @@ export function Dashboard() {
         </Card>
 
         <Card
-          className="cursor-pointer border-2 transition hover:border-orange-400"
+          className="cursor-pointer border shadow-sm transition hover:border-orange-400"
           onClick={() => router.push(customerFocusHref(urgentUdhari?.customer.id))}
           onKeyDown={(event) => {
             if (event.key === "Enter" || event.key === " ") {
@@ -1277,7 +1277,7 @@ export function Dashboard() {
       </div>
 
       {weeklySummary.show && (
-        <Card className="border-2 border-blue-200 bg-blue-50/70 dark:border-blue-900/50 dark:bg-blue-950/20">
+        <Card className="border border-blue-200 bg-blue-50/70 shadow-sm dark:border-blue-900/50 dark:bg-blue-950/20">
           <CardHeader className="pb-2">
             <CardTitle className="text-base">
               {language === "mr" ? "या आठवड्यात" : "This week"}
@@ -1371,7 +1371,7 @@ export function Dashboard() {
 
         {/* Day summary bar */}
         {daySales.length > 0 && (
-          <Card className="border-2 bg-gradient-to-r from-green-50 to-blue-50 dark:from-green-950/30 dark:to-blue-950/30">
+          <Card className="border bg-gradient-to-r from-green-50 to-blue-50 shadow-sm dark:from-green-950/30 dark:to-blue-950/30">
             <CardContent className="py-3">
               <div className="grid grid-cols-4 gap-1 text-center text-xs">
                 <div>
@@ -1402,7 +1402,7 @@ export function Dashboard() {
         )}
 
         {dayTopProduct && (
-          <Card className="border-2 border-amber-200 bg-amber-50/80 dark:border-amber-900/50 dark:bg-amber-950/20">
+          <Card className="border border-amber-200 bg-amber-50/80 shadow-sm dark:border-amber-900/50 dark:bg-amber-950/20">
             <CardContent className="flex items-center justify-between gap-3 py-3">
               <div className="min-w-0">
                 <p className="text-xs font-semibold text-amber-800 dark:text-amber-200">
@@ -1429,7 +1429,7 @@ export function Dashboard() {
 
         {/* Empty state */}
         {daySales.length === 0 && (
-          <Card className="border-2 border-dashed">
+          <Card className="border border-dashed shadow-sm">
             <CardContent className="py-10 text-center">
               <ShoppingBag className="mx-auto mb-3 h-10 w-10 text-muted-foreground/50" />
               <p className="font-medium text-muted-foreground">
@@ -1452,7 +1452,7 @@ export function Dashboard() {
             return (
               <Card
                 key={sale.id ?? index}
-                className={`overflow-hidden border-2 transition-all duration-200 ${
+                className={`overflow-hidden border shadow-sm transition-all duration-200 ${
                   isUdhar ? "border-orange-200 dark:border-orange-800/50" : ""
                 }`}
               >

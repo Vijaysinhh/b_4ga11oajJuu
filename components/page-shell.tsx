@@ -31,7 +31,7 @@ export function PageContainer({
   return (
     <div
       className={cn(
-        "mx-auto space-y-6 pb-24 sm:pb-10",
+        "mx-auto space-y-6 pb-24 pt-2 sm:pb-10 sm:pt-4",
         sizeClasses[size],
         className,
       )}
@@ -53,10 +53,10 @@ export function PageHeader({
   actions?: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+    <div className="flex flex-col gap-4 rounded-2xl border border-border/70 bg-card/70 p-4 shadow-sm backdrop-blur sm:flex-row sm:items-start sm:justify-between sm:p-5">
       <div className="min-w-0">
         <div className="flex items-center gap-2">
-          <h1 className="text-3xl font-bold tracking-tight">{title}</h1>
+          <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">{title}</h1>
           {help}
         </div>
         {description ? (
@@ -77,7 +77,10 @@ export function LanguageToggle({ className }: { className?: string }) {
       onValueChange={(value) => setLanguage(value as "en" | "mr")}
     >
       <SelectTrigger
-        className={cn("h-9 w-[7.5rem] gap-1 text-xs sm:text-sm", className)}
+        className={cn(
+          "h-9 w-[7.5rem] gap-1 rounded-full border-border/70 bg-background/80 text-xs shadow-sm sm:text-sm",
+          className,
+        )}
         aria-label={t("language")}
       >
         <Languages className="h-3.5 w-3.5 shrink-0 opacity-70" />

@@ -201,10 +201,10 @@ export function Navigation() {
   return (
     <>
       {/* Header */}
-      <header className="fixed top-0 left-0 right-0 z-40 bg-background border-b border-border px-3 sm:px-4 py-3 h-16 sm:h-20 flex items-center justify-between">
+      <header className="fixed top-0 left-0 right-0 z-40 border-b border-border/70 bg-background/95 px-3 py-3 shadow-[0_1px_0_rgba(15,23,42,0.03)] backdrop-blur sm:px-4 sm:py-3 h-16 sm:h-20 flex items-center justify-between">
         <div className="flex items-center gap-2 sm:gap-3">
           <div className="min-w-0">
-            <h1 className="text-lg sm:text-2xl font-bold tracking-tight flex items-center gap-2">
+            <h1 className="flex items-center gap-2 text-lg font-semibold tracking-tight sm:text-2xl">
               {user?.role === "super_admin" && (
                 <Shield className="h-5 w-5 text-purple-600" />
               )}
@@ -379,7 +379,7 @@ export function Navigation() {
               <Button
                 variant="ghost"
                 size="sm"
-                className="rounded-full h-10 w-10 p-0"
+                className="h-10 w-10 rounded-full border border-border/60 bg-background/80 p-0 shadow-sm"
               >
                 <Avatar className="h-9 w-9">
                   <AvatarImage src="" alt={user?.username} />
@@ -445,7 +445,7 @@ export function Navigation() {
         <div className="hidden sm:flex fixed left-0 top-20 h-[calc(100vh-5rem)] z-30 flex-col">
           <nav
             className={cn(
-              "bg-background border-r border-border overflow-y-auto transition-all duration-300 flex flex-col p-3 gap-2",
+              "flex flex-col gap-2 overflow-y-auto border-r border-border/70 bg-background/95 p-3 transition-all duration-300",
               sidebarCollapsed ? "w-20" : "w-56",
             )}
           >
@@ -454,7 +454,7 @@ export function Navigation() {
                 href="/sales"
                 title={sidebarCollapsed ? t("new_sale") : undefined}
                 className={cn(
-                  "mb-2 flex items-center gap-3 rounded-lg bg-green-600 px-3 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-green-700",
+                  "mb-2 flex items-center gap-3 rounded-xl bg-green-600 px-3 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-green-700",
                   sidebarCollapsed && "justify-center px-0",
                 )}
               >
@@ -475,9 +475,9 @@ export function Navigation() {
                   href={item.href}
                   title={sidebarCollapsed ? item.label : undefined}
                   className={cn(
-                    "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors font-medium text-sm whitespace-nowrap",
+                    "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium whitespace-nowrap transition-all",
                     isActive
-                      ? "bg-primary text-primary-foreground shadow-md"
+                      ? "bg-primary text-primary-foreground shadow-sm"
                       : "text-muted-foreground hover:bg-accent hover:text-foreground",
                   )}
                 >
@@ -495,7 +495,7 @@ export function Navigation() {
               onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
               variant="ghost"
               size="sm"
-              className="w-full rounded-none border-t border-border h-12"
+              className="h-12 w-full rounded-none border-t border-border/70 bg-background/80"
               title={sidebarCollapsed ? t("expand_menu") : t("collapse_menu")}
             >
               {sidebarCollapsed ? (
@@ -510,7 +510,7 @@ export function Navigation() {
 
       {/* Bottom Navigation - Mobile Only (Quick Access) */}
       {(user?.role === "owner" || user?.role === "worker") && (
-        <nav className="sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-background border-t border-border h-16 flex items-center shadow-lg">
+        <nav className="sm:hidden fixed bottom-0 left-0 right-0 z-40 flex h-16 items-center border-t border-border/70 bg-background/95 shadow-[0_-8px_30px_rgba(15,23,42,0.06)] backdrop-blur">
           <div className="flex items-center justify-around w-full h-full">
             {navItems.map((item) => {
               const Icon = item.icon;
@@ -521,7 +521,7 @@ export function Navigation() {
                   key={item.href}
                   href={item.href}
                   className={cn(
-                    "flex-1 h-full flex flex-col items-center justify-center gap-0.5 transition-colors",
+                    "flex h-full flex-1 flex-col items-center justify-center gap-0.5 rounded-t-xl transition-colors",
                     isActive ? "bg-primary/10" : "active:opacity-70",
                   )}
                 >
@@ -550,7 +550,7 @@ export function Navigation() {
       {canCreateSale && canOpenSales && pathname !== "/sales" && (
         <Link
           href="/sales"
-          className="fixed bottom-20 right-4 z-50 inline-flex h-12 items-center gap-2 rounded-full bg-green-600 px-4 text-sm font-bold text-white shadow-lg transition active:scale-95 hover:bg-green-700 sm:bottom-6 sm:right-6"
+          className="fixed bottom-20 right-4 z-50 inline-flex h-12 items-center gap-2 rounded-full bg-green-600 px-4 text-sm font-semibold text-white shadow-lg transition active:scale-95 hover:bg-green-700 sm:bottom-6 sm:right-6"
         >
           <Plus className="h-5 w-5" />
           {t("sale")}
