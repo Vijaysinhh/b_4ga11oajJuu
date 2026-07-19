@@ -79,13 +79,13 @@ export default function StaffManagementPage() {
       ? {
           canViewDashboard: true,
           canViewItems: true,
-          canManageItems: true,
+          canManageItems: false,
           canViewSales: true,
           canCreateSales: true,
           canViewUdhari: true,
-          canManageUdhari: true,
-          canViewReports: true,
-          canViewSettings: true,
+          canManageUdhari: false,
+          canViewReports: false,
+          canViewSettings: false,
           canManageStaff: false,
         }
       : DEFAULT_WORKER_PERMISSIONS;
@@ -255,33 +255,29 @@ export default function StaffManagementPage() {
                 {/* Permissions Grid */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   {[
-                    { key: 'canViewDashboard', label: 'View Dashboard', desc: 'Access dashboard stats' },
-                    { key: 'canViewItems', label: 'View Items', desc: 'See inventory items' },
-                    { key: 'canManageItems', label: 'Manage Items', desc: 'Add, edit, delete items' },
+                    { key: 'canViewDashboard', label: 'View Dashboard', desc: 'Open the dashboard' },
+                    { key: 'canViewItems', label: 'View Items', desc: 'See stock items' },
                     { key: 'canViewSales', label: 'View Sales', desc: 'See sales history' },
                     { key: 'canCreateSales', label: 'Create Sales', desc: 'Record new sales' },
                     { key: 'canViewUdhari', label: 'View Udhari', desc: 'See credit records' },
-                    { key: 'canManageUdhari', label: 'Manage Udhari', desc: 'Add, edit credit entries' },
-                    { key: 'canViewReports', label: 'View Reports', desc: 'Access reports' },
-                    { key: 'canViewSettings', label: 'View Settings', desc: 'Access settings' },
                   ].map((perm) => {
                     const currentValue = !!(staffMember.permissions || DEFAULT_WORKER_PERMISSIONS)[perm.key as keyof UserPermissions];
                     return (
-                    <div key={perm.key} className="flex items-center justify-between p-3 bg-secondary/30 rounded-lg">
-                      <div>
-                        <p className="font-medium text-sm">{perm.label}</p>
-                        <p className="text-xs text-muted-foreground">{perm.desc}</p>
+                      <div key={perm.key} className="flex items-center justify-between p-3 bg-secondary/30 rounded-lg">
+                        <div>
+                          <p className="font-medium text-sm">{perm.label}</p>
+                          <p className="text-xs text-muted-foreground">{perm.desc}</p>
+                        </div>
+                        <Switch
+                          checked={currentValue}
+                          onCheckedChange={() => handleTogglePermission(
+                            staffMember.id,
+                            perm.key as keyof UserPermissions,
+                            currentValue
+                          )}
+                        />
                       </div>
-                      <Switch
-                        checked={currentValue}
-                        onCheckedChange={() => handleTogglePermission(
-                          staffMember.id, 
-                          perm.key as keyof UserPermissions, 
-                          currentValue // Pass existing value to toggle!
-                        )}
-                      />
-                    </div>
-                  );
+                    );
                   })}
                 </div>
               </CardContent>
