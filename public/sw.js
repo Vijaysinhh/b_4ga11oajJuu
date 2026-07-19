@@ -1,22 +1,22 @@
 // Service Worker for Dukan PWA
-const CACHE_NAME = "dukan-v3";
+const CACHE_NAME = "dukan-v4";
 const IS_DEVELOPMENT =
   new URL(self.location.href).searchParams.get("dev") === "1";
 const urlsToCache = [
+  "/",
+  "/offline",
   "/manifest.json",
   "/icon.svg",
   "/icon-192x192.png",
   "/icon-512x512.png",
   "/apple-icon.png",
+  "/favicon.ico",
 ];
+const OFFLINE_FALLBACK_URL = "/offline";
 
 // Install event
 self.addEventListener("install", (event) => {
   console.log("[ServiceWorker] Installing...");
-  if (IS_DEVELOPMENT) {
-    self.skipWaiting();
-    return;
-  }
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       console.log("[ServiceWorker] Cache opened, adding URLs");
@@ -60,22 +60,29 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  const request = event.request;
+  const isNavigationRequest = request.mode === "navigate";
+
   event.respondWith(
-    fetch(event.request)
+    fetch(request)
       .then((response) => {
         if (response.ok && response.type === "basic") {
           const responseToCache = response.clone();
           caches.open(CACHE_NAME).then((cache) => {
-            cache.put(event.request, responseToCache);
+            cache.put(request, responseToCache);
           });
         }
 
         return response;
       })
-      .catch(() => {
-        return caches.match(event.request).then((response) => {
-          return response || new Response("Offline", { status: 503 });
-        });
+      .catch(async () => {
+        const cached = await caches.match(request);
+        if (cached) return cached;
+        if (isNavigationRequest) {
+          const offlineRoute = await caches.match(OFFLINE_FALLBACK_URL);
+          return offlineRoute || new Response("Offline", { status: 503 });
+        }
+        return new Response("Offline", { status: 503 });
       }),
   );
 });
