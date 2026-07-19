@@ -228,24 +228,22 @@ export function SalesTransaction() {
       window.dispatchEvent(new Event("refresh-dukan-data"));
     } catch (error) {
       console.error("Error completing sale:", error);
-      if (createdSaleId !== null && createdSaleId !== undefined) {
-        const persistedSaleId = Number(createdSaleId);
-        if (persistedSaleId > 0) {
-          try {
-            await deleteSale(persistedSaleId);
-            toast.error(
-              language === "mr"
-                ? "विक्री पूर्ण होऊ शकली नाही, त्यामुळे अर्धवट नोंद काढून टाकण्यात आली."
-                : "The sale could not be completed cleanly, so the partial entry was rolled back.",
-            );
-          } catch (rollbackError) {
-            console.error("Error rolling back sale:", rollbackError);
-            toast.error(
-              language === "mr"
-                ? "विक्री पूर्ण होऊ शकली नाही आणि रोलबॅकही अपयशी ठरला."
-                : "The sale could not be completed and rollback may be incomplete.",
-            );
-          }
+      const persistedSaleId = Number(createdSaleId ?? 0);
+      if (persistedSaleId > 0) {
+        try {
+          await deleteSale(persistedSaleId);
+          toast.error(
+            language === "mr"
+              ? "विक्री पूर्ण होऊ शकली नाही, त्यामुळे अर्धवट नोंद काढून टाकण्यात आली."
+              : "The sale could not be completed cleanly, so the partial entry was rolled back.",
+          );
+        } catch (rollbackError) {
+          console.error("Error rolling back sale:", rollbackError);
+          toast.error(
+            language === "mr"
+              ? "विक्री पूर्ण होऊ शकली नाही आणि रोलबॅकही अपयशी ठरला."
+              : "The sale could not be completed and rollback may be incomplete.",
+          );
         }
       } else {
         toast.error(t("error"));
