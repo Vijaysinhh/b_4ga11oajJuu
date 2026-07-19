@@ -106,8 +106,6 @@ export function getUserLandingPath(
   if (permissions.canCreateSales || permissions.canViewSales) return "/sales";
   if (permissions.canViewItems) return "/items";
   if (permissions.canViewUdhari) return "/udhari";
-  if (permissions.canViewReports) return "/reports";
-  if (permissions.canViewSettings) return "/settings";
   return "/sales";
 }
 
@@ -136,8 +134,8 @@ export function canUserAccessPath(
     return permissions.canCreateSales || permissions.canViewSales;
   if (pathname.startsWith("/items")) return permissions.canViewItems;
   if (pathname.startsWith("/udhari")) return permissions.canViewUdhari;
-  if (pathname.startsWith("/reports")) return permissions.canViewReports;
-  if (pathname.startsWith("/settings")) return permissions.canViewSettings;
+  if (pathname.startsWith("/reports")) return false;
+  if (pathname.startsWith("/settings")) return false;
   if (pathname.startsWith("/staff") || pathname.startsWith("/super-admin"))
     return false;
   return true;

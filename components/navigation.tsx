@@ -26,7 +26,6 @@ import {
   Search,
   X,
   User,
-  BarChart3,
   Bell,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -159,27 +158,11 @@ export function Navigation() {
     }
 
     if (user?.role === "worker") {
-      const items: any[] = [];
-      if (permissions.canViewDashboard)
-        items.push({ href: "/dashboard", icon: Home, label: t("home") });
-      if (permissions.canCreateSales || permissions.canViewSales) {
-        items.push({
-          href: "/sales",
-          icon: ShoppingCart,
-          label: permissions.canCreateSales ? "Sell" : "Sales",
-        });
-      }
-      if (permissions.canViewItems)
-        items.push({ href: "/items", icon: Package, label: t("stock") });
-      if (permissions.canViewUdhari)
-        items.push({ href: "/udhari", icon: Users, label: t("udhari") });
-      if (permissions.canViewReports)
-        items.push({ href: "/reports", icon: BarChart3, label: t("reports") });
-      if (permissions.canViewSettings)
-        items.push({ href: "/settings", icon: Settings, label: t("settings") });
-      return items.length > 0
-        ? items
-        : [{ href: "/sales", icon: ShoppingCart, label: "Sell" }];
+      return [
+        { href: "/dashboard", icon: Home, label: t("home") },
+        { href: "/items", icon: Package, label: t("stock") },
+        { href: "/udhari", icon: Users, label: t("udhari") },
+      ];
     }
 
     // Owner role
