@@ -84,6 +84,185 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     textAlign: "center",
   },
+  summaryBand: {
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 10,
+  },
+  summaryMain: {
+    width: "66%",
+    borderRadius: 10,
+    backgroundColor: "#0b245c",
+    padding: 13,
+    minHeight: 116,
+  },
+  summarySide: {
+    width: "32%",
+    borderRadius: 10,
+    backgroundColor: "#ffffff",
+    borderWidth: 1,
+    borderColor: "#dbeafe",
+    padding: 12,
+    minHeight: 116,
+  },
+  heroKicker: {
+    color: "#bfdbfe",
+    fontSize: 8,
+    fontWeight: "bold",
+    textTransform: "uppercase",
+  },
+  heroTitle: {
+    color: "#ffffff",
+    fontSize: 15,
+    fontWeight: "bold",
+    marginTop: 5,
+  },
+  heroValue: {
+    color: "#ffffff",
+    fontSize: 32,
+    fontWeight: "bold",
+    marginTop: 7,
+  },
+  heroSub: {
+    color: "#dbeafe",
+    fontSize: 8.2,
+    lineHeight: 1.35,
+    marginTop: 5,
+  },
+  heroStatRow: {
+    flexDirection: "row",
+    gap: 7,
+    marginTop: 12,
+  },
+  heroStat: {
+    flex: 1,
+    borderRadius: 7,
+    backgroundColor: "#ffffff",
+    paddingVertical: 7,
+    paddingHorizontal: 8,
+  },
+  heroStatLabel: {
+    color: "#64748b",
+    fontSize: 7,
+  },
+  heroStatValue: {
+    color: "#0b245c",
+    fontSize: 12,
+    fontWeight: "bold",
+    marginTop: 3,
+  },
+  scoreLabel: {
+    color: "#64748b",
+    fontSize: 7.5,
+    fontWeight: "bold",
+    textTransform: "uppercase",
+  },
+  scoreValue: {
+    color: "#0b245c",
+    fontSize: 30,
+    fontWeight: "bold",
+    marginTop: 4,
+  },
+  scoreText: {
+    color: "#111827",
+    fontSize: 10,
+    fontWeight: "bold",
+    marginTop: 2,
+  },
+  scoreTrack: {
+    height: 7,
+    borderRadius: 999,
+    backgroundColor: "#e2e8f0",
+    marginTop: 9,
+  },
+  scoreFill: {
+    height: 7,
+    borderRadius: 999,
+  },
+  summaryGrid: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  summaryCol: {
+    width: "49%",
+    gap: 8,
+  },
+  snapshotGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 7,
+  },
+  snapshotCard: {
+    width: "48%",
+    borderRadius: 8,
+    borderWidth: 1,
+    padding: 9,
+    minHeight: 67,
+  },
+  snapshotLabel: {
+    fontSize: 7.2,
+    fontWeight: "bold",
+    marginBottom: 6,
+  },
+  snapshotValue: {
+    color: "#111827",
+    fontSize: 12.2,
+    fontWeight: "bold",
+  },
+  snapshotNote: {
+    color: "#64748b",
+    fontSize: 7.1,
+    marginTop: 5,
+    lineHeight: 1.25,
+  },
+  trendRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    minHeight: 22,
+    borderBottomWidth: 1,
+    borderBottomColor: "#eef2f7",
+  },
+  trendDate: {
+    width: "21%",
+    color: "#475569",
+    fontSize: 7.2,
+  },
+  trendTrack: {
+    width: "43%",
+    height: 7,
+    borderRadius: 999,
+    backgroundColor: "#e2e8f0",
+    marginRight: 7,
+  },
+  trendFill: {
+    height: 7,
+    borderRadius: 999,
+  },
+  trendValue: {
+    width: "36%",
+    color: "#111827",
+    fontSize: 7.1,
+    textAlign: "right",
+  },
+  decisionBox: {
+    borderRadius: 8,
+    backgroundColor: "#fffbeb",
+    borderWidth: 1,
+    borderColor: "#fde68a",
+    padding: 10,
+    marginTop: 8,
+  },
+  decisionTitle: {
+    color: "#78350f",
+    fontSize: 9,
+    fontWeight: "bold",
+    marginBottom: 4,
+  },
+  decisionText: {
+    color: "#78350f",
+    fontSize: 8,
+    lineHeight: 1.35,
+  },
   grid: {
     flexDirection: "row",
     gap: 10,
@@ -460,6 +639,68 @@ function Metric({
   );
 }
 
+function SnapshotCard({
+  label,
+  value,
+  note,
+  tone = "blue",
+}: {
+  label: string;
+  value: string;
+  note: string;
+  tone?: Tone;
+}) {
+  return (
+    <View
+      style={[
+        styles.snapshotCard,
+        {
+          backgroundColor: palette[tone].bg,
+          borderColor: palette[tone].border,
+        },
+      ]}
+    >
+      <Text style={[styles.snapshotLabel, { color: palette[tone].ink }]}>
+        {label}
+      </Text>
+      <Text style={styles.snapshotValue}>{value}</Text>
+      <Text style={styles.snapshotNote}>{note}</Text>
+    </View>
+  );
+}
+
+function TrendRow({
+  label,
+  revenue,
+  profit,
+  maxRevenue,
+}: {
+  label: string;
+  revenue: number;
+  profit: number;
+  maxRevenue: number;
+}) {
+  return (
+    <View style={styles.trendRow}>
+      <Text style={styles.trendDate}>{label}</Text>
+      <View style={styles.trendTrack}>
+        <View
+          style={[
+            styles.trendFill,
+            {
+              width: `${clamp((revenue / Math.max(maxRevenue, 1)) * 100)}%`,
+              backgroundColor: profit >= 0 ? palette.green.ink : palette.red.ink,
+            },
+          ]}
+        />
+      </View>
+      <Text style={styles.trendValue}>
+        {money(revenue)} / {money(profit)}
+      </Text>
+    </View>
+  );
+}
+
 function Table({
   headers,
   widths,
@@ -652,15 +893,219 @@ export const PremiumPdfReport = ({ data }: { data: PremiumReportData }) => {
           "Check low-margin item prices against latest purchase cost.",
           "Use worker-wise sales to coach billing and margin habits.",
         ];
+  const stockRiskCount =
+    stockSummary.out + stockSummary.low + stockSummary.expired + stockSummary.expiring;
+  const creditPressure =
+    data.revenue > 0
+      ? (data.totalPendingUdhari / data.revenue) * 100
+      : data.totalPendingUdhari > 0
+        ? 100
+        : 0;
+  const reportScore = Math.round(
+    clamp(
+      55 +
+        clamp(data.margin, -20, 35) * 0.7 +
+        (data.profit > 0 ? 8 : data.profit < 0 ? -18 : 0) +
+        clamp(data.comparison?.revenueChange ?? 0, -40, 40) * 0.25 -
+        Math.min(stockRiskCount * 2, 16) -
+        (creditPressure > 70 ? 8 : creditPressure > 35 ? 4 : 0),
+    ),
+  );
+  const scoreTone: Tone =
+    reportScore >= 75 ? "green" : reportScore >= 55 ? "amber" : "red";
+  const scoreLabel =
+    reportScore >= 80
+      ? "Strong period"
+      : reportScore >= 65
+        ? "Healthy period"
+        : reportScore >= 50
+          ? "Needs attention"
+          : "At risk";
+  const urgentStock = stockItems.find((item) => item.status !== "good");
+  const biggestRisk = lossItems[0]
+    ? `${text(lossItems[0].name, "Item", 22)} sold at ${money(lossItems[0].profit)} profit.`
+    : urgentStock
+      ? `${text(urgentStock.name, "Item", 22)} stock is ${statusLabel(urgentStock.status).toLowerCase()}.`
+      : data.totalPendingUdhari > 0
+        ? `${money(data.totalPendingUdhari)} total udhari is pending.`
+        : "No major risk found in this report.";
+  const bestOpportunity = bestProfitItem
+    ? `${text(bestProfitItem.name, "Item", 22)} gave ${money(bestProfitItem.profit)} profit.`
+    : bestBrand
+      ? `${text(bestBrand.topBrand, "Brand", 18)} is leading demand.`
+      : "Add more sales data to reveal the strongest opportunity.";
+  const trendRows = dailyData.slice(-7);
+  const maxTrendRevenue = Math.max(...trendRows.map((entry) => entry.revenue), 1);
+  const stockContinuationCount = Math.max(stockPages.length - 1, 0);
+  const insightStartIndex = 10 + stockContinuationCount;
+  const finalPageNumber = 4 + stockContinuationCount;
 
   return (
     <Document>
       <Page size="A4" orientation="landscape" style={styles.page}>
         <ReportHeader data={data} generatedAt={generatedAt} />
 
+        <View style={styles.summaryBand}>
+          <View style={styles.summaryMain}>
+            <Text style={styles.heroKicker}>Sales data first</Text>
+            <Text style={styles.heroTitle}>
+              {text(data.label, "Selected period", 32)} shop performance
+            </Text>
+            <Text style={styles.heroValue}>{money(data.revenue)}</Text>
+            <Text style={styles.heroSub}>
+              {data.comparison
+                ? `${signedPct(data.comparison.revenueChange)} sales and ${signedPct(data.comparison.profitChange)} profit vs ${comparisonLabel}.`
+                : `${formatNumber(data.transactions)} bills with ${formatNumber(data.totalItemsSold)} items sold.`}
+            </Text>
+            <View style={styles.heroStatRow}>
+              <View style={styles.heroStat}>
+                <Text style={styles.heroStatLabel}>Profit</Text>
+                <Text style={styles.heroStatValue}>{money(data.profit)}</Text>
+              </View>
+              <View style={styles.heroStat}>
+                <Text style={styles.heroStatLabel}>Margin</Text>
+                <Text style={styles.heroStatValue}>{pct(data.margin)}</Text>
+              </View>
+              <View style={styles.heroStat}>
+                <Text style={styles.heroStatLabel}>Stock value</Text>
+                <Text style={styles.heroStatValue}>{money(data.totalStockValue)}</Text>
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.summarySide}>
+            <Text style={styles.scoreLabel}>Dukan health score</Text>
+            <Text style={styles.scoreValue}>{reportScore}/100</Text>
+            <Text style={[styles.scoreText, { color: palette[scoreTone].ink }]}>
+              {scoreLabel}
+            </Text>
+            <View style={styles.scoreTrack}>
+              <View
+                style={[
+                  styles.scoreFill,
+                  {
+                    width: `${reportScore}%`,
+                    backgroundColor: palette[scoreTone].ink,
+                  },
+                ]}
+              />
+            </View>
+            <Text style={[styles.heroSub, { color: "#64748b" }]}>
+              {stockRiskCount} stock alerts, {lossItems.length} loss item(s),
+              {` ${pct(creditPressure)}`} udhari pressure.
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.summaryGrid}>
+          <View style={styles.summaryCol}>
+            <Section index={1} title="Owner Snapshot" tone="navy">
+              <View style={styles.snapshotGrid}>
+                <SnapshotCard
+                  label="Best seller"
+                  value={topItems[0] ? text(topItems[0].name, "Item", 22) : "No sale"}
+                  note={topItems[0] ? `${money(topItems[0].revenue)} sales` : "No item sold in period"}
+                  tone="green"
+                />
+                <SnapshotCard
+                  label="Profit leader"
+                  value={bestProfitItem ? text(bestProfitItem.name, "Item", 22) : "No item"}
+                  note={bestProfitItem ? `${money(bestProfitItem.profit)} profit` : "Profit appears after sales"}
+                  tone="blue"
+                />
+                <SnapshotCard
+                  label="Worker leader"
+                  value={bestStaff ? text(bestStaff.staffName, "Worker", 22) : "No worker"}
+                  note={bestStaff ? `${money(bestStaff.revenue)} sales` : "Link sales to staff users"}
+                  tone="purple"
+                />
+                <SnapshotCard
+                  label="Stock focus"
+                  value={urgentStock ? text(urgentStock.name, "Item", 22) : "Stock OK"}
+                  note={urgentStock ? `${statusLabel(urgentStock.status)} - ${formatNumber(urgentStock.quantity)} ${text(urgentStock.unit, "unit", 6)}` : `${stockSummary.healthy} healthy items`}
+                  tone={urgentStock ? statusTone(urgentStock.status) : "green"}
+                />
+              </View>
+              <View style={styles.decisionBox}>
+                <Text style={styles.decisionTitle}>First decision</Text>
+                <Text style={styles.decisionText}>{text(actionItems[0], "Review today's sales and stock.", 145)}</Text>
+              </View>
+            </Section>
+
+            <Section index={2} title="Profit Watch" tone={lossItems.length > 0 ? "red" : "green"}>
+              <Table
+                headers={["Point", "Value", "Meaning"]}
+                widths={["28%", "24%", "48%"]}
+                rows={[
+                  ["Opportunity", bestProfitItem ? money(bestProfitItem.profit) : "N/A", bestOpportunity],
+                  ["Biggest risk", lossItems[0] ? money(lossItems[0].profit) : "N/A", biggestRisk],
+                  ["Low margin", formatNumber(lowMarginItems.length), "Items below 10% margin"],
+                  ["Stock alerts", formatNumber(stockRiskCount), "Low, out, expired, or expiring"],
+                ]}
+              />
+            </Section>
+          </View>
+
+          <View style={styles.summaryCol}>
+            <Section index={3} title="Immediate Actions" tone="amber">
+              {actionItems.slice(0, 5).map((action, index) => (
+                <View
+                  key={index}
+                  style={[
+                    styles.actionRow,
+                    index === Math.min(actionItems.length, 5) - 1
+                      ? { borderBottomWidth: 0 }
+                      : {},
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.actionNo,
+                      {
+                        backgroundColor:
+                          index === 0
+                            ? palette.red.ink
+                            : index === 1
+                              ? palette.amber.ink
+                              : palette.blue.ink,
+                      },
+                    ]}
+                  >
+                    {index + 1}
+                  </Text>
+                  <Text style={styles.actionText}>{text(action, "Suggestion", 125)}</Text>
+                </View>
+              ))}
+            </Section>
+
+            <Section index={4} title="Daily Sales Movement" tone="green">
+              {trendRows.length > 0 ? (
+                trendRows.slice(-6).map((entry, index) => (
+                  <TrendRow
+                    key={`${entry.date}-${index}`}
+                    label={shortDate(entry.date)}
+                    revenue={entry.revenue}
+                    profit={entry.profit}
+                    maxRevenue={maxTrendRevenue}
+                  />
+                ))
+              ) : (
+                <Empty>No daily sale movement for this report period.</Empty>
+              )}
+              <Text style={styles.subText}>Format: sales / profit</Text>
+            </Section>
+          </View>
+        </View>
+
+        <Footer page={1} />
+      </Page>
+
+      <Page size="A4" orientation="landscape" style={styles.page}>
+        <ReportHeader data={data} generatedAt={generatedAt} />
+
         <View style={styles.grid}>
           <View style={styles.colLarge}>
-            <Section index={1} title="Sales Data First" hint={`vs ${comparisonLabel}`} tone="green">
+            <Section index={5} title="Sales Data First" hint={`vs ${comparisonLabel}`} tone="green">
               <View style={styles.metricGrid}>
                 <Metric
                   label="Total Sales"
@@ -772,7 +1217,7 @@ export const PremiumPdfReport = ({ data }: { data: PremiumReportData }) => {
               </View>
             </Section>
 
-            <Section index={2} title="Profit And Margin" tone="blue">
+            <Section index={6} title="Profit And Margin" tone="blue">
               <View style={styles.metricGrid}>
                 <Metric label="Total Cost" value={money(data.cost)} sub="Sold stock cost" tone="slate" />
                 <Metric label="Total Profit" value={money(data.profit)} sub={`${pct(data.margin)} margin`} tone={data.profit >= 0 ? "green" : "red"} />
@@ -808,7 +1253,7 @@ export const PremiumPdfReport = ({ data }: { data: PremiumReportData }) => {
           </View>
 
           <View style={styles.colSmall}>
-            <Section index={3} title="Worker Wise Sales" tone="purple">
+            <Section index={7} title="Worker Wise Sales" tone="purple">
               {data.staffSales?.length ? (
                 <Table
                   headers={["Worker", "Sales", "Profit", "Bills", "Udhari"]}
@@ -840,7 +1285,7 @@ export const PremiumPdfReport = ({ data }: { data: PremiumReportData }) => {
               ) : null}
             </Section>
 
-            <Section index={4} title="Top Sold Items" tone="green">
+            <Section index={8} title="Top Sold Items" tone="green">
               {topItems.length > 0 ? (
                 <Table
                   headers={["Item", "Qty", "Sales", "Profit"]}
@@ -874,7 +1319,7 @@ export const PremiumPdfReport = ({ data }: { data: PremiumReportData }) => {
           </View>
         </View>
 
-        <Footer page={1} />
+        <Footer page={2} />
       </Page>
 
       <Page size="A4" orientation="landscape" style={styles.page}>
@@ -882,7 +1327,7 @@ export const PremiumPdfReport = ({ data }: { data: PremiumReportData }) => {
 
         <View style={styles.grid}>
           <View style={styles.colLarge}>
-            <Section index={5} title="Stock Stats And Item Numbers" hint="current inventory" tone="amber">
+            <Section index={9} title="Stock Stats And Item Numbers" hint="current inventory" tone="amber">
               <View style={styles.metricGrid}>
                 <Metric label="Total Stock Value" value={money(data.totalStockValue)} sub="Current inventory worth" tone="purple" />
                 <Metric label="Total Items" value={formatNumber(data.productsCount)} sub={`${stockSummary.healthy} healthy`} tone="blue" />
@@ -936,7 +1381,7 @@ export const PremiumPdfReport = ({ data }: { data: PremiumReportData }) => {
           </View>
 
           <View style={styles.colSmall}>
-            <Section index={6} title="Date Wise Stock Updates" tone="blue">
+            <Section index={10} title="Date Wise Stock Updates" tone="blue">
               {stockMovements.length > 0 ? (
                 <Table
                   headers={["Date", "Item", "Type", "Change", "After"]}
@@ -958,7 +1403,7 @@ export const PremiumPdfReport = ({ data }: { data: PremiumReportData }) => {
               )}
             </Section>
 
-            <Section index={7} title="Udhari Position" tone="red">
+            <Section index={11} title="Udhari Position" tone="red">
               <View style={styles.metricGrid}>
                 <Metric label="Total Pending" value={money(data.totalPendingUdhari)} sub="All customers" tone="red" />
                 <Metric label="Report Udhari" value={money(data.paymentBreakdown.udhar?.amount || 0)} sub={`${data.paymentBreakdown.udhar?.count || 0} bills`} tone="amber" />
@@ -977,7 +1422,7 @@ export const PremiumPdfReport = ({ data }: { data: PremiumReportData }) => {
           </View>
         </View>
 
-        <Footer page={2} />
+        <Footer page={3} />
       </Page>
 
       {stockPages.slice(1).map((chunk, pageIndex) => (
@@ -989,7 +1434,7 @@ export const PremiumPdfReport = ({ data }: { data: PremiumReportData }) => {
         >
           <ReportHeader data={data} generatedAt={generatedAt} />
           <Section
-            index={8 + pageIndex}
+            index={12 + pageIndex}
             title="Full Stock List Continued"
             hint={`${stockItems.length} total items`}
             tone="amber"
@@ -1034,7 +1479,7 @@ export const PremiumPdfReport = ({ data }: { data: PremiumReportData }) => {
               })}
             />
           </Section>
-          <Footer page={3 + pageIndex} />
+          <Footer page={4 + pageIndex} />
         </Page>
       ))}
 
@@ -1043,7 +1488,7 @@ export const PremiumPdfReport = ({ data }: { data: PremiumReportData }) => {
 
         <View style={styles.grid}>
           <View style={styles.colThird}>
-            <Section index={20} title="Brand Comparison" tone="purple">
+            <Section index={insightStartIndex} title="Brand Comparison" tone="purple">
               {data.brandDemand?.length ? (
                 <Table
                   headers={["Product", "Winning brand", "Brand sales", "Share"]}
@@ -1072,7 +1517,7 @@ export const PremiumPdfReport = ({ data }: { data: PremiumReportData }) => {
           </View>
 
           <View style={styles.colThird}>
-            <Section index={21} title="Low Margin And Loss Items" tone="red">
+            <Section index={insightStartIndex + 1} title="Low Margin And Loss Items" tone="red">
               {lossItems.length > 0 ? (
                 <Table
                   headers={["Loss item", "Sales", "Loss", "Margin"]}
@@ -1102,7 +1547,7 @@ export const PremiumPdfReport = ({ data }: { data: PremiumReportData }) => {
           </View>
 
           <View style={styles.colThird}>
-            <Section index={22} title="Insights And Suggestions" tone="amber">
+            <Section index={insightStartIndex + 2} title="Insights And Suggestions" tone="amber">
               {actionItems.slice(0, 7).map((action, index) => (
                 <View
                   key={index}
@@ -1142,7 +1587,7 @@ export const PremiumPdfReport = ({ data }: { data: PremiumReportData }) => {
           </View>
         </View>
 
-        <Footer page={3 + Math.max(stockPages.length - 1, 0)} />
+        <Footer page={finalPageNumber} />
       </Page>
     </Document>
   );
