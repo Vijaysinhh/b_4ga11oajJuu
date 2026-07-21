@@ -28,6 +28,16 @@ export interface PremiumReportData {
     revenue: number;
     profit: number;
   }>;
+  itemPerformance?: Array<{
+    name: string;
+    brand?: string;
+    quantity: number;
+    revenue: number;
+    cost: number;
+    profit: number;
+    margin: number;
+    lastSoldDate?: string;
+  }>;
   shopName: string;
   totalStockValue: number;
   productsCount: number;
@@ -41,6 +51,69 @@ export interface PremiumReportData {
   paymentBreakdown: Record<string, { count: number; amount: number }>;
   totalItemsSold: number;
   averageBill: number;
+  comparison?: {
+    label: string;
+    revenue: number;
+    profit: number;
+    margin: number;
+    transactions: number;
+    revenueChange: number;
+    profitChange: number;
+    marginChange: number;
+  };
+  expiryAlerts?: Array<{
+    name: string;
+    expiryDate: string;
+    status: "expired" | "expiring";
+    quantity: number;
+    value: number;
+  }>;
+  brandDemand?: Array<{
+    productName: string;
+    totalRevenue: number;
+    topBrand: string;
+    topBrandRevenue: number;
+    topBrandShare: number;
+    brandCount: number;
+    topBrands: string[];
+  }>;
+  staffSales?: Array<{
+    staffName: string;
+    revenue: number;
+    cost?: number;
+    profit?: number;
+    margin?: number;
+    transactions: number;
+    averageBill: number;
+    udhariAmount?: number;
+    totalItems?: number;
+  }>;
+  stockItems?: Array<{
+    name: string;
+    brand?: string;
+    quantity: number;
+    unit: string;
+    stockValue: number;
+    buyPrice: number;
+    sellPrice: number;
+    marginAmount: number;
+    marginPercent: number;
+    lowStockLimit: number;
+    lastUpdated?: string;
+    lastSoldDate?: string;
+    expiryDate?: string;
+    status: "good" | "low" | "out" | "expired" | "expiring";
+  }>;
+  stockMovements?: Array<{
+    date: string;
+    itemName: string;
+    type: "purchase" | "sale" | "adjustment" | "damage" | "expiry";
+    quantityChanged: number;
+    quantityBefore: number;
+    quantityAfter: number;
+    reason?: string;
+  }>;
+  suggestions?: string[];
   dailyData?: Array<{
     date: string;
     revenue: number;

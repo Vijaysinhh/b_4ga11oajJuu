@@ -18,6 +18,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -28,8 +29,10 @@ import {
   AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
+  AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import {
   Select,
@@ -41,6 +44,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Trash2, Edit2, Plus, Search } from "lucide-react";
 import { HelpTooltip, LabelWithTooltip } from "@/components/help-tooltip";
+import { cn } from "@/lib/utils";
 import {
   formatMoney,
   formatPercent,
@@ -104,11 +108,11 @@ export function ItemsManagement() {
   );
   const [selectedExpiryStatus, setSelectedExpiryStatus] = useState<
     string | null
-  >(null); // null = All, 'expired', 'expiring', 'notExpiring'
+  >(null); // null = All, 'expired', 'expiring', 'notExpiring', 'hasExpiry', 'noExpiry'
   const [selectedStockStatus, setSelectedStockStatus] = useState<string | null>(
     null,
   ); // null = All, 'lowStock', 'inStock', 'outOfStock'
-  const [sortBy, setSortBy] = useState<string>("name-asc"); // 'name-asc', 'qty-asc', 'expiry-asc', 'margin-desc'
+  const [sortBy, setSortBy] = useState<string>("name-asc"); // 'name-asc', 'qty-asc', 'qty-desc', 'expiry-asc', 'margin-desc'
   const [activeTab, setActiveTab] = useState("basic");
   const [selectedItems, setSelectedItems] = useState<Set<number>>(new Set());
   const [focusedItemId, setFocusedItemId] = useState<number | null>(null);
@@ -126,6 +130,65 @@ export function ItemsManagement() {
     sellPrice: 0,
     lowStockLimit: 0,
   });
+  const [formErrors, setFormErrors] = useState<
+    Partial<Record<keyof ItemFormData, string>>
+  >({});
+
+  const clearFieldError = (field: keyof ItemFormData) => {
+    setFormErrors((prev) => {
+      if (!prev[field]) return prev;
+      const next = { ...prev };
+      delete next[field];
+      return next;
+    });
+  };
+
+  const validateForm = () => {
+    const errors: Partial<Record<keyof ItemFormData, string>> = {};
+    const name = formData.name.trim();
+    const nameMarathi = formData.nameMarathi.trim();
+    if (!name && !nameMarathi) {
+      errors.name = "Enter item name in English or Marathi.";
+    }
+
+    if (!categories.some((c) => c.id === formData.categoryId)) {
+      errors.categoryId = "Select a valid category.";
+    }
+
+    if (!units.some((u) => u.id === formData.unitId)) {
+      errors.unitId = "Select a valid unit.";
+    }
+
+    if (!Number.isFinite(formData.quantity) || formData.quantity < 0) {
+      errors.quantity = "Enter a valid quantity.";
+    }
+
+    if (formData.expiryDate) {
+      const parsed = Date.parse(`${formData.expiryDate}T00:00:00`);
+      if (Number.isNaN(parsed)) {
+        errors.expiryDate = "Enter a valid expiry date.";
+      }
+    }
+
+    if (!Number.isFinite(formData.buyPrice) || formData.buyPrice <= 0) {
+      errors.buyPrice = "Enter a valid buying price.";
+    }
+
+    if (!Number.isFinite(formData.sellPrice) || formData.sellPrice <= 0) {
+      errors.sellPrice = "Enter a valid selling price.";
+    }
+
+    if (
+      Number.isFinite(formData.buyPrice) &&
+      Number.isFinite(formData.sellPrice) &&
+      formData.sellPrice < formData.buyPrice
+    ) {
+      errors.sellPrice = "Selling price must be greater than buying price.";
+    }
+
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
 
   const filteredItems = useMemo(() => {
     const today = new Date();
@@ -238,6 +301,35 @@ export function ItemsManagement() {
     }, 0);
   }, [items]);
 
+  const lowStockCount = useMemo(
+    () =>
+      items.filter(
+        (item) =>
+          Number(item.quantity || 0) > 0 &&
+          Number(item.quantity || 0) <= Number(item.lowStockLimit || 0),
+      ).length,
+    [items],
+  );
+
+  const outOfStockCount = useMemo(
+    () => items.filter((item) => Number(item.quantity || 0) === 0).length,
+    [items],
+  );
+
+  const expiringSoonCount = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return items.filter((item) => {
+      if (!item.expiryDate) return false;
+      const expiry = new Date(item.expiryDate);
+      expiry.setHours(0, 0, 0, 0);
+      const diffDays = Math.ceil(
+        (expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24),
+      );
+      return diffDays > 0 && diffDays <= 7;
+    }).length;
+  }, [items]);
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const itemId = Number(params.get("focusItemId"));
@@ -278,6 +370,7 @@ export function ItemsManagement() {
   }, [filteredItems, focusedItemId]);
 
   const handleOpenDialog = (item?: (typeof items)[0]) => {
+    setActiveTab("basic");
     if (item) {
       setEditingId(item.id || null);
       setFormData({
@@ -306,13 +399,14 @@ export function ItemsManagement() {
         expiryDate: "",
         buyPrice: 0,
         sellPrice: 0,
-        lowStockLimit: 5,
+        lowStockLimit: 0,
       });
     }
     setIsOpen(true);
   };
 
   const resetForm = () => {
+    setActiveTab("basic");
     setFormData({
       name: "",
       nameMarathi: "",
@@ -339,50 +433,12 @@ export function ItemsManagement() {
       toast.error("Please add a unit first.");
       return;
     }
-    if (!categories.some((c) => c.id === formData.categoryId)) {
-      toast.error("Please select a valid category.");
+    if (!validateForm()) {
+      toast.error("Fix the highlighted fields before saving.");
       return;
     }
-    if (!units.some((u) => u.id === formData.unitId)) {
-      toast.error("Please select a valid unit.");
-      return;
-    }
-    const name = formData.name.trim();
-    const nameMarathi = formData.nameMarathi.trim();
-    if (!name && !nameMarathi) {
-      toast.error("Please enter item name in English OR Marathi.");
-      return;
-    }
-    if (!Number.isFinite(formData.quantity) || formData.quantity < 0) {
-      toast.error("Please enter a valid quantity.");
-      return;
-    }
-    const expiryDate = formData.expiryDate.trim();
-    if (expiryDate) {
-      const parsed = Date.parse(`${expiryDate}T00:00:00`);
-      if (Number.isNaN(parsed)) {
-        toast.error("Please enter a valid expiry date.");
-        return;
-      }
-    }
-    if (!Number.isFinite(formData.buyPrice) || formData.buyPrice <= 0) {
-      toast.error(
-        `Please enter a valid buying price. Current: Rs. ${formData.buyPrice || 0}`,
-      );
-      return;
-    }
-    if (!Number.isFinite(formData.sellPrice) || formData.sellPrice <= 0) {
-      toast.error(
-        `Please enter a valid selling price. Current: Rs. ${formData.sellPrice || 0}`,
-      );
-      return;
-    }
-    if (formData.sellPrice < formData.buyPrice) {
-      toast.error(
-        `Selling price must be greater than buying price. Buying: Rs. ${formData.buyPrice}, Selling: Rs. ${formData.sellPrice}`,
-      );
-      return;
-    }
+
+    const { name, nameMarathi, expiryDate } = formData;
 
     try {
       const expiryDateIso = expiryDate
@@ -512,6 +568,14 @@ export function ItemsManagement() {
     }
   };
 
+  const clearFilters = () => {
+    setSearchTerm("");
+    setSelectedCategoryId(null);
+    setSelectedExpiryStatus(null);
+    setSelectedStockStatus(null);
+    setSortBy("name-asc");
+  };
+
   const getCategoryName = (id: number) => {
     const category = categories.find((c) => c.id === id);
     return category?.name || "Unknown";
@@ -552,19 +616,52 @@ export function ItemsManagement() {
         </p>
       </div>
 
-      <Card className="border shadow-sm">
-        <CardContent className="p-4 flex items-center justify-between">
-          <div>
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <Card className="border shadow-sm">
+          <CardContent className="p-4">
             <p className="text-sm font-semibold">{t("total_value_label")}</p>
             <p className="text-xs text-muted-foreground">
               {items.length} {t("products")}
             </p>
-          </div>
-          <p className="text-xl font-bold text-purple-700">
-            Rs. {formatMoney(totalStockValue)}
-          </p>
-        </CardContent>
-      </Card>
+            <p className="mt-3 text-xl font-bold text-purple-700">
+              Rs. {formatMoney(totalStockValue)}
+            </p>
+          </CardContent>
+        </Card>
+        <Card className="border shadow-sm">
+          <CardContent className="p-4">
+            <p className="text-sm font-semibold">Low Stock</p>
+            <p className="mt-3 text-2xl font-bold text-orange-700">
+              {lowStockCount}
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Items at or below reorder threshold
+            </p>
+          </CardContent>
+        </Card>
+        <Card className="border shadow-sm">
+          <CardContent className="p-4">
+            <p className="text-sm font-semibold">Out of Stock</p>
+            <p className="mt-3 text-2xl font-bold text-red-700">
+              {outOfStockCount}
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Items with zero quantity
+            </p>
+          </CardContent>
+        </Card>
+        <Card className="border shadow-sm">
+          <CardContent className="p-4">
+            <p className="text-sm font-semibold">Expiring Soon</p>
+            <p className="mt-3 text-2xl font-bold text-amber-700">
+              {expiringSoonCount}
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Items expiring within 7 days
+            </p>
+          </CardContent>
+        </Card>
+      </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="text-sm text-muted-foreground">
@@ -600,137 +697,165 @@ export function ItemsManagement() {
                 </TabsTrigger>
               </TabsList>
 
-              <TabsContent value="basic" className="space-y-4 mt-4">
-                <div>
-                  <LabelWithTooltip
-                    label="Item Name"
-                    tooltip="Enter the product name as it appears in your shop (e.g., Basmati Rice, Sunflower Oil, Salt). Fill either this OR Marathi name."
-                  />
-                  <Input
-                    value={formData.name}
-                    onChange={(e) =>
-                      setFormData({ ...formData, name: e.target.value })
-                    }
-                    placeholder="e.g., Rice, Oil, Salt"
-                    className="mt-1"
-                  />
-                </div>
+              <TabsContent value="basic" className="space-y-6 mt-4">
+                <div className="rounded-2xl border border-border/70 bg-slate-50 p-5">
+                  <p className="text-sm font-semibold">Product details</p>
+                  <div className="mt-4 space-y-4">
+                    <div>
+                      <LabelWithTooltip
+                        label="Item Name"
+                        tooltip="Enter the product name as it appears in your shop (e.g., Basmati Rice, Sunflower Oil, Salt)."
+                      />
+                      <Input
+                        value={formData.name}
+                        onChange={(e) => {
+                          setFormData({ ...formData, name: e.target.value });
+                          clearFieldError("name");
+                        }}
+                        placeholder="e.g., Rice, Oil, Salt"
+                        className={cn(
+                          "mt-1",
+                          formErrors.name &&
+                            "border-destructive focus:border-destructive focus:ring-destructive/50",
+                        )}
+                        aria-invalid={!!formErrors.name}
+                      />
+                      {formErrors.name && (
+                        <p className="mt-1 text-xs text-destructive">
+                          {formErrors.name}
+                        </p>
+                      )}
+                    </div>
 
-                <div>
-                  <LabelWithTooltip
-                    label="Item Name (Marathi)"
-                    tooltip="Enter the product name in Marathi for better local understanding. Fill either this OR English name."
-                  />
-                  <Input
-                    value={formData.nameMarathi}
-                    onChange={(e) =>
-                      setFormData({ ...formData, nameMarathi: e.target.value })
-                    }
-                    placeholder="उदा., तांदूळ, तेल, मीठ"
-                    className="mt-1"
-                  />
-                </div>
+                    <div>
+                      <LabelWithTooltip
+                        label="Category"
+                        tooltip="Organize products by type (Grains, Oils, Spices, etc.) for better inventory management"
+                        required
+                      />
+                      <Select
+                        value={formData.categoryId.toString()}
+                        onValueChange={(value) =>
+                          setFormData({
+                            ...formData,
+                            categoryId: Number(value),
+                          })
+                        }
+                      >
+                        <SelectTrigger className="mt-1">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {categories.map((cat) => (
+                            <SelectItem key={cat.id} value={cat.id!.toString()}>
+                              {cat.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
 
-                <div>
-                  <LabelWithTooltip
-                    label="Brand Name"
-                    tooltip="Enter the product brand name"
-                  />
-                  <Input
-                    value={formData.brand}
-                    onChange={(e) =>
-                      setFormData({ ...formData, brand: e.target.value })
-                    }
-                    placeholder="e.g., Parle, Amul, Nestle"
-                    className="mt-1"
-                  />
-                </div>
+                    <div>
+                      <LabelWithTooltip
+                        label="Unit"
+                        tooltip="The measurement unit for this product (kg, L, pcs, g, ml, etc.). Used to track and sell quantities"
+                        required
+                      />
+                      <Select
+                        value={formData.unitId.toString()}
+                        onValueChange={(value) =>
+                          setFormData({ ...formData, unitId: Number(value) })
+                        }
+                      >
+                        <SelectTrigger className="mt-1">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {units.map((unit) => (
+                            <SelectItem
+                              key={unit.id}
+                              value={unit.id!.toString()}
+                            >
+                              {unit.name} ({unit.shortForm})
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
 
-                <div>
-                  <LabelWithTooltip
-                    label="Brand Name (Marathi)"
-                    tooltip="Enter the product brand name in Marathi"
-                  />
-                  <Input
-                    value={formData.brandMarathi}
-                    onChange={(e) =>
-                      setFormData({ ...formData, brandMarathi: e.target.value })
-                    }
-                    placeholder="उदा., पार्ले, अमूल, नेस्टले"
-                    className="mt-1"
-                  />
-                </div>
+                    <div>
+                      <LabelWithTooltip
+                        label="Current Quantity"
+                        tooltip="How much stock you have right now in the shop"
+                        required
+                      />
+                      <Input
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        value={formData.quantity || ""}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            quantity: parseWholeNumberInput(e.target.value),
+                          })
+                        }
+                        placeholder="0"
+                        className="mt-1"
+                      />
+                    </div>
 
-                <div>
-                  <LabelWithTooltip
-                    label="Category"
-                    tooltip="Organize products by type (Grains, Oils, Spices, etc.) for better inventory management"
-                    required
-                  />
-                  <Select
-                    value={formData.categoryId.toString()}
-                    onValueChange={(value) =>
-                      setFormData({ ...formData, categoryId: Number(value) })
-                    }
-                  >
-                    <SelectTrigger className="mt-1">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {categories.map((cat) => (
-                        <SelectItem key={cat.id} value={cat.id!.toString()}>
-                          {cat.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+                    <div>
+                      <LabelWithTooltip
+                        label="Item Name (Marathi)"
+                        tooltip="Enter the product name in Marathi for better local understanding. Fill either this OR English name."
+                      />
+                      <Input
+                        value={formData.nameMarathi}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            nameMarathi: e.target.value,
+                          })
+                        }
+                        placeholder="उदा., तांदूळ, तेल, मीठ"
+                        className="mt-1"
+                      />
+                    </div>
 
-                <div>
-                  <LabelWithTooltip
-                    label="Unit"
-                    tooltip="The measurement unit for this product (kg, L, pcs, g, ml, etc.). Used to track and sell quantities"
-                    required
-                  />
-                  <Select
-                    value={formData.unitId.toString()}
-                    onValueChange={(value) =>
-                      setFormData({ ...formData, unitId: Number(value) })
-                    }
-                  >
-                    <SelectTrigger className="mt-1">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {units.map((unit) => (
-                        <SelectItem key={unit.id} value={unit.id!.toString()}>
-                          {unit.name} ({unit.shortForm})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+                    <div>
+                      <LabelWithTooltip
+                        label="Brand Name"
+                        tooltip="Enter the product brand name"
+                      />
+                      <Input
+                        value={formData.brand}
+                        onChange={(e) =>
+                          setFormData({ ...formData, brand: e.target.value })
+                        }
+                        placeholder="e.g., Parle, Amul, Nestle"
+                        className="mt-1"
+                      />
+                    </div>
 
-                <div>
-                  <LabelWithTooltip
-                    label="Current Quantity"
-                    tooltip="How much stock you have right now in the shop"
-                    required
-                  />
-                  <Input
-                    type="text"
-                    inputMode="numeric"
-                    pattern="[0-9]*"
-                    value={formData.quantity || ""}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        quantity: parseWholeNumberInput(e.target.value),
-                      })
-                    }
-                    placeholder="0"
-                    className="mt-1"
-                  />
+                    <div>
+                      <LabelWithTooltip
+                        label="Brand Name (Marathi)"
+                        tooltip="Enter the product brand name in Marathi"
+                      />
+                      <Input
+                        value={formData.brandMarathi}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            brandMarathi: e.target.value,
+                          })
+                        }
+                        placeholder="उदा., पार्ले, अमूल, नेस्टले"
+                        className="mt-1"
+                      />
+                    </div>
+                  </div>
                 </div>
 
                 <div>
@@ -787,104 +912,188 @@ export function ItemsManagement() {
                   </div>
                 </div>
 
-                <div>
-                  <LabelWithTooltip
-                    label="Buying Price"
-                    tooltip="The cost price - how much you pay to buy this item from your supplier (in Rs.)"
-                    required
-                  />
-                  <Input
-                    type="text"
-                    inputMode="numeric"
-                    pattern="[0-9]*"
-                    value={formData.buyPrice || ""}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        buyPrice: parseWholeNumberInput(e.target.value),
-                      })
-                    }
-                    placeholder="0"
-                    className="mt-1"
-                  />
-                </div>
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <div className="rounded-2xl border border-border/70 bg-slate-50 p-5">
+                    <p className="text-sm font-semibold">Pricing</p>
+                    <div className="mt-4 space-y-4">
+                      <div>
+                        <LabelWithTooltip
+                          label="Buying Price"
+                          tooltip="The cost price - how much you pay to buy this item from your supplier (in Rs.)"
+                          required
+                        />
+                        <Input
+                          type="text"
+                          inputMode="numeric"
+                          pattern="[0-9]*"
+                          value={formData.buyPrice || ""}
+                          onChange={(e) => {
+                            setFormData({
+                              ...formData,
+                              buyPrice: parseWholeNumberInput(e.target.value),
+                            });
+                            clearFieldError("buyPrice");
+                          }}
+                          placeholder="0"
+                          className={cn(
+                            "mt-1",
+                            formErrors.buyPrice &&
+                              "border-destructive focus:border-destructive focus:ring-destructive/50",
+                          )}
+                          aria-invalid={!!formErrors.buyPrice}
+                        />
+                        {formErrors.buyPrice && (
+                          <p className="mt-1 text-xs text-destructive">
+                            {formErrors.buyPrice}
+                          </p>
+                        )}
+                      </div>
 
-                <div>
-                  <LabelWithTooltip
-                    label="Selling Price"
-                    tooltip="The retail price - how much you sell this item for to customers (in Rs.)"
-                    required
-                  />
-                  <Input
-                    type="text"
-                    inputMode="numeric"
-                    pattern="[0-9]*"
-                    value={formData.sellPrice || ""}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        sellPrice: parseWholeNumberInput(e.target.value),
-                      })
-                    }
-                    placeholder="0"
-                    className="mt-1"
-                  />
-                  {formData.buyPrice > 0 && formData.sellPrice > 0 && (
-                    <p className="text-xs text-green-600 mt-1">
-                      Margin:{" "}
-                      {formatPercent(
-                        calculateMargin(formData.buyPrice, formData.sellPrice),
-                      )}
-                      %
-                    </p>
-                  )}
-                </div>
+                      <div>
+                        <LabelWithTooltip
+                          label="Selling Price"
+                          tooltip="The retail price - how much you sell this item for to customers (in Rs.)"
+                          required
+                        />
+                        <Input
+                          type="text"
+                          inputMode="numeric"
+                          pattern="[0-9]*"
+                          value={formData.sellPrice || ""}
+                          onChange={(e) => {
+                            setFormData({
+                              ...formData,
+                              sellPrice: parseWholeNumberInput(e.target.value),
+                            });
+                            clearFieldError("sellPrice");
+                          }}
+                          placeholder="0"
+                          className={cn(
+                            "mt-1",
+                            formErrors.sellPrice &&
+                              "border-destructive focus:border-destructive focus:ring-destructive/50",
+                          )}
+                          aria-invalid={!!formErrors.sellPrice}
+                        />
+                        {formErrors.sellPrice && (
+                          <p className="mt-1 text-xs text-destructive">
+                            {formErrors.sellPrice}
+                          </p>
+                        )}
+                        {formData.buyPrice > 0 && formData.sellPrice > 0 && (
+                          <p className="text-xs text-green-600 mt-1">
+                            Margin:{" "}
+                            {formatPercent(
+                              calculateMargin(
+                                formData.buyPrice,
+                                formData.sellPrice,
+                              ),
+                            )}
+                            %
+                          </p>
+                        )}
+                      </div>
 
-                <div>
-                  <div className="flex items-center gap-1.5">
-                    <label className="text-sm font-semibold">
-                      Low Stock Alert Limit
-                    </label>
-                    <HelpTooltip text="When stock goes below this level, you'll get an alert to reorder. Leave empty to disable alerts" />
+                      <div>
+                        <div className="flex items-center gap-1.5">
+                          <label className="text-sm font-semibold">
+                            Low Stock Alert Limit
+                          </label>
+                          <HelpTooltip text="When stock goes below this level, you'll get an alert to reorder. Leave empty to disable alerts" />
+                        </div>
+                        <div className="flex gap-2 mt-1">
+                          <Input
+                            type="text"
+                            inputMode="numeric"
+                            pattern="[0-9]*"
+                            value={
+                              formData.lowStockLimit === 0
+                                ? ""
+                                : formData.lowStockLimit
+                            }
+                            onChange={(e) => {
+                              setFormData({
+                                ...formData,
+                                lowStockLimit: parseWholeNumberInput(
+                                  e.target.value,
+                                ),
+                              });
+                            }}
+                            placeholder="Leave empty to disable alerts"
+                            className="mt-0"
+                          />
+                          {formData.lowStockLimit > 0 && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() =>
+                                setFormData({ ...formData, lowStockLimit: 0 })
+                              }
+                              className="whitespace-nowrap"
+                            >
+                              Clear
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                  <div className="flex gap-2 mt-1">
-                    <Input
-                      type="text"
-                      inputMode="numeric"
-                      pattern="[0-9]*"
-                      value={
-                        formData.lowStockLimit === 0
-                          ? ""
-                          : formData.lowStockLimit
-                      }
-                      onChange={(e) => {
-                        setFormData({
-                          ...formData,
-                          lowStockLimit: parseWholeNumberInput(e.target.value),
-                        });
-                      }}
-                      placeholder="Leave empty to disable alerts"
-                      className="mt-0"
-                    />
-                    {formData.lowStockLimit > 0 && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() =>
-                          setFormData({ ...formData, lowStockLimit: 0 })
-                        }
-                        className="whitespace-nowrap"
-                      >
-                        Clear
-                      </Button>
-                    )}
+
+                  <div className="rounded-2xl border border-border/70 bg-slate-50 p-4 text-sm text-slate-700">
+                    <p className="text-sm font-semibold">Inventory preview</p>
+                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                      <div className="rounded-xl bg-white p-3 shadow-sm">
+                        <p className="text-xs text-muted-foreground">
+                          Estimated stock value
+                        </p>
+                        <p className="mt-1 font-semibold">
+                          Rs.{" "}
+                          {formatMoney(formData.quantity * formData.buyPrice)}
+                        </p>
+                      </div>
+                      <div className="rounded-xl bg-white p-3 shadow-sm">
+                        <p className="text-xs text-muted-foreground">
+                          Profit margin
+                        </p>
+                        <p className="mt-1 font-semibold text-green-600">
+                          {formData.buyPrice > 0
+                            ? `${formatPercent(
+                                calculateMargin(
+                                  formData.buyPrice,
+                                  formData.sellPrice,
+                                ),
+                              )}%`
+                            : "—"}
+                        </p>
+                      </div>
+                      <div className="rounded-xl bg-white p-3 shadow-sm">
+                        <p className="text-xs text-muted-foreground">
+                          Expiry status
+                        </p>
+                        <p className="mt-1 font-semibold">
+                          {formData.expiryDate
+                            ? new Date(
+                                `${formData.expiryDate}T00:00:00`,
+                              ).toLocaleDateString(
+                                language === "mr" ? "mr-IN" : "en-IN",
+                              )
+                            : "None"}
+                        </p>
+                      </div>
+                      <div className="rounded-xl bg-white p-3 shadow-sm">
+                        <p className="text-xs text-muted-foreground">
+                          Reorder alert
+                        </p>
+                        <p className="mt-1 font-semibold">
+                          {formData.lowStockLimit > 0
+                            ? `${formatWholeNumber(formData.lowStockLimit)} ${getUnitName(formData.unitId)} or less`
+                            : "Disabled"}
+                        </p>
+                      </div>
+                    </div>
                   </div>
                 </div>
-
-                <Button onClick={handleSave} className="w-full">
-                  {editingId ? "Update Item" : "Add Item"}
-                </Button>
               </TabsContent>
 
               <TabsContent value="pricing" className="mt-4">
@@ -902,8 +1111,21 @@ export function ItemsManagement() {
                     onDelete={handleDeletePriceTier}
                   />
                 )}
+                {!editingId && (
+                  <div className="rounded-2xl border border-border/70 bg-muted/10 p-4 text-sm text-muted-foreground">
+                    Save the item first to manage price variants.
+                  </div>
+                )}
               </TabsContent>
             </Tabs>
+            <DialogFooter className="mt-4 gap-2">
+              <Button type="button" variant="outline" onClick={resetForm}>
+                Cancel
+              </Button>
+              <Button type="button" onClick={handleSave}>
+                {editingId ? "Update Item" : "Add Item"}
+              </Button>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
       </div>
@@ -921,7 +1143,7 @@ export function ItemsManagement() {
           </div>
         </div>
 
-        <div className="flex flex-wrap gap-2">
+        <div className="grid gap-2 lg:grid-cols-5">
           {/* Category Filter */}
           <Select
             value={selectedCategoryId?.toString() || "all"}
@@ -929,7 +1151,7 @@ export function ItemsManagement() {
               setSelectedCategoryId(value === "all" ? null : Number(value))
             }
           >
-            <SelectTrigger className="w-full sm:w-40">
+            <SelectTrigger className="w-full">
               <SelectValue placeholder="Category" />
             </SelectTrigger>
             <SelectContent>
@@ -949,7 +1171,7 @@ export function ItemsManagement() {
               setSelectedExpiryStatus(value === "all" ? null : value)
             }
           >
-            <SelectTrigger className="w-full sm:w-40">
+            <SelectTrigger className="w-full">
               <SelectValue placeholder="Expiry Status" />
             </SelectTrigger>
             <SelectContent>
@@ -969,7 +1191,7 @@ export function ItemsManagement() {
               setSelectedStockStatus(value === "all" ? null : value)
             }
           >
-            <SelectTrigger className="w-full sm:w-40">
+            <SelectTrigger className="w-full">
               <SelectValue placeholder="Stock Status" />
             </SelectTrigger>
             <SelectContent>
@@ -982,7 +1204,7 @@ export function ItemsManagement() {
 
           {/* Sort By */}
           <Select value={sortBy} onValueChange={(value) => setSortBy(value)}>
-            <SelectTrigger className="w-full sm:w-44">
+            <SelectTrigger className="w-full">
               <SelectValue placeholder="Sort By" />
             </SelectTrigger>
             <SelectContent>
@@ -995,7 +1217,66 @@ export function ItemsManagement() {
               </SelectItem>
             </SelectContent>
           </Select>
+
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={clearFilters}
+            className="w-full"
+            disabled={
+              !searchTerm &&
+              selectedCategoryId === null &&
+              selectedExpiryStatus === null &&
+              selectedStockStatus === null &&
+              sortBy === "name-asc"
+            }
+          >
+            Clear filters
+          </Button>
         </div>
+
+        {(searchTerm ||
+          selectedCategoryId ||
+          selectedExpiryStatus ||
+          selectedStockStatus ||
+          sortBy !== "name-asc") && (
+          <div className="flex flex-wrap gap-2">
+            {searchTerm && (
+              <span className="rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-sm text-slate-700">
+                Search: {searchTerm}
+              </span>
+            )}
+            {selectedCategoryId !== null && (
+              <span className="rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-sm text-slate-700">
+                Category: {getCategoryName(selectedCategoryId)}
+              </span>
+            )}
+            {selectedExpiryStatus && (
+              <span className="rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-sm text-slate-700">
+                Expiry: {selectedExpiryStatus.replace(/([A-Z])/g, " $1")}
+              </span>
+            )}
+            {selectedStockStatus && (
+              <span className="rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-sm text-slate-700">
+                Stock:{" "}
+                {selectedStockStatus === "lowStock"
+                  ? "Low"
+                  : selectedStockStatus === "outOfStock"
+                    ? "Out"
+                    : "In"}
+              </span>
+            )}
+            {sortBy !== "name-asc" && (
+              <span className="rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-sm text-slate-700">
+                Sort:{" "}
+                {sortBy
+                  .replace(/-/g, " ")
+                  .replace(/\b\w/g, (c) => c.toUpperCase())}
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Batch Operations Toolbar */}
@@ -1148,21 +1429,29 @@ export function ItemsManagement() {
                               {secondaryItemName}
                             </p>
                           )}
-                          {(primaryBrandName || showSecondaryBrandName) && (
-                            <p className="text-xs text-gray-500">
-                              {[
-                                primaryBrandName,
-                                showSecondaryBrandName
-                                  ? secondaryBrandName
-                                  : null,
-                              ]
-                                .filter(Boolean)
-                                .join(" / ")}
-                            </p>
-                          )}
-                          <p className="text-xs text-muted-foreground">
-                            {getCategoryName(item.categoryId)}
-                          </p>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            <span className="rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-700">
+                              {getCategoryName(item.categoryId)}
+                            </span>
+                            {primaryBrandName && (
+                              <span className="rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700">
+                                {primaryBrandName}
+                              </span>
+                            )}
+                            {item.quantity === 0 ? (
+                              <span className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-700">
+                                Out of stock
+                              </span>
+                            ) : isLowStock ? (
+                              <span className="rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-[11px] font-semibold text-orange-700">
+                                Low stock
+                              </span>
+                            ) : (
+                              <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
+                                In stock
+                              </span>
+                            )}
+                          </div>
                           {expiryStart && (
                             <p
                               className={
@@ -1292,13 +1581,13 @@ export function ItemsManagement() {
                           <Edit2 className="w-3 h-3" />
                           {t("edit")}
                         </Button>
-                        <AlertDialog>
-                          <AlertDialog
-                            open={deleteId === item.id}
-                            onOpenChange={(open) => {
-                              if (!open) setDeleteId(null);
-                            }}
-                          >
+                        <AlertDialog
+                          open={deleteId === item.id}
+                          onOpenChange={(open) => {
+                            if (!open) setDeleteId(null);
+                          }}
+                        >
+                          <AlertDialogTrigger asChild>
                             <Button
                               variant="destructive"
                               size="sm"
@@ -1308,29 +1597,29 @@ export function ItemsManagement() {
                               <Trash2 className="w-3 h-3" />
                               {t("delete")}
                             </Button>
-                            <AlertDialogContent>
-                              <AlertDialogHeader>
-                                <AlertDialogTitle>
-                                  {t("confirm_delete")}
-                                </AlertDialogTitle>
-                                <AlertDialogDescription>
-                                  Are you sure you want to delete &quot;
-                                  {language === "mr" && item.nameMarathi
-                                    ? item.nameMarathi
-                                    : item.name}
-                                  &quot;? This action cannot be undone.
-                                </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <div className="flex gap-2">
-                                <AlertDialogCancel>
-                                  {t("cancel")}
-                                </AlertDialogCancel>
-                                <AlertDialogAction onClick={handleDelete}>
-                                  {t("delete")}
-                                </AlertDialogAction>
-                              </div>
-                            </AlertDialogContent>
-                          </AlertDialog>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>
+                                {t("confirm_delete")}
+                              </AlertDialogTitle>
+                              <AlertDialogDescription>
+                                Are you sure you want to delete &quot;
+                                {language === "mr" && item.nameMarathi
+                                  ? item.nameMarathi
+                                  : item.name}
+                                &quot;? This action cannot be undone.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter className="gap-2">
+                              <AlertDialogCancel>
+                                {t("cancel")}
+                              </AlertDialogCancel>
+                              <AlertDialogAction onClick={handleDelete}>
+                                {t("delete")}
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
                         </AlertDialog>
                       </div>
                     </div>

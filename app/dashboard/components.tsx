@@ -8,9 +8,11 @@ import {
   useItems,
   useUnits,
   useSales,
+  useStockHistory,
   useUdhari,
   usePriceTiers,
 } from "@/hooks/use-supabase";
+import { useStaff } from "@/hooks/use-staff";
 import {
   getCreditPressure,
   getPreviousDateKey,
@@ -19,7 +21,6 @@ import {
   getTopSellingItem,
   summarizeSales,
 } from "@/lib/dukan-insights";
-import { downloadSimplePdf, type PdfSection } from "@/lib/simple-pdf";
 import { downloadPremiumPdf } from "@/lib/premium-pdf";
 import {
   formatMoney,
@@ -36,12 +37,14 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   AlertTriangle,
+  BarChart3,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   ChevronUp,
   Clock,
   CreditCard,
+  Crown,
   Edit,
   FileDown,
   Package,
@@ -119,21 +122,21 @@ const paymentBadgeStyles: Record<string, string> = {
 };
 
 // Let's make a modified version of SalesTransaction that can edit an existing sale
-function EditSaleDialog({ 
-  sale, 
-  open, 
-  onClose 
-}: { 
-  sale: any; 
-  open: boolean; 
-  onClose: () => void; 
+function EditSaleDialog({
+  sale,
+  open,
+  onClose,
+}: {
+  sale: any;
+  open: boolean;
+  onClose: () => void;
 }) {
   const { currentShopId } = useAuth();
   const { updateSale } = useSales(currentShopId);
   const { customers } = useUdhari(currentShopId);
   const { items: allItems } = useItems(currentShopId);
   const { t } = useLanguage();
-  
+
   // Initialize state from the existing sale
   const [items, setItems] = useState<any[]>([]);
   const [paymentMethod, setPaymentMethod] = useState<string>("cash");
@@ -283,11 +286,15 @@ function EditSaleDialog({
                     Cancel Edit Item
                   </Button>
                 )}
-                <SalesItemSearch 
-                  onItemAdded={handleItemAdded} 
-                  addedItems={items} 
-                  itemToEdit={editingItemIndex !== null ? items[editingItemIndex] : undefined} 
-                  onItemEdited={handleItemEdited} 
+                <SalesItemSearch
+                  onItemAdded={handleItemAdded}
+                  addedItems={items}
+                  itemToEdit={
+                    editingItemIndex !== null
+                      ? items[editingItemIndex]
+                      : undefined
+                  }
+                  onItemEdited={handleItemEdited}
                 />
               </CardContent>
             </Card>
@@ -310,7 +317,9 @@ function EditSaleDialog({
                     {items.map((item, index) => {
                       const profit = item.totalPrice - item.totalCost;
                       const marginPct =
-                        item.totalPrice > 0 ? (profit / item.totalPrice) * 100 : 0;
+                        item.totalPrice > 0
+                          ? (profit / item.totalPrice) * 100
+                          : 0;
                       return (
                         <div
                           key={`${item.itemId}-${index}`}
@@ -337,8 +346,8 @@ function EditSaleDialog({
                                   profit > 0 ? "text-green-700" : "text-red-700"
                                 }
                               >
-                                {t("profit_amount")}: Rs. {formatMoney(profit)} (
-                                {formatPercent(marginPct)}%)
+                                {t("profit_amount")}: Rs. {formatMoney(profit)}{" "}
+                                ({formatPercent(marginPct)}%)
                               </span>
                             </div>
                           </div>
@@ -415,7 +424,9 @@ function EditSaleDialog({
                         <SelectContent>
                           <SelectItem value="cash">{t("cash")}</SelectItem>
                           <SelectItem value="card">{t("card")}</SelectItem>
-                          <SelectItem value="partial">{t("partial")}</SelectItem>
+                          <SelectItem value="partial">
+                            {t("partial")}
+                          </SelectItem>
                           <SelectItem value="udhar">{t("udhar")}</SelectItem>
                         </SelectContent>
                       </Select>
@@ -429,7 +440,9 @@ function EditSaleDialog({
                           </label>
                           <Select
                             value={
-                              creditCustomerId ? creditCustomerId.toString() : "new"
+                              creditCustomerId
+                                ? creditCustomerId.toString()
+                                : "new"
                             }
                             onValueChange={(value) =>
                               setCreditCustomerId(
@@ -460,7 +473,11 @@ function EditSaleDialog({
                     )}
 
                     <div className="flex gap-2">
-                      <Button onClick={onClose} variant="outline" className="flex-1">
+                      <Button
+                        onClick={onClose}
+                        variant="outline"
+                        className="flex-1"
+                      >
                         Cancel
                       </Button>
                       <Button
@@ -493,14 +510,31 @@ const paymentBadgeStylesDashboard: Record<string, string> = {
 
 export function Dashboard() {
   const router = useRouter();
-  const { user, isLoading: authLoading, isAuthenticated, currentShopId, currentShop } = useAuth();
+  const {
+    user,
+    isLoading: authLoading,
+    isAuthenticated,
+    currentShopId,
+    currentShop,
+  } = useAuth();
   const { t, language } = useLanguage();
   const { items } = useItems(currentShopId);
   const { units } = useUnits(currentShopId);
   const { sales, updateSale, deleteSale } = useSales(currentShopId);
+  const { stockHistory } = useStockHistory(currentShopId);
+  const { staff } = useStaff();
   const { priceTiers } = usePriceTiers(currentShopId);
   const { totalPending, customers, entries } = useUdhari(currentShopId);
   const [isClientReady, setIsClientReady] = useState(false);
+
+  const isPremium = useMemo(
+    () =>
+      Boolean(
+        currentShop?.subscriptionEndDate &&
+        currentShop.subscriptionEndDate > Date.now(),
+      ),
+    [currentShop?.subscriptionEndDate],
+  );
 
   // --- Date navigation state ---
   const [selectedDate, setSelectedDate] = useState(() => new Date());
@@ -509,7 +543,9 @@ export function Dashboard() {
   const [deleteSaleId, setDeleteSaleId] = useState<number | null>(null);
 
   // --- Report Selection State ---
-  const [selectedReportType, setSelectedReportType] = useState<"today" | "month" | "sixMonths" | "year" | "specificMonth">("today");
+  const [selectedReportType, setSelectedReportType] = useState<
+    "today" | "month" | "sixMonths" | "year" | "specificMonth"
+  >("today");
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; // YYYY-MM format
@@ -532,10 +568,9 @@ export function Dashboard() {
   }, []);
 
   useEffect(() => {
-    if (!authLoading && !isAuthenticated) {
-      router.push("/login");
-    }
-  }, [authLoading, isAuthenticated, router]);
+    if (!isClientReady || authLoading || isAuthenticated) return;
+    router.push("/login");
+  }, [authLoading, isAuthenticated, isClientReady, router]);
 
   // Navigate date
   const goToPreviousDay = useCallback(() => {
@@ -613,7 +648,8 @@ export function Dashboard() {
   const totalStockValue = useMemo(
     () =>
       items.reduce(
-        (sum, item) => sum + Number(item.quantity || 0) * Number(item.buyPrice || 0),
+        (sum, item) =>
+          sum + Number(item.quantity || 0) * Number(item.buyPrice || 0),
         0,
       ),
     [items],
@@ -647,10 +683,7 @@ export function Dashboard() {
 
   // --- Generate single report based on selection ---
   const currentReport = useMemo(() => {
-    const makeReport = (
-      label: string,
-      filteredSales: typeof sales,
-    ) => {
+    const makeReport = (label: string, filteredSales: typeof sales) => {
       const itemAgg = new Map<
         string,
         { quantity: number; revenue: number; profit: number }
@@ -742,10 +775,13 @@ export function Dashboard() {
         });
         const [year, monthNum] = selectedMonth.split("-");
         const monthDate = new Date(parseInt(year), parseInt(monthNum) - 1, 1);
-        reportLabel = monthDate.toLocaleDateString(language === "mr" ? "mr-IN" : "en-IN", { 
-          month: "long", 
-          year: "numeric" 
-        });
+        reportLabel = monthDate.toLocaleDateString(
+          language === "mr" ? "mr-IN" : "en-IN",
+          {
+            month: "long",
+            year: "numeric",
+          },
+        );
         break;
       default:
         filteredSales = sales.filter((sale) => {
@@ -771,7 +807,8 @@ export function Dashboard() {
   );
 
   const revenueChangePercent = useMemo(
-    () => getSignedPercentChange(daySummary.revenue, previousDaySummary.revenue),
+    () =>
+      getSignedPercentChange(daySummary.revenue, previousDaySummary.revenue),
     [daySummary.revenue, previousDaySummary.revenue],
   );
 
@@ -791,11 +828,13 @@ export function Dashboard() {
         new Date(b.expiryDate || 0).getTime(),
     )[0];
     const expiringValue = expiringItems.reduce(
-      (sum, item) => sum + Number(item.quantity || 0) * Number(item.buyPrice || 0),
+      (sum, item) =>
+        sum + Number(item.quantity || 0) * Number(item.buyPrice || 0),
       0,
     );
     const expiredValue = expiredItems.reduce(
-      (sum, item) => sum + Number(item.quantity || 0) * Number(item.buyPrice || 0),
+      (sum, item) =>
+        sum + Number(item.quantity || 0) * Number(item.buyPrice || 0),
       0,
     );
     const lowestStockItem = [...lowStockItems].sort(
@@ -833,7 +872,9 @@ export function Dashboard() {
           if (b.pressure.daysPending !== a.pressure.daysPending) {
             return b.pressure.daysPending - a.pressure.daysPending;
           }
-          return Number(b.customer.balance || 0) - Number(a.customer.balance || 0);
+          return (
+            Number(b.customer.balance || 0) - Number(a.customer.balance || 0)
+          );
         }),
     [customers, entries],
   );
@@ -882,10 +923,21 @@ export function Dashboard() {
       .reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
 
     return {
-      show: new Date().getDay() === 0 && (currentWeek.transactions > 0 || currentWeekUdhari > 0),
-      salesChange: getSignedPercentChange(currentWeek.revenue, previousWeek.revenue),
-      profitChange: getSignedPercentChange(currentWeek.profit, previousWeek.profit),
-      udhariChange: getSignedPercentChange(currentWeekUdhari, previousWeekUdhari),
+      show:
+        new Date().getDay() === 0 &&
+        (currentWeek.transactions > 0 || currentWeekUdhari > 0),
+      salesChange: getSignedPercentChange(
+        currentWeek.revenue,
+        previousWeek.revenue,
+      ),
+      profitChange: getSignedPercentChange(
+        currentWeek.profit,
+        previousWeek.profit,
+      ),
+      udhariChange: getSignedPercentChange(
+        currentWeekUdhari,
+        previousWeekUdhari,
+      ),
     };
   }, [entries, sales]);
 
@@ -927,8 +979,9 @@ export function Dashboard() {
         ? "पहिली विक्री जोडा"
         : "Add the first sale";
   const stockUnit = urgentStockInsight.lowestStockItem
-    ? units.find((unit) => unit.id === urgentStockInsight.lowestStockItem?.unitId)
-        ?.shortForm
+    ? units.find(
+        (unit) => unit.id === urgentStockInsight.lowestStockItem?.unitId,
+      )?.shortForm
     : "";
   const stockTargetName = urgentStockInsight.targetItem
     ? language === "mr"
@@ -1021,12 +1074,14 @@ export function Dashboard() {
 
   const handleDownloadReport = async () => {
     const report = currentReport;
-    const averageBill = report.transactions > 0 ? report.revenue / report.transactions : 0;
+    const averageBill =
+      report.transactions > 0 ? report.revenue / report.transactions : 0;
     const totalItemsSold = report.sales.reduce((sum, sale) => {
       return (
         sum +
         (sale.items || []).reduce(
-          (innerSum: number, item: any) => innerSum + Number(item.quantity || 0),
+          (innerSum: number, item: any) =>
+            innerSum + Number(item.quantity || 0),
           0,
         )
       );
@@ -1045,77 +1100,544 @@ export function Dashboard() {
       {} as Record<string, { count: number; amount: number }>,
     );
 
+    const getPreviousPeriodSales = () => {
+      const current = new Date(selectedDate);
+      current.setHours(0, 0, 0, 0);
+
+      switch (selectedReportType) {
+        case "today": {
+          const prev = new Date(current);
+          prev.setDate(prev.getDate() - 1);
+          return sales.filter((sale) => sale.date === dateKey(prev));
+        }
+        case "month": {
+          const prev = new Date(current);
+          prev.setMonth(prev.getMonth() - 1);
+          const prevMonthKey = monthKey(prev);
+          return sales.filter((sale) => sale.date.startsWith(prevMonthKey));
+        }
+        case "sixMonths": {
+          const prevEnd = new Date(
+            current.getFullYear(),
+            current.getMonth() - 5,
+            0,
+          );
+          const prevStart = new Date(
+            current.getFullYear(),
+            current.getMonth() - 11,
+            1,
+          );
+          return sales.filter((sale) => {
+            const saleDate = new Date(`${sale.date}T12:00:00`);
+            return saleDate >= prevStart && saleDate <= prevEnd;
+          });
+        }
+        case "year": {
+          const prevYear = current.getFullYear() - 1;
+          const prevStart = new Date(prevYear, 0, 1);
+          const prevEnd = new Date(prevYear, 11, 31);
+          return sales.filter((sale) => {
+            const saleDate = new Date(`${sale.date}T12:00:00`);
+            return saleDate >= prevStart && saleDate <= prevEnd;
+          });
+        }
+        case "specificMonth": {
+          const [year, month] = selectedMonth.split("-").map(Number);
+          const prev = new Date(year, month - 2, 1);
+          const prevMonthKey = monthKey(prev);
+          return sales.filter((sale) => sale.date.startsWith(prevMonthKey));
+        }
+        default:
+          return [];
+      }
+    };
+
+    const previousSales = getPreviousPeriodSales();
+    const previousSummary = summarizeSales(previousSales);
+    const comparison = {
+      label:
+        selectedReportType === "today"
+          ? t("yesterday")
+          : selectedReportType === "month"
+            ? t("previous_month")
+            : selectedReportType === "year"
+              ? t("previous_year")
+              : selectedReportType === "specificMonth"
+                ? t("previous_month")
+                : t("comparison"),
+      revenue: previousSummary.revenue,
+      profit: previousSummary.profit,
+      margin: previousSummary.margin,
+      transactions: previousSummary.transactions,
+      revenueChange: getSignedPercentChange(
+        report.revenue,
+        previousSummary.revenue,
+      ),
+      profitChange: getSignedPercentChange(
+        report.profit,
+        previousSummary.profit,
+      ),
+      marginChange: report.margin - previousSummary.margin,
+    };
+
+    const getSelectedPeriodRange = () => {
+      const current = new Date(selectedDate);
+      current.setHours(0, 0, 0, 0);
+
+      switch (selectedReportType) {
+        case "today": {
+          const end = new Date(current);
+          end.setHours(23, 59, 59, 999);
+          return { start: current, end };
+        }
+        case "month": {
+          const start = new Date(current.getFullYear(), current.getMonth(), 1);
+          const end = new Date(current.getFullYear(), current.getMonth() + 1, 0);
+          end.setHours(23, 59, 59, 999);
+          return { start, end };
+        }
+        case "sixMonths": {
+          const start = new Date(
+            current.getFullYear(),
+            current.getMonth() - 5,
+            1,
+          );
+          const end = new Date(current.getFullYear(), current.getMonth() + 1, 0);
+          end.setHours(23, 59, 59, 999);
+          return { start, end };
+        }
+        case "year": {
+          const start = new Date(current.getFullYear(), 0, 1);
+          const end = new Date(current.getFullYear(), 11, 31);
+          end.setHours(23, 59, 59, 999);
+          return { start, end };
+        }
+        case "specificMonth": {
+          const [year, month] = selectedMonth.split("-").map(Number);
+          const start = new Date(year, month - 1, 1);
+          const end = new Date(year, month, 0);
+          end.setHours(23, 59, 59, 999);
+          return { start, end };
+        }
+        default: {
+          const end = new Date(current);
+          end.setHours(23, 59, 59, 999);
+          return { start: current, end };
+        }
+      }
+    };
+
+    const selectedPeriodRange = getSelectedPeriodRange();
+
+    const expiryAlerts = [
+      ...expiredItems.map((item) => ({
+        name: item.name,
+        expiryDate: item.expiryDate || "",
+        status: "expired" as const,
+        quantity: item.quantity,
+        value: Number(item.quantity || 0) * Number(item.buyPrice || 0),
+      })),
+      ...expiringItems.map((item) => ({
+        name: item.name,
+        expiryDate: item.expiryDate || "",
+        status: "expiring" as const,
+        quantity: item.quantity,
+        value: Number(item.quantity || 0) * Number(item.buyPrice || 0),
+      })),
+    ].sort(
+      (a, b) => a.status.localeCompare(b.status) || b.quantity - a.quantity,
+    );
+
+    const itemLookup = new Map<number, any>();
+    items.forEach((item) => {
+      if (item.id !== undefined) {
+        itemLookup.set(item.id, item);
+      }
+    });
+
+    const unitLookup = new Map<number, string>();
+    units.forEach((unit) => {
+      if (unit.id !== undefined) {
+        unitLookup.set(unit.id, unit.shortForm || unit.name || "");
+      }
+    });
+
+    const lastSoldByItemId = new Map<number, string>();
+    sales.forEach((sale) => {
+      const saleDate = typeof sale?.date === "string" ? sale.date : "";
+      (sale.items || []).forEach((saleItem: any) => {
+        const itemId = Number(saleItem.itemId);
+        if (!itemId || !saleDate) return;
+        const previousDate = lastSoldByItemId.get(itemId);
+        if (!previousDate || saleDate > previousDate) {
+          lastSoldByItemId.set(itemId, saleDate);
+        }
+      });
+    });
+
+    const itemPerformanceMap = new Map<
+      string,
+      {
+        name: string;
+        brand?: string;
+        quantity: number;
+        revenue: number;
+        cost: number;
+        profit: number;
+        lastSoldDate?: string;
+      }
+    >();
+
+    report.sales.forEach((sale) => {
+      const saleDate = typeof sale?.date === "string" ? sale.date : "";
+      (sale.items || []).forEach((saleItem: any) => {
+        const item = itemLookup.get(Number(saleItem.itemId));
+        const key = String(saleItem.itemId || saleItem.itemName);
+        const current = itemPerformanceMap.get(key) || {
+          name: item?.name || item?.nameMarathi || saleItem.itemName || "Unknown",
+          brand: item?.brand || item?.brandMarathi || undefined,
+          quantity: 0,
+          revenue: 0,
+          cost: 0,
+          profit: 0,
+          lastSoldDate: saleDate,
+        };
+        const revenueValue = Number(saleItem.totalPrice || 0);
+        const costValue = Number(saleItem.totalCost || 0);
+        current.quantity += Number(saleItem.quantity || 0);
+        current.revenue += revenueValue;
+        current.cost += costValue;
+        current.profit += Number(saleItem.profit ?? revenueValue - costValue);
+        if (saleDate && (!current.lastSoldDate || saleDate > current.lastSoldDate)) {
+          current.lastSoldDate = saleDate;
+        }
+        itemPerformanceMap.set(key, current);
+      });
+    });
+
+    const itemPerformance = Array.from(itemPerformanceMap.values())
+      .map((item) => ({
+        ...item,
+        margin: item.revenue > 0 ? (item.profit / item.revenue) * 100 : 0,
+      }))
+      .sort((a, b) => b.revenue - a.revenue);
+
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const nextWeek = new Date(todayStart);
+    nextWeek.setDate(nextWeek.getDate() + 7);
+
+    const stockItems = items
+      .map((item) => {
+        const expiryDate = item.expiryDate ? new Date(item.expiryDate) : null;
+        const expiryStart = expiryDate ? new Date(expiryDate) : null;
+        if (expiryStart) expiryStart.setHours(0, 0, 0, 0);
+        const quantity = Number(item.quantity || 0);
+        const buyPrice = Number(item.buyPrice || 0);
+        const sellPrice = Number(item.sellPrice || 0);
+        const marginAmount =
+          Number(item.marginAmount ?? sellPrice - buyPrice) || 0;
+        const marginPercent =
+          Number(item.marginPercent ?? (buyPrice > 0 ? (marginAmount / buyPrice) * 100 : 0)) ||
+          0;
+        const status =
+          quantity <= 0
+            ? ("out" as const)
+            : expiryStart && expiryStart < todayStart
+              ? ("expired" as const)
+              : expiryStart && expiryStart <= nextWeek
+                ? ("expiring" as const)
+                : quantity <= Number(item.lowStockLimit || 0)
+                  ? ("low" as const)
+                  : ("good" as const);
+
+        return {
+          name: item.name || item.nameMarathi || "Unknown",
+          brand: item.brand || item.brandMarathi || undefined,
+          quantity,
+          unit: unitLookup.get(Number(item.unitId)) || "unit",
+          stockValue: quantity * buyPrice,
+          buyPrice,
+          sellPrice,
+          marginAmount,
+          marginPercent,
+          lowStockLimit: Number(item.lowStockLimit || 0),
+          lastUpdated: item.updatedAt
+            ? new Date(item.updatedAt).toISOString().slice(0, 10)
+            : undefined,
+          lastSoldDate: item.id ? lastSoldByItemId.get(Number(item.id)) : undefined,
+          expiryDate: item.expiryDate
+            ? new Date(item.expiryDate).toISOString().slice(0, 10)
+            : undefined,
+          status,
+        };
+      })
+      .sort((a, b) => {
+        const priority = { out: 0, expired: 1, low: 2, expiring: 3, good: 4 };
+        const priorityDiff = priority[a.status] - priority[b.status];
+        if (priorityDiff !== 0) return priorityDiff;
+        return b.stockValue - a.stockValue;
+      });
+
+    const stockMovements = stockHistory
+      .filter((movement) => {
+        const movementTime = Number(movement.createdAt || 0);
+        return (
+          movementTime >= selectedPeriodRange.start.getTime() &&
+          movementTime <= selectedPeriodRange.end.getTime()
+        );
+      })
+      .slice(0, 24)
+      .map((movement) => ({
+        date: new Date(movement.createdAt).toISOString().slice(0, 10),
+        itemName: movement.itemName || "Unknown",
+        type: movement.type,
+        quantityChanged: Number(movement.quantityChanged || 0),
+        quantityBefore: Number(movement.quantityBefore || 0),
+        quantityAfter: Number(movement.quantityAfter || 0),
+        reason: movement.reason || movement.reference || undefined,
+      }));
+
+    const productDemand = new Map<
+      string,
+      {
+        productName: string;
+        totalRevenue: number;
+        brandTotals: Map<string, number>;
+      }
+    >();
+
+    report.sales.forEach((sale) => {
+      (sale.items || []).forEach((saleItem: any) => {
+        const item = itemLookup.get(saleItem.itemId);
+        const productName =
+          item?.name || item?.nameMarathi || saleItem.itemName || "Unknown";
+        const brand = item?.brand || item?.brandMarathi || "Unknown Brand";
+        const product = productDemand.get(productName) || {
+          productName,
+          totalRevenue: 0,
+          brandTotals: new Map(),
+        };
+        const currentBrandRevenue = product.brandTotals.get(brand) || 0;
+        product.brandTotals.set(
+          brand,
+          currentBrandRevenue + Number(saleItem.totalPrice || 0),
+        );
+        product.totalRevenue += Number(saleItem.totalPrice || 0);
+        productDemand.set(productName, product);
+      });
+    });
+
+    const brandDemand = Array.from(productDemand.values())
+      .map((group) => {
+        const brandTotals = Array.from(group.brandTotals.entries()).sort(
+          (a, b) => b[1] - a[1],
+        );
+        const topBrandEntry = brandTotals[0];
+        return {
+          productName: group.productName,
+          totalRevenue: group.totalRevenue,
+          topBrand: topBrandEntry?.[0] ?? "Unknown",
+          topBrandRevenue: topBrandEntry?.[1] ?? 0,
+          topBrandShare: group.totalRevenue
+            ? (topBrandEntry?.[1] ?? 0) / group.totalRevenue
+            : 0,
+          brandCount: brandTotals.length,
+          topBrands: brandTotals.slice(0, 3).map(([brand]) => brand),
+        };
+      })
+      .filter((group) => group.brandCount >= 2)
+      .sort((a, b) => b.totalRevenue - a.totalRevenue)
+      .slice(0, 5);
+
+    const staffSalesMap = new Map<
+      string,
+      {
+        staffName: string;
+        revenue: number;
+        cost: number;
+        profit: number;
+        transactions: number;
+        udhariAmount: number;
+        totalItems: number;
+      }
+    >();
+    report.sales.forEach((sale) => {
+      const staffId =
+        sale.userId || sale.user_id || sale.createdBy || sale.staffId;
+      if (!staffId) return;
+      const staffKey = String(staffId);
+      const staffName =
+        staff.find((member: any) => member.id === Number(staffId))?.username ||
+        `Staff ${staffKey}`;
+      const currentEntry = staffSalesMap.get(staffKey) || {
+        staffName,
+        revenue: 0,
+        cost: 0,
+        profit: 0,
+        transactions: 0,
+        udhariAmount: 0,
+        totalItems: 0,
+      };
+      currentEntry.revenue += Number(sale.subtotal || 0);
+      currentEntry.cost += Number(sale.totalCost || 0);
+      currentEntry.profit += Number(
+        sale.totalProfit ?? Number(sale.subtotal || 0) - Number(sale.totalCost || 0),
+      );
+      currentEntry.transactions += 1;
+      currentEntry.udhariAmount +=
+        sale.paymentMethod === "udhar" ? Number(sale.subtotal || 0) : 0;
+      currentEntry.totalItems += (sale.items || []).reduce(
+        (sum: number, saleItem: any) => sum + Number(saleItem.quantity || 0),
+        0,
+      );
+      staffSalesMap.set(staffKey, currentEntry);
+    });
+
+    const staffSales = Array.from(staffSalesMap.values())
+      .map((entry) => ({
+        ...entry,
+        margin: entry.revenue > 0 ? (entry.profit / entry.revenue) * 100 : 0,
+        averageBill:
+          entry.transactions > 0 ? entry.revenue / entry.transactions : 0,
+      }))
+      .sort((a, b) => b.revenue - a.revenue)
+      .slice(0, 5);
+
+    const lossItems = itemPerformance.filter((item) => item.profit < 0);
+    const lowMarginSoldItems = itemPerformance.filter(
+      (item) => item.profit >= 0 && item.margin < 10,
+    );
+    const strongMarginItems = itemPerformance.filter(
+      (item) => item.margin >= 25 && item.profit > 0,
+    );
+
+    const suggestions: string[] = [];
+    if (report.revenue === 0) {
+      suggestions.push(
+        "No sales are recorded for this period. Check whether sales were entered or select another period.",
+      );
+    }
+    if (comparison.revenueChange < 0) {
+      suggestions.push(
+        `Sales are down ${formatPercent(Math.abs(comparison.revenueChange))}% compared with ${comparison.label}. Review top-selling items and worker coverage.`,
+      );
+    }
+    if (lowStockItems.length > 0) {
+      suggestions.push(
+        `Reorder ${lowStockItems.length} low-stock item${
+          lowStockItems.length > 1 ? "s" : ""
+        } to avoid stockouts.`,
+      );
+    }
+    if (expiredItems.length > 0) {
+      suggestions.push(
+        `Dispose or discount ${expiredItems.length} expired item${
+          expiredItems.length > 1 ? "s" : ""
+        } to reduce losses.`,
+      );
+    } else if (expiringItems.length > 0) {
+      suggestions.push(
+        `Promote ${expiringItems.length} item${
+          expiringItems.length > 1 ? "s" : ""
+        } nearing expiry to clear stock.`,
+      );
+    }
+    if (urgentUdhari?.pressure.riskLevel === "high") {
+      suggestions.push(
+        "Collect overdue udhari from high-risk credit customers immediately.",
+      );
+    } else if (urgentUdhari?.pressure.riskLevel === "recover") {
+      suggestions.push(
+        "Follow up with credit customers to recover pending balances soon.",
+      );
+    }
+    if (brandDemand.length > 0) {
+      suggestions.push(
+        "Focus on top-performing brands for products with high customer demand.",
+      );
+    }
+    if (lossItems.length > 0) {
+      suggestions.push(
+        `Fix selling price for ${lossItems.length} loss-making item${
+          lossItems.length > 1 ? "s" : ""
+        } before the next sale.`,
+      );
+    } else if (lowMarginSoldItems.length > 0) {
+      suggestions.push(
+        `Review purchase price or selling price for ${lowMarginSoldItems.length} low-margin item${
+          lowMarginSoldItems.length > 1 ? "s" : ""
+        }.`,
+      );
+    }
+    if (strongMarginItems.length > 0) {
+      suggestions.push(
+        `Promote ${strongMarginItems[0].name}; it has a strong ${formatPercent(strongMarginItems[0].margin)}% margin.`,
+      );
+    }
+    if (report.profit < 0) {
+      suggestions.push(
+        "Reduce costs or adjust prices to improve profitability.",
+      );
+    }
+
+    console.info("handleDownloadReport: isPremium", isPremium);
+    if (!isPremium) {
+      toast.error(t("premium_pdf_requires_subscription"));
+      return;
+    }
+
+    console.info("handleDownloadReport: invoking premium PDF export");
     try {
-      await downloadPremiumPdf({
-        label: report.label,
-        sales: report.sales,
-        transactions: report.transactions,
-        revenue: report.revenue,
-        cost: report.cost,
-        profit: report.profit,
-        margin: report.margin,
-        topItems: report.topItems,
-        shopName: currentShop?.shopName || "Dukan",
-        totalStockValue,
-        productsCount: items.length,
-        lowStockItems: lowStockItems.map(item => ({
-          name: item.name,
-          quantity: item.quantity,
-          lowStockLimit: item.lowStockLimit,
-        })),
-        totalPendingUdhari: totalPending,
-        highestUdharCustomer: highestUdharCustomer ? {
-          name: highestUdharCustomer.name,
-          balance: highestUdharCustomer.balance,
-        } : null,
-        paymentBreakdown,
-        totalItemsSold,
-        averageBill,
-      }, `dukan-report-${Date.now()}.pdf`);
+      await downloadPremiumPdf(
+        {
+          label: report.label,
+          sales: report.sales,
+          transactions: report.transactions,
+          revenue: report.revenue,
+          cost: report.cost,
+          profit: report.profit,
+          margin: report.margin,
+          topItems: report.topItems,
+          itemPerformance,
+          shopName: currentShop?.shopName || "Dukan",
+          totalStockValue,
+          productsCount: items.length,
+          lowStockItems: lowStockItems.map((item) => ({
+            name: item.name,
+            quantity: item.quantity,
+            lowStockLimit: item.lowStockLimit,
+          })),
+          totalPendingUdhari: totalPending,
+          highestUdharCustomer: highestUdharCustomer
+            ? {
+                name: highestUdharCustomer.name,
+                balance: highestUdharCustomer.balance,
+              }
+            : null,
+          paymentBreakdown,
+          totalItemsSold,
+          averageBill,
+          comparison,
+          expiryAlerts,
+          brandDemand,
+          staffSales,
+          stockItems,
+          stockMovements,
+          suggestions,
+          notifications: [],
+        },
+        `dukan-report-premium-${Date.now()}.pdf`,
+      );
+      toast.success(t("premium_pdf_downloaded"));
     } catch (error) {
-      console.error("Failed to download premium PDF, falling back to simple PDF:", error);
-      const udharCount = paymentBreakdown.udhar?.count || 0;
-      const udharAmount = paymentBreakdown.udhar?.amount || 0;
-      const paymentRows: PdfSection["rows"] = [
-        ["Cash", `${paymentBreakdown.cash?.count || 0} bills, Rs. ${formatMoney(paymentBreakdown.cash?.amount || 0)}`],
-        ["Card", `${paymentBreakdown.card?.count || 0} bills, Rs. ${formatMoney(paymentBreakdown.card?.amount || 0)}`],
-        ["Partial", `${paymentBreakdown.partial?.count || 0} bills, Rs. ${formatMoney(paymentBreakdown.partial?.amount || 0)}`],
-        ["Udhari", `${udharCount} bills, Rs. ${formatMoney(udharAmount)}`],
-      ];
-      const topItemsRows: PdfSection["rows"] = report.topItems.length
-        ? report.topItems.map((item) => [
-            item.name,
-            `${formatNumber(item.quantity)} sold, Rs. ${formatMoney(item.revenue)} sale, Rs. ${formatMoney(item.profit)} profit`,
-          ])
-        : [["Items", "No sales in this period"]];
-      const sections: PdfSection[] = [
-        { heading: "Financial Summary", rows: [
-            ["Period", report.label],
-            ["Transactions", `${report.transactions}`],
-            ["Items Sold", formatNumber(totalItemsSold)],
-            ["Sales (Revenue)", `Rs. ${formatMoney(report.revenue)}`],
-            ["Cost", `Rs. ${formatMoney(report.cost)}`],
-            ["Profit", `Rs. ${formatMoney(report.profit)}`],
-            ["Margin", `${formatPercent(report.margin)}%`],
-            ["Average Bill", `Rs. ${formatMoney(averageBill)}`],
-          ] },
-        { heading: "Payment Summary", rows: paymentRows },
-        { heading: "Udhari", rows: [
-            ["Udhari Sales", `Rs. ${formatMoney(udharAmount)}`],
-            ["Pending Udhari", `Rs. ${formatMoney(totalPending)}`],
-            ["Highest Udhari", highestUdharCustomer ? `${highestUdharCustomer.name} - Rs. ${formatMoney(highestUdharCustomer.balance)}` : "N/A"],
-          ] },
-        { heading: "Stock Summary", rows: [
-            ["Total Stock Worth", `Rs. ${formatMoney(totalStockValue)}`],
-            ["Products", `${items.length}`],
-            ["Low Stock Items", `${lowStockItems.length}`],
-          ] },
-        { heading: "Top Items", rows: topItemsRows },
-        { heading: "Stock Alerts", rows: lowStockItems.length
-            ? lowStockItems.slice(0, 8).map(item => [item.name, `${item.quantity} left, limit ${item.lowStockLimit}`])
-            : [["Low Stock", "No low stock items"]] },
-      ];
-      downloadSimplePdf({ title: "Dukan Report", subtitle: `${currentShop?.shopName || "Shop"} - ${report.label}`, sections, fileName: `dukan-report-${Date.now()}.pdf` });
+      console.error("Failed to generate premium PDF:", error);
+      toast.error(
+        `Premium report failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      throw error;
     }
   };
 
@@ -1144,7 +1666,9 @@ export function Dashboard() {
     <div className="mx-auto max-w-5xl space-y-6 pb-24 pt-2 sm:pb-10 sm:pt-4">
       {/* ─── Header ─── */}
       <div className="rounded-2xl border border-border/70 bg-card/70 p-4 shadow-sm backdrop-blur sm:p-5">
-        <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">{t("home")}</h1>
+        <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+          {t("home")}
+        </h1>
         <p className="mt-1 text-sm text-muted-foreground">
           {currentShop?.shopName || "Shop"}
         </p>
@@ -1155,40 +1679,44 @@ export function Dashboard() {
         <Card className="border border-green-200 bg-green-50/70 shadow-sm dark:border-green-900/50 dark:bg-green-950/20">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
-              🟢 {selectedDayLabel} {t("profit_amount")}
+              🟢 Today's Profit
             </CardTitle>
             <TrendingUp className="h-4 w-4 text-green-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-800 dark:text-green-300">
-              ₹{formatMoney(daySummary.profit)}
+            <div className="space-y-2">
+              <div className="flex items-baseline justify-between">
+                <span className="text-xs text-muted-foreground">Sales:</span>
+                <span className="text-lg font-bold text-blue-700 dark:text-blue-300">
+                  ₹{formatMoney(daySummary.revenue)}
+                </span>
+              </div>
+              <div className="flex items-baseline justify-between">
+                <span className="text-xs text-muted-foreground">Profit:</span>
+                <span className="text-lg font-bold text-green-800 dark:text-green-300">
+                  ₹{formatMoney(daySummary.profit)}
+                </span>
+              </div>
+              <p
+                className={`text-xs font-semibold text-right ${
+                  profitChangePercent >= 0
+                    ? "text-green-700 dark:text-green-300"
+                    : "text-red-700 dark:text-red-300"
+                }`}
+              >
+                {comparisonLabel} {signedPercent(profitChangePercent)}
+              </p>
             </div>
-            <p
-              className={`mt-1 text-xs font-semibold ${
-                profitChangePercent >= 0
-                  ? "text-green-700 dark:text-green-300"
-                  : "text-red-700 dark:text-red-300"
-              }`}
-            >
-              {comparisonLabel} {signedPercent(profitChangePercent)}
-            </p>
-            <p className="mt-1 truncate text-xs text-green-800/80 dark:text-green-200/80">
-              {profitPraise}
-            </p>
           </CardContent>
         </Card>
 
         <Card className="border-2">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              🔥 Streak
-            </CardTitle>
+            <CardTitle className="text-sm font-medium">🔥 Streak</CardTitle>
             <Clock className="h-4 w-4 text-orange-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-xl font-bold leading-tight">
-              {streakText}
-            </div>
+            <div className="text-xl font-bold leading-tight">{streakText}</div>
             <p className="mt-1 text-xs text-muted-foreground">
               {streakSubtext}
             </p>
@@ -1244,7 +1772,9 @@ export function Dashboard() {
 
         <Card
           className="cursor-pointer border shadow-sm transition hover:border-orange-400"
-          onClick={() => router.push(customerFocusHref(urgentUdhari?.customer.id))}
+          onClick={() =>
+            router.push(customerFocusHref(urgentUdhari?.customer.id))
+          }
           onKeyDown={(event) => {
             if (event.key === "Enter" || event.key === " ") {
               event.preventDefault();
@@ -1255,15 +1785,11 @@ export function Dashboard() {
           tabIndex={0}
         >
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              {t("udhari")}
-            </CardTitle>
+            <CardTitle className="text-sm font-medium">{t("udhari")}</CardTitle>
             <WalletCards className="h-4 w-4 text-orange-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-xl font-bold">
-              {udhariRiskLabel}
-            </div>
+            <div className="text-xl font-bold">{udhariRiskLabel}</div>
             <p className="mt-1 text-xs text-muted-foreground">
               {udhariSubtext}
             </p>
@@ -1617,7 +2143,7 @@ export function Dashboard() {
                           {formatPercent(sale.profitMarginPercent)}%
                         </span>
                       </div>
-                      
+
                       {/* Edit and Delete buttons */}
                       <div className="flex gap-2">
                         <Button
@@ -1651,7 +2177,17 @@ export function Dashboard() {
       {/* ─── Reports Section (Updated) ─── */}
       <section className="space-y-3">
         <div className="flex items-center justify-between gap-3 flex-wrap">
-          <h2 className="text-xl font-bold">{t("reports")}</h2>
+          <div className="flex items-center gap-2">
+            <div className="flex h-9 w-9 items-center justify-center rounded-md border border-amber-200 bg-amber-50 text-amber-700">
+              <Crown className="h-4 w-4" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold">{t("reports")}</h2>
+              <p className="text-xs text-muted-foreground">
+                Visual PDF with sales, profit, stock, brand, udhari, and staff insights
+              </p>
+            </div>
+          </div>
         </div>
 
         <Card className="border-2">
@@ -1670,102 +2206,161 @@ export function Dashboard() {
                     <SelectItem value="month">{t("this_month")}</SelectItem>
                     <SelectItem value="sixMonths">{t("six_months")}</SelectItem>
                     <SelectItem value="year">{t("this_year")}</SelectItem>
-                    <SelectItem value="specificMonth">Specific Month</SelectItem>
+                    <SelectItem value="specificMonth">
+                      Specific Month
+                    </SelectItem>
                   </SelectContent>
                 </Select>
 
-                {selectedReportType === "specificMonth" && availableMonths.length > 0 && (
-                  <Select
-                    value={selectedMonth}
-                    onValueChange={setSelectedMonth}
-                  >
-                    <SelectTrigger className="w-40">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {availableMonths.map((month) => {
-                        const [year, monthNum] = month.split("-");
-                        const date = new Date(parseInt(year), parseInt(monthNum) -1, 1);
-                        const monthLabel = date.toLocaleDateString(language === "mr" ? "mr-IN" : "en-IN", {
-                          month: "long",
-                          year: "numeric"
-                        });
-                        return (
-                          <SelectItem key={month} value={month}>
-                            {monthLabel}
-                          </SelectItem>
-                        );
-                      })}
-                    </SelectContent>
-                  </Select>
-                )}
+                {selectedReportType === "specificMonth" &&
+                  availableMonths.length > 0 && (
+                    <Select
+                      value={selectedMonth}
+                      onValueChange={setSelectedMonth}
+                    >
+                      <SelectTrigger className="w-40">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {availableMonths.map((month) => {
+                          const [year, monthNum] = month.split("-");
+                          const date = new Date(
+                            parseInt(year),
+                            parseInt(monthNum) - 1,
+                            1,
+                          );
+                          const monthLabel = date.toLocaleDateString(
+                            language === "mr" ? "mr-IN" : "en-IN",
+                            {
+                              month: "long",
+                              year: "numeric",
+                            },
+                          );
+                          return (
+                            <SelectItem key={month} value={month}>
+                              {monthLabel}
+                            </SelectItem>
+                          );
+                        })}
+                      </SelectContent>
+                    </Select>
+                  )}
               </div>
 
               <div className="flex items-center gap-3">
                 <p className="text-xs text-muted-foreground">
                   {currentReport.transactions} {t("transactions")}
                 </p>
-                <Button
-                  onClick={handleDownloadReport}
-                  variant="outline"
-                  size="sm"
-                  className="h-9 gap-2"
-                >
-                  <FileDown className="h-4 w-4" />
-                  {t("pdf_report")}
-                </Button>
-              </div>
-            </div>
-
-            <CardTitle className="text-lg mt-2">{currentReport.label}</CardTitle>
-          </CardHeader>
-          
-          <CardContent>
-            <div className="grid grid-cols-3 gap-2 text-sm">
-              <div>
-                <p className="text-xs text-muted-foreground">{t("sale")}</p>
-                <p className="font-bold">
-                  Rs. {formatMoney(currentReport.revenue)}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">
-                  {t("profit_amount")}
-                </p>
-                <p className="font-bold text-green-700">
-                  Rs. {formatMoney(currentReport.profit)}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">
-                  {t("margin")}
-                </p>
-                <p className="font-bold">{formatPercent(currentReport.margin)}%</p>
-              </div>
-            </div>
-
-            {/* Top Items */}
-            {currentReport.topItems.length > 0 && (
-              <div className="mt-4">
-                <p className="text-xs text-muted-foreground mb-2 font-semibold">Top Items</p>
-                <div className="space-y-1">
-                  {currentReport.topItems.map((item, index) => (
-                    <div key={index} className="flex justify-between text-sm">
-                      <span className="truncate">{item.name}</span>
-                      <span className="font-bold">
-                        Rs. {formatMoney(item.revenue)}
-                      </span>
-                    </div>
-                  ))}
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <Button
+                    onClick={handleDownloadReport}
+                    variant="outline"
+                    size="sm"
+                    className="h-9 gap-2 border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 hover:text-blue-800"
+                    disabled={!isPremium}
+                  >
+                    <FileDown className="h-4 w-4" />
+                    Download visual PDF
+                  </Button>
+                  {!isPremium && (
+                    <p className="text-xs text-orange-700">
+                      {t("premium_pdf_requires_subscription")}
+                    </p>
+                  )}
                 </div>
               </div>
-            )}
+            </div>
+
+            <CardTitle className="mt-2 flex items-center gap-2 text-lg">
+              <BarChart3 className="h-4 w-4 text-blue-600" />
+              {currentReport.label}
+            </CardTitle>
+          </CardHeader>
+
+          <CardContent>
+            <div className="grid gap-4 lg:grid-cols-[1fr_1.05fr]">
+              <div>
+                <div className="grid grid-cols-3 gap-2 text-sm">
+                  <div>
+                    <p className="text-xs text-muted-foreground">{t("sale")}</p>
+                    <p className="font-bold">
+                      Rs. {formatMoney(currentReport.revenue)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">
+                      {t("profit_amount")}
+                    </p>
+                    <p className="font-bold text-green-700">
+                      Rs. {formatMoney(currentReport.profit)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">{t("margin")}</p>
+                    <p className="font-bold">
+                      {formatPercent(currentReport.margin)}%
+                    </p>
+                  </div>
+                </div>
+
+                {/* Top Items */}
+                {currentReport.topItems.length > 0 && (
+                  <div className="mt-4">
+                    <p className="text-xs text-muted-foreground mb-2 font-semibold">
+                      Top Items
+                    </p>
+                    <div className="space-y-1">
+                      {currentReport.topItems.map((item, index) => (
+                        <div key={index} className="flex justify-between text-sm">
+                          <span className="truncate">{item.name}</span>
+                          <span className="font-bold">
+                            Rs. {formatMoney(item.revenue)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="rounded-md border border-blue-100 bg-gradient-to-br from-blue-50 via-white to-emerald-50 p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-blue-950">
+                      Premium visual report
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Numbered blocks, health score, smart tables, and next actions.
+                    </p>
+                  </div>
+                  <FileDown className="h-5 w-5 shrink-0 text-blue-700" />
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                  <div className="flex items-center gap-2 rounded-md bg-white/80 px-2 py-2">
+                    <TrendingUp className="h-3.5 w-3.5 text-green-600" />
+                    <span>Sales + profit</span>
+                  </div>
+                  <div className="flex items-center gap-2 rounded-md bg-white/80 px-2 py-2">
+                    <Package className="h-3.5 w-3.5 text-amber-600" />
+                    <span>Stock alerts</span>
+                  </div>
+                  <div className="flex items-center gap-2 rounded-md bg-white/80 px-2 py-2">
+                    <WalletCards className="h-3.5 w-3.5 text-orange-600" />
+                    <span>Udhari control</span>
+                  </div>
+                  <div className="flex items-center gap-2 rounded-md bg-white/80 px-2 py-2">
+                    <BarChart3 className="h-3.5 w-3.5 text-blue-600" />
+                    <span>Brand + staff</span>
+                  </div>
+                </div>
+              </div>
+            </div>
           </CardContent>
         </Card>
       </section>
 
       {/* ─── Brand Comparison Section ─── */}
-      <BrandComparison 
+      <BrandComparison
         showOnlyTop5={true}
         selectedReportType={selectedReportType}
         setSelectedReportType={setSelectedReportType}
@@ -1777,9 +2372,11 @@ export function Dashboard() {
       {highestUdharCustomer && (
         <section className="space-y-3">
           <h2 className="text-xl font-bold">{t("highest_udhar")}</h2>
-          <Card 
+          <Card
             className="border-2 cursor-pointer hover:border-orange-400 transition-all"
-            onClick={() => router.push(customerFocusHref(highestUdharCustomer.id))}
+            onClick={() =>
+              router.push(customerFocusHref(highestUdharCustomer.id))
+            }
             onKeyDown={(event) => {
               if (event.key === "Enter" || event.key === " ") {
                 event.preventDefault();
@@ -2020,7 +2617,10 @@ export function Dashboard() {
                             : item.name}
                         </p>
                         <p className="text-xs text-red-700 mt-1">
-                          Expired on: {expiryDate.toLocaleDateString(language === "mr" ? "mr-IN" : "en-IN")}
+                          Expired on:{" "}
+                          {expiryDate.toLocaleDateString(
+                            language === "mr" ? "mr-IN" : "en-IN",
+                          )}
                         </p>
                       </div>
                       <div className="text-right ml-3 shrink-0">
@@ -2055,8 +2655,11 @@ export function Dashboard() {
                   const expiryDate = new Date(item.expiryDate!);
                   const today = new Date();
                   today.setHours(0, 0, 0, 0);
-                  const daysLeft = Math.ceil((expiryDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-                  
+                  const daysLeft = Math.ceil(
+                    (expiryDate.getTime() - today.getTime()) /
+                      (1000 * 60 * 60 * 24),
+                  );
+
                   return (
                     <div
                       key={item.id}
@@ -2080,7 +2683,10 @@ export function Dashboard() {
                             : item.name}
                         </p>
                         <p className="text-xs text-orange-700 mt-1">
-                          Expires on: {expiryDate.toLocaleDateString(language === "mr" ? "mr-IN" : "en-IN")} 
+                          Expires on:{" "}
+                          {expiryDate.toLocaleDateString(
+                            language === "mr" ? "mr-IN" : "en-IN",
+                          )}
                           <span className="ml-2 font-semibold">
                             ({daysLeft} {daysLeft === 1 ? "day" : "days"} left)
                           </span>
@@ -2126,12 +2732,16 @@ export function Dashboard() {
       />
 
       {/* Delete Confirmation Dialog */}
-      <AlertDialog open={!!deleteSaleId} onOpenChange={(open) => !open && setDeleteSaleId(null)}>
+      <AlertDialog
+        open={!!deleteSaleId}
+        onOpenChange={(open) => !open && setDeleteSaleId(null)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Sale?</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete this sale? This action cannot be undone. Stock levels will be restored.
+              Are you sure you want to delete this sale? This action cannot be
+              undone. Stock levels will be restored.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="flex justify-end gap-3">

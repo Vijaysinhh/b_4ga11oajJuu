@@ -1,609 +1,1148 @@
-import React, { useMemo } from "react";
-import {
-  Document,
-  Page,
-  Text,
-  View,
-  StyleSheet,
-} from "@react-pdf/renderer";
-import { formatMoney, formatPercent, formatNumber } from "@/lib/number-format";
+"use client";
 
-interface ReportData {
-  label: string;
-  sales: any[];
-  transactions: number;
-  revenue: number;
-  cost: number;
-  profit: number;
-  margin: number;
-  topItems: Array<{
-    name: string;
-    quantity: number;
-    revenue: number;
-    profit: number;
-  }>;
-  shopName: string;
-  totalStockValue: number;
-  productsCount: number;
-  lowStockItems: Array<{
-    name: string;
-    quantity: number;
-    lowStockLimit: number;
-  }>;
-  totalPendingUdhari: number;
-  highestUdharCustomer: { name: string; balance: number } | null;
-  paymentBreakdown: Record<
-    string,
-    { count: number; amount: number }
-  >;
-  totalItemsSold: number;
-  averageBill: number;
-  dailyData?: Array<{
-    date: string;
-    revenue: number;
-    cost: number;
-    profit: number;
-  }>;
-  notifications?: Array<{
-    id: string;
-    title: string;
-    message: string;
-    meta?: string;
-    severity: string;
-    category: string;
-  }>;
-}
+import React, { ReactNode, useMemo } from "react";
+import { Document, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
+import { formatMoney, formatNumber, formatPercent } from "@/lib/number-format";
+import type { PremiumReportData } from "@/lib/simple-pdf";
+
+type Tone = "navy" | "green" | "blue" | "amber" | "red" | "purple" | "slate";
+type StockReportItem = NonNullable<PremiumReportData["stockItems"]>[number];
+
+const palette: Record<Tone, { ink: string; bg: string; border: string; soft: string }> = {
+  navy: { ink: "#0b245c", bg: "#eef4ff", border: "#bfdbfe", soft: "#dbeafe" },
+  green: { ink: "#147a3f", bg: "#f0fdf4", border: "#bbf7d0", soft: "#dcfce7" },
+  blue: { ink: "#1d4ed8", bg: "#eff6ff", border: "#bfdbfe", soft: "#dbeafe" },
+  amber: { ink: "#b45309", bg: "#fffbeb", border: "#fde68a", soft: "#fef3c7" },
+  red: { ink: "#dc2626", bg: "#fef2f2", border: "#fecaca", soft: "#fee2e2" },
+  purple: { ink: "#7c3aed", bg: "#f5f3ff", border: "#ddd6fe", soft: "#ede9fe" },
+  slate: { ink: "#475569", bg: "#f8fafc", border: "#cbd5e1", soft: "#e2e8f0" },
+};
 
 const styles = StyleSheet.create({
   page: {
-    padding: 30,
-    paddingBottom: 50,
-    fontSize: 10,
+    padding: 14,
+    paddingBottom: 28,
     fontFamily: "Helvetica",
+    fontSize: 8,
+    color: "#111827",
+    backgroundColor: "#f8fafc",
   },
   header: {
-    marginBottom: 20,
-    textAlign: "center",
-    padding: 16,
-    backgroundColor: "#1e40af",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: 10,
+    marginBottom: 10,
     borderRadius: 8,
+    backgroundColor: "#ffffff",
+    borderWidth: 1,
+    borderColor: "#dbeafe",
+  },
+  brandBlock: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  logo: {
+    width: 34,
+    height: 34,
+    borderRadius: 7,
+    backgroundColor: "#0b245c",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 9,
+  },
+  logoText: {
+    color: "#ffffff",
+    fontSize: 16,
+    fontWeight: "bold",
+  },
+  brand: {
+    color: "#0b245c",
+    fontSize: 17,
+    fontWeight: "bold",
   },
   title: {
+    color: "#0b245c",
     fontSize: 20,
     fontWeight: "bold",
-    color: "white",
-    marginBottom: 4,
+    marginTop: 2,
   },
-  subtitle: {
-    fontSize: 12,
-    color: "#dbeafe",
+  meta: {
+    color: "#64748b",
+    fontSize: 8,
+    marginTop: 2,
   },
-  section: {
-    marginBottom: 18,
-  },
-  sectionTitle: {
-    fontSize: 14,
+  premiumBadge: {
+    paddingVertical: 7,
+    paddingHorizontal: 11,
+    borderRadius: 999,
+    backgroundColor: "#fffbeb",
+    borderWidth: 1,
+    borderColor: "#fbbf24",
+    color: "#92400e",
+    fontSize: 9,
     fontWeight: "bold",
-    color: "#1e40af",
-    marginBottom: 10,
-    paddingBottom: 6,
-    borderBottom: 2,
-    borderBottomColor: "#dbeafe",
+    textAlign: "center",
   },
-  summaryGrid: {
+  grid: {
     flexDirection: "row",
-    flexWrap: "wrap",
     gap: 10,
   },
-  summaryCard: {
-    width: "48%",
-    padding: 12,
-    backgroundColor: "white",
-    borderRadius: 6,
-    border: 1,
-    borderColor: "#e5e7eb",
+  colLarge: {
+    width: "58%",
+    gap: 8,
   },
-  summaryLabel: {
-    fontSize: 9,
-    color: "#6b7280",
-    marginBottom: 4,
+  colSmall: {
+    width: "42%",
+    gap: 8,
   },
-  summaryValue: {
-    fontSize: 12,
+  colHalf: {
+    width: "50%",
+    gap: 8,
+  },
+  colThird: {
+    width: "33.33%",
+    gap: 8,
+  },
+  section: {
+    backgroundColor: "#ffffff",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#dbeafe",
+    padding: 9,
+  },
+  sectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 8,
+  },
+  sectionTitleWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  sectionIndex: {
+    width: 22,
+    height: 22,
+    borderRadius: 5,
+    backgroundColor: "#0b245c",
+    color: "#ffffff",
+    fontSize: 10,
     fontWeight: "bold",
-    color: "#1f2937",
+    textAlign: "center",
+    paddingTop: 5,
+    marginRight: 7,
+  },
+  sectionTitle: {
+    color: "#0b245c",
+    fontSize: 13,
+    fontWeight: "bold",
+  },
+  sectionHint: {
+    color: "#64748b",
+    fontSize: 7,
+  },
+  metricGrid: {
+    flexDirection: "row",
+    gap: 7,
+    marginBottom: 8,
+  },
+  metric: {
+    flex: 1,
+    minHeight: 62,
+    borderRadius: 7,
+    borderWidth: 1,
+    padding: 9,
+  },
+  metricLabel: {
+    fontSize: 7.5,
+    fontWeight: "bold",
+    marginBottom: 7,
+  },
+  metricValue: {
+    color: "#111827",
+    fontSize: 18,
+    fontWeight: "bold",
+  },
+  metricSub: {
+    color: "#64748b",
+    fontSize: 7.2,
+    marginTop: 6,
   },
   table: {
-    width: "100%",
-    border: 1,
-    borderColor: "#e5e7eb",
-    borderRadius: 6,
-    backgroundColor: "white",
+    borderRadius: 7,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    overflow: "hidden",
   },
-  tableHeader: {
-    backgroundColor: "#eff6ff",
+  tableHead: {
     flexDirection: "row",
-    borderBottom: 2,
-    borderBottomColor: "#bfdbfe",
-  },
-  tableHeaderCell: {
-    padding: 8,
-    fontWeight: "bold",
-    fontSize: 10,
-    color: "#1e40af",
+    backgroundColor: "#eef4ff",
+    borderBottomWidth: 1,
+    borderBottomColor: "#dbeafe",
   },
   tableRow: {
     flexDirection: "row",
-    borderBottom: 1,
-    borderBottomColor: "#f3f4f6",
+    borderBottomWidth: 1,
+    borderBottomColor: "#eef2f7",
+    minHeight: 24,
+  },
+  tableHeadCell: {
+    paddingVertical: 6,
+    paddingHorizontal: 6,
+    color: "#0b245c",
+    fontSize: 7.2,
+    fontWeight: "bold",
   },
   tableCell: {
-    padding: 8,
-    fontSize: 9,
-    color: "#374151",
+    paddingVertical: 6,
+    paddingHorizontal: 6,
+    fontSize: 7.4,
+    justifyContent: "center",
   },
-  mutedText: {
-    color: "#6b7280",
+  rowTitle: {
+    color: "#111827",
+    fontWeight: "bold",
   },
-  greenText: {
-    color: "#059669",
+  subText: {
+    color: "#64748b",
+    fontSize: 7,
+    marginTop: 2,
   },
-  redText: {
+  positive: {
+    color: "#15803d",
+    fontWeight: "bold",
+  },
+  negative: {
     color: "#dc2626",
+    fontWeight: "bold",
+  },
+  warning: {
+    color: "#b45309",
+    fontWeight: "bold",
+  },
+  chipRow: {
+    flexDirection: "row",
+    gap: 6,
+    marginTop: 8,
+  },
+  chip: {
+    flex: 1,
+    borderRadius: 7,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    backgroundColor: "#f8fafc",
+    padding: 7,
+  },
+  chipLabel: {
+    color: "#64748b",
+    fontSize: 7,
+  },
+  chipValue: {
+    color: "#111827",
+    fontSize: 11,
+    fontWeight: "bold",
+    marginTop: 3,
+  },
+  barTrack: {
+    height: 5,
+    borderRadius: 999,
+    backgroundColor: "#e2e8f0",
+    marginTop: 4,
+  },
+  barFill: {
+    height: 5,
+    borderRadius: 999,
+  },
+  callout: {
+    borderRadius: 7,
+    borderWidth: 1,
+    borderColor: "#fde68a",
+    backgroundColor: "#fffbeb",
+    padding: 8,
+    marginTop: 8,
+  },
+  calloutTitle: {
+    color: "#78350f",
+    fontSize: 8.4,
+    fontWeight: "bold",
+    marginBottom: 3,
+  },
+  calloutText: {
+    color: "#78350f",
+    fontSize: 7.6,
+    lineHeight: 1.35,
+  },
+  pill: {
+    borderRadius: 999,
+    paddingVertical: 3,
+    paddingHorizontal: 6,
+    fontSize: 6.8,
+    fontWeight: "bold",
+    textAlign: "center",
+  },
+  actionRow: {
+    flexDirection: "row",
+    borderBottomWidth: 1,
+    borderBottomColor: "#e2e8f0",
+    paddingVertical: 7,
+  },
+  actionNo: {
+    width: 18,
+    height: 18,
+    borderRadius: 5,
+    color: "#ffffff",
+    fontSize: 7.5,
+    fontWeight: "bold",
+    textAlign: "center",
+    paddingTop: 5,
+    marginRight: 7,
+  },
+  actionText: {
+    flex: 1,
+    color: "#334155",
+    fontSize: 8,
+    lineHeight: 1.35,
   },
   footer: {
     position: "absolute",
-    bottom: 30,
-    left: 30,
-    right: 30,
-    fontSize: 9,
-    color: "#6b7280",
-    textAlign: "center",
-    paddingTop: 8,
-    borderTop: 1,
-    borderTopColor: "#e5e7eb",
-  },
-  chartContainer: {
-    padding: 12,
-    backgroundColor: "white",
-    borderRadius: 6,
-    border: 1,
-    borderColor: "#e5e7eb",
-    marginTop: 10,
-  },
-  barChartRow: {
+    bottom: 10,
+    left: 14,
+    right: 14,
     flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 8,
-  },
-  barLabel: {
-    width: "20%",
-    fontSize: 9,
-    color: "#4b5563",
-    fontWeight: 500,
-  },
-  barWrapper: {
-    width: "70%",
-    height: 16,
-    backgroundColor: "#f3f4f6",
-    borderRadius: 4,
-    marginRight: 8,
-  },
-  bar: {
-    height: "100%",
-    borderRadius: 4,
-  },
-  barValue: {
-    width: "10%",
-    fontSize: 9,
-    fontWeight: "bold",
-    color: "#1f2937",
-    textAlign: "right",
-  },
-  legend: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 10,
-    marginTop: 10,
-  },
-  legendItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-  },
-  legendColor: {
-    width: 12,
-    height: 12,
-    borderRadius: 3,
-  },
-  legendText: {
-    fontSize: 9,
-    color: "#4b5563",
+    justifyContent: "space-between",
+    borderTopWidth: 1,
+    borderTopColor: "#dbeafe",
+    paddingTop: 5,
+    color: "#64748b",
+    fontSize: 7,
   },
 });
 
-const truncateText = (text: string, maxLength: number = 12) => {
-  if (text.length <= maxLength) return text;
-  return text.slice(0, maxLength - 3) + "...";
-};
+function clamp(value: number, min = 0, max = 100) {
+  return Math.max(min, Math.min(max, Number.isFinite(value) ? value : min));
+}
 
-export const PremiumPdfReport = ({ data }: { data: ReportData }) => {
+function chunkArray<T>(items: T[], size: number) {
+  const chunks: T[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+  return chunks;
+}
+
+function text(value: unknown, fallback = "N/A", maxLength = 42) {
+  const safe = String(value ?? "")
+    .replace(/[^\x20-\x7E]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  const finalValue = safe || fallback;
+  return finalValue.length > maxLength
+    ? `${finalValue.slice(0, maxLength - 3)}...`
+    : finalValue;
+}
+
+function money(value: number | undefined | null) {
+  return `Rs. ${formatMoney(value)}`;
+}
+
+function pct(value: number | undefined | null) {
+  return `${formatPercent(value)}%`;
+}
+
+function signedPct(value: number | undefined | null) {
+  const safe = Number.isFinite(Number(value)) ? Number(value) : 0;
+  return `${safe >= 0 ? "+" : ""}${formatPercent(safe)}%`;
+}
+
+function shortDate(value?: string) {
+  if (!value) return "N/A";
+  const date = new Date(value.includes("T") ? value : `${value}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return text(value, "N/A", 14);
+  return date.toLocaleDateString("en-IN", {
+    day: "numeric",
+    month: "short",
+    year: "2-digit",
+  });
+}
+
+function paymentName(method: string) {
+  const labels: Record<string, string> = {
+    cash: "Cash",
+    card: "Card/UPI",
+    partial: "Partial",
+    udhar: "Udhari",
+  };
+  return labels[method] || text(method, "Other", 18);
+}
+
+function statusTone(status: StockReportItem["status"]): Tone {
+  if (status === "out" || status === "expired") return "red";
+  if (status === "low" || status === "expiring") return "amber";
+  return "green";
+}
+
+function statusLabel(status: StockReportItem["status"]) {
+  const labels: Record<StockReportItem["status"], string> = {
+    good: "Good",
+    low: "Low",
+    out: "Out",
+    expired: "Expired",
+    expiring: "Expiring",
+  };
+  return labels[status];
+}
+
+function movementLabel(type: string) {
+  const labels: Record<string, string> = {
+    purchase: "Stock In",
+    sale: "Sale",
+    adjustment: "Adjust",
+    damage: "Damage",
+    expiry: "Expiry",
+  };
+  return labels[type] || text(type, "Update", 14);
+}
+
+function Section({
+  index,
+  title,
+  hint,
+  tone = "navy",
+  children,
+}: {
+  index: number;
+  title: string;
+  hint?: string;
+  tone?: Tone;
+  children: ReactNode;
+}) {
+  return (
+    <View style={[styles.section, { borderColor: palette[tone].border }]}>
+      <View style={styles.sectionHeader}>
+        <View style={styles.sectionTitleWrap}>
+          <Text style={[styles.sectionIndex, { backgroundColor: palette[tone].ink }]}>
+            {index}
+          </Text>
+          <Text style={styles.sectionTitle}>{title}</Text>
+        </View>
+        {hint ? <Text style={styles.sectionHint}>{hint}</Text> : null}
+      </View>
+      {children}
+    </View>
+  );
+}
+
+function Metric({
+  label,
+  value,
+  sub,
+  tone = "blue",
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  tone?: Tone;
+}) {
+  return (
+    <View
+      style={[
+        styles.metric,
+        { backgroundColor: palette[tone].bg, borderColor: palette[tone].border },
+      ]}
+    >
+      <Text style={[styles.metricLabel, { color: palette[tone].ink }]}>
+        {label}
+      </Text>
+      <Text style={styles.metricValue}>{value}</Text>
+      {sub ? <Text style={styles.metricSub}>{sub}</Text> : null}
+    </View>
+  );
+}
+
+function Table({
+  headers,
+  widths,
+  rows,
+}: {
+  headers: string[];
+  widths: string[];
+  rows: ReactNode[][];
+}) {
+  return (
+    <View style={styles.table}>
+      <View style={styles.tableHead}>
+        {headers.map((header, index) => (
+          <Text
+            key={header}
+            style={[styles.tableHeadCell, { width: widths[index] }]}
+          >
+            {header}
+          </Text>
+        ))}
+      </View>
+      {rows.map((row, rowIndex) => (
+        <View
+          key={rowIndex}
+          style={[
+            styles.tableRow,
+            rowIndex === rows.length - 1 ? { borderBottomWidth: 0 } : {},
+          ]}
+        >
+          {row.map((cell, cellIndex) => (
+            <View
+              key={`${rowIndex}-${cellIndex}`}
+              style={[styles.tableCell, { width: widths[cellIndex] }]}
+            >
+              {typeof cell === "string" || typeof cell === "number" ? (
+                <Text>{cell}</Text>
+              ) : (
+                cell
+              )}
+            </View>
+          ))}
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function Empty({ children }: { children: ReactNode }) {
+  return (
+    <View
+      style={[
+        styles.callout,
+        { marginTop: 0, backgroundColor: "#f8fafc", borderColor: "#e2e8f0" },
+      ]}
+    >
+      <Text style={[styles.calloutText, { color: "#64748b" }]}>{children}</Text>
+    </View>
+  );
+}
+
+function ReportHeader({
+  data,
+  generatedAt,
+}: {
+  data: PremiumReportData;
+  generatedAt: Date;
+}) {
+  return (
+    <View style={styles.header}>
+      <View>
+        <View style={styles.brandBlock}>
+          <View style={styles.logo}>
+            <Text style={styles.logoText}>D</Text>
+          </View>
+          <View>
+            <Text style={styles.brand}>DUKAN</Text>
+            <Text style={styles.meta}>{text(data.shopName, "Dukan Shop")}</Text>
+          </View>
+        </View>
+        <Text style={styles.title}>{text(data.label, "Selected Period")} Dukan Report</Text>
+        <Text style={styles.meta}>
+          Generated {generatedAt.toLocaleDateString("en-IN", {
+            day: "numeric",
+            month: "short",
+            year: "numeric",
+          })}{" "}
+          at{" "}
+          {generatedAt.toLocaleTimeString("en-IN", {
+            hour: "numeric",
+            minute: "2-digit",
+            hour12: true,
+          })}
+        </Text>
+      </View>
+      <Text style={styles.premiumBadge}>PREMIUM{"\n"}DUKAN REPORT</Text>
+    </View>
+  );
+}
+
+function Footer({ page }: { page: number }) {
+  return (
+    <View style={styles.footer} fixed>
+      <Text>DUKAN premium report</Text>
+      <Text>Page {page}</Text>
+    </View>
+  );
+}
+
+export const PremiumPdfReport = ({ data }: { data: PremiumReportData }) => {
+  const generatedAt = useMemo(() => new Date(), []);
+
   const dailyData = useMemo(() => {
-    if (data.dailyData && data.dailyData.length > 0) return data.dailyData;
-    const dailyMap = new Map<string, { revenue: number; cost: number; profit: number }>();
-    data.sales.forEach(sale => {
-      const date = sale.date;
-      const existing = dailyMap.get(date) || { revenue: 0, cost: 0, profit: 0 };
-      dailyMap.set(date, {
-        revenue: existing.revenue + (sale.subtotal || 0),
-        cost: existing.cost + (sale.totalCost || 0),
-        profit: existing.profit + (sale.totalProfit || 0),
+    if (data.dailyData?.length) return data.dailyData;
+    const byDate = new Map<string, { revenue: number; cost: number; profit: number }>();
+
+    data.sales.forEach((sale) => {
+      const date = typeof sale?.date === "string" ? sale.date : "Unknown";
+      const existing = byDate.get(date) || { revenue: 0, cost: 0, profit: 0 };
+      byDate.set(date, {
+        revenue: existing.revenue + Number(sale.subtotal || 0),
+        cost: existing.cost + Number(sale.totalCost || 0),
+        profit: existing.profit + Number(sale.totalProfit || 0),
       });
     });
-    return Array.from(dailyMap.entries())
-      .map(([date, values]) => ({ date, ...values }))
-      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-      .slice(-7);
-  }, [data.sales, data.dailyData]);
 
-  const maxRevenue = useMemo(() => Math.max(...dailyData.map(d => d.revenue), 1), [dailyData]);
-  const maxTopItemRevenue = useMemo(() => Math.max(...data.topItems.map(d => d.revenue), 1), [data.topItems]);
-  const totalPaymentAmount = useMemo(() => Object.values(data.paymentBreakdown).reduce((sum, val) => sum + val.amount, 0), [data.paymentBreakdown]);
-  const stockLevels = useMemo(() => {
-    const lowStock = data.lowStockItems.length;
-    const normalStock = data.productsCount - lowStock;
-    return [
-      { name: "Normal Stock", value: normalStock, color: "#059669" },
-      { name: "Low Stock", value: lowStock, color: "#f59e0b" },
-    ];
-  }, [data.lowStockItems, data.productsCount]);
-  const maxStockLevelValue = useMemo(() => Math.max(...stockLevels.map(s => s.value), 1), [stockLevels]);
-  const paymentColors = ["#2563eb", "#059669", "#7c3aed", "#f59e0b"];
+    return Array.from(byDate.entries())
+      .map(([date, values]) => ({ date, ...values }))
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  }, [data.dailyData, data.sales]);
+
+  const itemPerformance = useMemo(() => {
+    if (data.itemPerformance?.length) return data.itemPerformance;
+    return data.topItems.map((item) => ({
+      name: item.name,
+      quantity: item.quantity,
+      revenue: item.revenue,
+      cost: item.revenue - item.profit,
+      profit: item.profit,
+      margin: item.revenue > 0 ? (item.profit / item.revenue) * 100 : 0,
+    }));
+  }, [data.itemPerformance, data.topItems]);
+
+  const stockItems = data.stockItems || [];
+  const stockChunks = chunkArray(stockItems, 15);
+  const stockPages = stockChunks.length ? stockChunks : [[]];
+  const stockSummary = {
+    out: stockItems.filter((item) => item.status === "out").length,
+    low: stockItems.filter((item) => item.status === "low").length,
+    expired: stockItems.filter((item) => item.status === "expired").length,
+    expiring: stockItems.filter((item) => item.status === "expiring").length,
+    healthy: stockItems.filter((item) => item.status === "good").length,
+  };
+
+  const paymentRows = Object.entries(data.paymentBreakdown)
+    .sort((a, b) => b[1].amount - a[1].amount)
+    .slice(0, 4);
+  const paymentTotal = paymentRows.reduce((sum, [, entry]) => sum + entry.amount, 0);
+
+  const topItems = itemPerformance.slice(0, 6);
+  const topRevenue = Math.max(...topItems.map((item) => item.revenue), 1);
+  const goodMarginItems = [...itemPerformance]
+    .filter((item) => item.profit > 0)
+    .sort((a, b) => b.margin - a.margin)
+    .slice(0, 5);
+  const lowMarginItems = [...itemPerformance]
+    .filter((item) => item.profit >= 0 && item.margin < 10)
+    .sort((a, b) => a.margin - b.margin)
+    .slice(0, 5);
+  const lossItems = [...itemPerformance]
+    .filter((item) => item.profit < 0)
+    .sort((a, b) => a.profit - b.profit)
+    .slice(0, 5);
+  const bestProfitItem = [...itemPerformance].sort((a, b) => b.profit - a.profit)[0];
+  const bestStaff = data.staffSales?.[0];
+  const bestBrand = data.brandDemand?.[0];
+  const comparisonLabel = data.comparison?.label || "Previous period";
+
+  const stockHealth = data.productsCount
+    ? ((data.productsCount - data.lowStockItems.length - stockSummary.out) /
+        data.productsCount) *
+      100
+    : 0;
+
+  const stockMovements = data.stockMovements || [];
+  const actionItems =
+    data.suggestions && data.suggestions.length > 0
+      ? data.suggestions
+      : [
+          "Restock low and out-of-stock items before peak sale time.",
+          "Check low-margin item prices against latest purchase cost.",
+          "Use worker-wise sales to coach billing and margin habits.",
+        ];
 
   return (
     <Document>
-      <Page size="A4" style={styles.page}>
-        <View style={styles.header}>
-          <Text style={styles.title}>{data.shopName || "Dukan Report"}</Text>
-          <Text style={styles.subtitle}>{data.label}</Text>
-          <Text style={[styles.subtitle, { fontSize: 11, marginTop: 8 }]}>
-            Generated on {new Date().toLocaleDateString("en-IN", { 
-              weekday: "long", year: "numeric", month: "long", day: "numeric" 
-            })} at {new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
-          </Text>
-        </View>
+      <Page size="A4" orientation="landscape" style={styles.page}>
+        <ReportHeader data={data} generatedAt={generatedAt} />
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Financial Summary</Text>
-          <View style={styles.summaryGrid}>
-            <View style={styles.summaryCard}>
-              <Text style={styles.summaryLabel}>Transactions</Text>
-              <Text style={styles.summaryValue}>{data.transactions}</Text>
-            </View>
-            <View style={styles.summaryCard}>
-              <Text style={styles.summaryLabel}>Items Sold</Text>
-              <Text style={styles.summaryValue}>{formatNumber(data.totalItemsSold)}</Text>
-            </View>
-            <View style={styles.summaryCard}>
-              <Text style={styles.summaryLabel}>Revenue</Text>
-              <Text style={[styles.summaryValue, { color: "#2563eb" }]}>
-                Rs. {formatMoney(data.revenue)}
-              </Text>
-            </View>
-            <View style={styles.summaryCard}>
-              <Text style={styles.summaryLabel}>Cost</Text>
-              <Text style={[styles.summaryValue, { color: "#7c3aed" }]}>
-                Rs. {formatMoney(data.cost)}
-              </Text>
-            </View>
-            <View style={styles.summaryCard}>
-              <Text style={styles.summaryLabel}>Profit</Text>
-              <Text style={[
-                styles.summaryValue,
-                data.profit >= 0 ? styles.greenText : styles.redText,
-              ]}>
-                Rs. {formatMoney(data.profit)}
-              </Text>
-            </View>
-            <View style={styles.summaryCard}>
-              <Text style={styles.summaryLabel}>Margin</Text>
-              <Text style={[styles.summaryValue, { color: "#059669" }]}>
-                {formatPercent(data.margin)}%
-              </Text>
-            </View>
-            <View style={styles.summaryCard}>
-              <Text style={styles.summaryLabel}>Average Bill</Text>
-              <Text style={styles.summaryValue}>
-                Rs. {formatMoney(data.averageBill)}
-              </Text>
-            </View>
-          </View>
-        </View>
+        <View style={styles.grid}>
+          <View style={styles.colLarge}>
+            <Section index={1} title="Sales Data First" hint={`vs ${comparisonLabel}`} tone="green">
+              <View style={styles.metricGrid}>
+                <Metric
+                  label="Total Sales"
+                  value={money(data.revenue)}
+                  sub={
+                    data.comparison
+                      ? `${signedPct(data.comparison.revenueChange)} from ${comparisonLabel}`
+                      : `${formatNumber(data.transactions)} bills`
+                  }
+                  tone="green"
+                />
+                <Metric
+                  label="Total Bills"
+                  value={formatNumber(data.transactions)}
+                  sub={`Average bill ${money(data.averageBill)}`}
+                  tone="blue"
+                />
+                <Metric
+                  label="Items Sold"
+                  value={formatNumber(data.totalItemsSold)}
+                  sub="Quantity moved"
+                  tone="purple"
+                />
+                <Metric
+                  label="Udhari Sales"
+                  value={money(data.paymentBreakdown.udhar?.amount || 0)}
+                  sub={`${data.paymentBreakdown.udhar?.count || 0} bills`}
+                  tone="amber"
+                />
+              </View>
 
-        {dailyData.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Revenue Trend</Text>
-            <View style={styles.chartContainer}>
-              {dailyData.map((day, index) => (
-                <View key={index} style={styles.barChartRow}>
-                  <Text style={styles.barLabel}>
-                    {new Date(day.date).toLocaleDateString("en-IN", { month: "short", day: "numeric" })}
+              <Table
+                headers={["Metric", "This report", comparisonLabel, "Change"]}
+                widths={["28%", "24%", "24%", "24%"]}
+                rows={[
+                  [
+                    <Text style={styles.rowTitle}>Sales</Text>,
+                    money(data.revenue),
+                    data.comparison ? money(data.comparison.revenue) : "N/A",
+                    <Text
+                      style={
+                        data.comparison && data.comparison.revenueChange < 0
+                          ? styles.negative
+                          : styles.positive
+                      }
+                    >
+                      {data.comparison ? signedPct(data.comparison.revenueChange) : "N/A"}
+                    </Text>,
+                  ],
+                  [
+                    <Text style={styles.rowTitle}>Profit</Text>,
+                    money(data.profit),
+                    data.comparison ? money(data.comparison.profit) : "N/A",
+                    <Text
+                      style={
+                        data.comparison && data.comparison.profitChange < 0
+                          ? styles.negative
+                          : styles.positive
+                      }
+                    >
+                      {data.comparison ? signedPct(data.comparison.profitChange) : "N/A"}
+                    </Text>,
+                  ],
+                  [
+                    <Text style={styles.rowTitle}>Margin</Text>,
+                    pct(data.margin),
+                    data.comparison ? pct(data.comparison.margin) : "N/A",
+                    <Text
+                      style={
+                        data.comparison && data.comparison.marginChange < 0
+                          ? styles.negative
+                          : styles.positive
+                      }
+                    >
+                      {data.comparison ? signedPct(data.comparison.marginChange) : "N/A"}
+                    </Text>,
+                  ],
+                  [
+                    <Text style={styles.rowTitle}>Bills</Text>,
+                    formatNumber(data.transactions),
+                    data.comparison ? formatNumber(data.comparison.transactions) : "N/A",
+                    data.comparison
+                      ? formatNumber(data.transactions - data.comparison.transactions)
+                      : "N/A",
+                  ],
+                ]}
+              />
+
+              <View style={styles.chipRow}>
+                {paymentRows.length > 0 ? (
+                  paymentRows.map(([method, entry]) => (
+                    <View key={method} style={styles.chip}>
+                      <Text style={styles.chipLabel}>{paymentName(method)}</Text>
+                      <Text style={styles.chipValue}>{money(entry.amount)}</Text>
+                      <Text style={styles.subText}>
+                        {paymentTotal > 0
+                          ? pct((entry.amount / paymentTotal) * 100)
+                          : "0%"}{" "}
+                        mix
+                      </Text>
+                    </View>
+                  ))
+                ) : (
+                  <View style={styles.chip}>
+                    <Text style={styles.chipLabel}>Payments</Text>
+                    <Text style={styles.chipValue}>No sale</Text>
+                  </View>
+                )}
+              </View>
+            </Section>
+
+            <Section index={2} title="Profit And Margin" tone="blue">
+              <View style={styles.metricGrid}>
+                <Metric label="Total Cost" value={money(data.cost)} sub="Sold stock cost" tone="slate" />
+                <Metric label="Total Profit" value={money(data.profit)} sub={`${pct(data.margin)} margin`} tone={data.profit >= 0 ? "green" : "red"} />
+                <Metric label="Best Profit Item" value={bestProfitItem ? money(bestProfitItem.profit) : money(0)} sub={bestProfitItem ? text(bestProfitItem.name, "Item", 22) : "No item"} tone="amber" />
+              </View>
+
+              {goodMarginItems.length > 0 ? (
+                <Table
+                  headers={["Good margin item", "Sales", "Profit", "Margin"]}
+                  widths={["42%", "20%", "20%", "18%"]}
+                  rows={goodMarginItems.map((item) => [
+                    <Text style={styles.rowTitle}>{text(item.name, "Item", 28)}</Text>,
+                    money(item.revenue),
+                    money(item.profit),
+                    <Text style={styles.positive}>{pct(item.margin)}</Text>,
+                  ])}
+                />
+              ) : (
+                <Empty>No good-margin item found in this period.</Empty>
+              )}
+
+              {(lowMarginItems.length > 0 || lossItems.length > 0) && (
+                <View style={styles.callout}>
+                  <Text style={styles.calloutTitle}>Margin watch</Text>
+                  <Text style={styles.calloutText}>
+                    {lossItems.length > 0
+                      ? `${lossItems.length} item(s) sold at loss. Fix price or purchase rate before next sale.`
+                      : `${lowMarginItems.length} item(s) sold below 10% margin. Review pricing.`}
                   </Text>
-                  <View style={styles.barWrapper}>
-                    <View style={[
-                      styles.bar, 
-                      { width: `${(day.revenue / maxRevenue) * 100}%`, backgroundColor: "#2563eb" }
-                    ]} />
-                  </View>
-                  <Text style={styles.barValue}>Rs. {formatMoney(day.revenue)}</Text>
                 </View>
-              ))}
-              <View style={styles.legend}>
-                <View style={styles.legendItem}>
-                  <View style={[styles.legendColor, { backgroundColor: "#2563eb" }]} />
-                  <Text style={styles.legendText}>Revenue</Text>
-                </View>
-              </View>
-            </View>
+              )}
+            </Section>
           </View>
-        )}
 
-        {data.topItems.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Top Items by Revenue</Text>
-            <View style={styles.chartContainer}>
-              {data.topItems.slice(0, 5).map((item, index) => (
-                <View key={index} style={styles.barChartRow}>
-                  <Text style={styles.barLabel}>{truncateText(item.name)}</Text>
-                  <View style={styles.barWrapper}>
-                    <View style={[
-                      styles.bar, 
-                      { width: `${(item.revenue / maxTopItemRevenue) * 100}%`, backgroundColor: "#059669" }
-                    ]} />
-                  </View>
-                  <Text style={styles.barValue}>Rs. {formatMoney(item.revenue)}</Text>
-                </View>
-              ))}
-            </View>
-          </View>
-        )}
+          <View style={styles.colSmall}>
+            <Section index={3} title="Worker Wise Sales" tone="purple">
+              {data.staffSales?.length ? (
+                <Table
+                  headers={["Worker", "Sales", "Profit", "Bills", "Udhari"]}
+                  widths={["30%", "22%", "20%", "13%", "15%"]}
+                  rows={data.staffSales.slice(0, 7).map((worker) => [
+                    <View>
+                      <Text style={styles.rowTitle}>{text(worker.staffName, "Worker", 20)}</Text>
+                      <Text style={styles.subText}>Avg {money(worker.averageBill)}</Text>
+                    </View>,
+                    money(worker.revenue),
+                    <Text style={(worker.profit || 0) >= 0 ? styles.positive : styles.negative}>
+                      {money(worker.profit || 0)}
+                    </Text>,
+                    formatNumber(worker.transactions),
+                    money(worker.udhariAmount || 0),
+                  ])}
+                />
+              ) : (
+                <Empty>Worker-wise sales will appear when sales are linked to staff accounts.</Empty>
+              )}
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Stock Levels</Text>
-          <View style={styles.chartContainer}>
-            {stockLevels.map((level, index) => (
-              <View key={index} style={styles.barChartRow}>
-                <Text style={styles.barLabel}>{level.name}</Text>
-                <View style={styles.barWrapper}>
-                  <View style={[
-                    styles.bar, 
-                    { width: `${(level.value / maxStockLevelValue) * 100}%`, backgroundColor: level.color }
-                  ]} />
+              {bestStaff ? (
+                <View style={styles.callout}>
+                  <Text style={styles.calloutTitle}>Top worker</Text>
+                  <Text style={styles.calloutText}>
+                    {text(bestStaff.staffName, "Worker", 22)} made {money(bestStaff.revenue)} sales with {money(bestStaff.profit || 0)} profit.
+                  </Text>
                 </View>
-                <Text style={styles.barValue}>{level.value}</Text>
-              </View>
-            ))}
-          </View>
-        </View>
+              ) : null}
+            </Section>
 
-        {Object.keys(data.paymentBreakdown).length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Payment Methods</Text>
-            <View style={styles.chartContainer}>
-              {Object.entries(data.paymentBreakdown).map(([method, breakdown], index) => (
-                <View key={method} style={styles.barChartRow}>
-                  <Text style={styles.barLabel}>{method.charAt(0).toUpperCase() + method.slice(1)}</Text>
-                  <View style={styles.barWrapper}>
-                    <View style={[
-                      styles.bar, 
-                      { width: `${(breakdown.amount / totalPaymentAmount) * 100}%`, backgroundColor: paymentColors[index % paymentColors.length] }
-                    ]} />
-                  </View>
-                  <Text style={styles.barValue}>Rs. {formatMoney(breakdown.amount)}</Text>
-                </View>
-              ))}
-              <View style={styles.legend}>
-                {Object.entries(data.paymentBreakdown).map(([method, breakdown], index) => (
-                  <View key={method} style={styles.legendItem}>
-                    <View style={[styles.legendColor, { backgroundColor: paymentColors[index % paymentColors.length] }]} />
-                    <Text style={styles.legendText}>
-                      {method.charAt(0).toUpperCase() + method.slice(1)}: {formatPercent((breakdown.amount / totalPaymentAmount) * 100)}%
-                    </Text>
-                  </View>
-                ))}
-              </View>
-            </View>
-          </View>
-        )}
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Payment Breakdown</Text>
-          <View style={styles.table}>
-            <View style={styles.tableHeader}>
-              <View style={[styles.tableHeaderCell, { width: "25%" }]}>
-                <Text>Method</Text>
-              </View>
-              <View style={[styles.tableHeaderCell, { width: "25%" }]}>
-                <Text>Count</Text>
-              </View>
-              <View style={[styles.tableHeaderCell, { width: "50%" }]}>
-                <Text>Amount</Text>
-              </View>
-            </View>
-            {Object.entries(data.paymentBreakdown).map(([method, breakdown]) => (
-              <View style={styles.tableRow} key={method}>
-                <View style={[styles.tableCell, { width: "25%" }]}>
-                  <Text>{method.charAt(0).toUpperCase() + method.slice(1)}</Text>
-                </View>
-                <View style={[styles.tableCell, { width: "25%" }]}>
-                  <Text>{breakdown.count}</Text>
-                </View>
-                <View style={[styles.tableCell, { width: "50%" }]}>
-                  <Text>Rs. {formatMoney(breakdown.amount)}</Text>
-                </View>
-              </View>
-            ))}
+            <Section index={4} title="Top Sold Items" tone="green">
+              {topItems.length > 0 ? (
+                <Table
+                  headers={["Item", "Qty", "Sales", "Profit"]}
+                  widths={["42%", "16%", "22%", "20%"]}
+                  rows={topItems.map((item) => [
+                    <View>
+                      <Text style={styles.rowTitle}>{text(item.name, "Item", 24)}</Text>
+                      <View style={styles.barTrack}>
+                        <View
+                          style={[
+                            styles.barFill,
+                            {
+                              width: `${clamp((item.revenue / topRevenue) * 100)}%`,
+                              backgroundColor: palette.green.ink,
+                            },
+                          ]}
+                        />
+                      </View>
+                    </View>,
+                    formatNumber(item.quantity),
+                    money(item.revenue),
+                    <Text style={item.profit >= 0 ? styles.positive : styles.negative}>
+                      {money(item.profit)}
+                    </Text>,
+                  ])}
+                />
+              ) : (
+                <Empty>No sold item data for this report period.</Empty>
+              )}
+            </Section>
           </View>
         </View>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Top Selling Items</Text>
-          {data.topItems.length > 0 ? (
-            <View style={styles.table}>
-              <View style={styles.tableHeader}>
-                <View style={[styles.tableHeaderCell, { width: "40%" }]}>
-                  <Text>Item</Text>
-                </View>
-                <View style={[styles.tableHeaderCell, { width: "20%" }]}>
-                  <Text>Qty Sold</Text>
-                </View>
-                <View style={[styles.tableHeaderCell, { width: "20%" }]}>
-                  <Text>Revenue</Text>
-                </View>
-                <View style={[styles.tableHeaderCell, { width: "20%" }]}>
-                  <Text>Profit</Text>
-                </View>
-              </View>
-              {data.topItems.map((item, index) => (
-                <View style={styles.tableRow} key={index}>
-                  <View style={[styles.tableCell, { width: "40%" }]}>
-                    <Text>{item.name}</Text>
-                  </View>
-                  <View style={[styles.tableCell, { width: "20%" }]}>
-                    <Text>{formatNumber(item.quantity)}</Text>
-                  </View>
-                  <View style={[styles.tableCell, { width: "20%" }]}>
-                    <Text>Rs. {formatMoney(item.revenue)}</Text>
-                  </View>
-                  <View style={[styles.tableCell, { width: "20%" }]}>
-                    <Text style={styles.greenText}>Rs. {formatMoney(item.profit)}</Text>
-                  </View>
-                </View>
-              ))}
-            </View>
-          ) : (
-            <Text style={{ fontSize: 10, color: "#6b7280" }}>
-              No items sold in this period
-            </Text>
-          )}
-        </View>
+        <Footer page={1} />
+      </Page>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Stock Summary</Text>
-          <View style={styles.summaryGrid}>
-            <View style={styles.summaryCard}>
-              <Text style={styles.summaryLabel}>Total Stock Worth</Text>
-              <Text style={[styles.summaryValue, { color: "#7c3aed" }]}>
-                Rs. {formatMoney(data.totalStockValue)}
-              </Text>
-            </View>
-            <View style={styles.summaryCard}>
-              <Text style={styles.summaryLabel}>Total Products</Text>
-              <Text style={styles.summaryValue}>{data.productsCount}</Text>
-            </View>
-            <View style={styles.summaryCard}>
-              <Text style={styles.summaryLabel}>Low Stock Items</Text>
-              <Text style={[styles.summaryValue, { color: "#f59e0b" }]}>
-                {data.lowStockItems.length}
-              </Text>
-            </View>
+      <Page size="A4" orientation="landscape" style={styles.page}>
+        <ReportHeader data={data} generatedAt={generatedAt} />
+
+        <View style={styles.grid}>
+          <View style={styles.colLarge}>
+            <Section index={5} title="Stock Stats And Item Numbers" hint="current inventory" tone="amber">
+              <View style={styles.metricGrid}>
+                <Metric label="Total Stock Value" value={money(data.totalStockValue)} sub="Current inventory worth" tone="purple" />
+                <Metric label="Total Items" value={formatNumber(data.productsCount)} sub={`${stockSummary.healthy} healthy`} tone="blue" />
+                <Metric label="Need Attention" value={formatNumber(stockSummary.low + stockSummary.out + stockSummary.expired + stockSummary.expiring)} sub={`${stockSummary.out} out, ${stockSummary.low} low`} tone={stockSummary.low + stockSummary.out > 0 ? "red" : "green"} />
+                <Metric label="Stock Health" value={pct(stockHealth)} sub={`${stockSummary.expired + stockSummary.expiring} expiry alerts`} tone={stockHealth >= 75 ? "green" : "amber"} />
+              </View>
+
+              {stockItems.length > 0 ? (
+                <Table
+                  headers={["Item", "Stock", "Value", "Margin", "Status", "Dates"]}
+                  widths={["28%", "14%", "15%", "14%", "12%", "17%"]}
+                  rows={stockPages[0].map((item) => {
+                    const tone = statusTone(item.status);
+                    return [
+                      <View>
+                        <Text style={styles.rowTitle}>{text(item.name, "Item", 24)}</Text>
+                        <Text style={styles.subText}>{text(item.brand, "No brand", 20)}</Text>
+                      </View>,
+                      `${formatNumber(item.quantity)} ${text(item.unit, "unit", 6)}`,
+                      money(item.stockValue),
+                      <View>
+                        <Text style={item.marginPercent >= 15 ? styles.positive : styles.warning}>
+                          {pct(item.marginPercent)}
+                        </Text>
+                        <Text style={styles.subText}>{money(item.marginAmount)}/unit</Text>
+                      </View>,
+                      <Text
+                        style={[
+                          styles.pill,
+                          {
+                            color: palette[tone].ink,
+                            backgroundColor: palette[tone].bg,
+                            borderColor: palette[tone].border,
+                            borderWidth: 1,
+                          },
+                        ]}
+                      >
+                        {statusLabel(item.status)}
+                      </Text>,
+                      <View>
+                        <Text>Updated {shortDate(item.lastUpdated)}</Text>
+                        <Text style={styles.subText}>Sold {shortDate(item.lastSoldDate)}</Text>
+                      </View>,
+                    ];
+                  })}
+                />
+              ) : (
+                <Empty>No stock items are available for this shop.</Empty>
+              )}
+            </Section>
+          </View>
+
+          <View style={styles.colSmall}>
+            <Section index={6} title="Date Wise Stock Updates" tone="blue">
+              {stockMovements.length > 0 ? (
+                <Table
+                  headers={["Date", "Item", "Type", "Change", "After"]}
+                  widths={["18%", "34%", "17%", "16%", "15%"]}
+                  rows={stockMovements.slice(0, 12).map((movement) => [
+                    shortDate(movement.date),
+                    <Text style={styles.rowTitle}>{text(movement.itemName, "Item", 22)}</Text>,
+                    movementLabel(movement.type),
+                    <Text
+                      style={movement.quantityChanged < 0 ? styles.negative : styles.positive}
+                    >
+                      {formatNumber(movement.quantityChanged)}
+                    </Text>,
+                    formatNumber(movement.quantityAfter),
+                  ])}
+                />
+              ) : (
+                <Empty>No stock movement entries were found for this report period.</Empty>
+              )}
+            </Section>
+
+            <Section index={7} title="Udhari Position" tone="red">
+              <View style={styles.metricGrid}>
+                <Metric label="Total Pending" value={money(data.totalPendingUdhari)} sub="All customers" tone="red" />
+                <Metric label="Report Udhari" value={money(data.paymentBreakdown.udhar?.amount || 0)} sub={`${data.paymentBreakdown.udhar?.count || 0} bills`} tone="amber" />
+              </View>
+              {data.highestUdharCustomer ? (
+                <View style={[styles.callout, { marginTop: 0 }]}>
+                  <Text style={styles.calloutTitle}>Collect first</Text>
+                  <Text style={styles.calloutText}>
+                    {text(data.highestUdharCustomer.name, "Customer", 24)} has {money(data.highestUdharCustomer.balance)} pending.
+                  </Text>
+                </View>
+              ) : (
+                <Empty>No pending udhari customer in this report.</Empty>
+              )}
+            </Section>
           </View>
         </View>
 
-        {data.lowStockItems.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Low Stock Alerts</Text>
-            <View style={styles.table}>
-              <View style={styles.tableHeader}>
-                <View style={[styles.tableHeaderCell, { width: "60%" }]}>
-                  <Text>Item</Text>
+        <Footer page={2} />
+      </Page>
+
+      {stockPages.slice(1).map((chunk, pageIndex) => (
+        <Page
+          key={`stock-${pageIndex}`}
+          size="A4"
+          orientation="landscape"
+          style={styles.page}
+        >
+          <ReportHeader data={data} generatedAt={generatedAt} />
+          <Section
+            index={8 + pageIndex}
+            title="Full Stock List Continued"
+            hint={`${stockItems.length} total items`}
+            tone="amber"
+          >
+            <Table
+              headers={["Item", "Stock", "Value", "Buy/Sell", "Margin", "Dates", "Status"]}
+              widths={["25%", "12%", "13%", "15%", "12%", "15%", "8%"]}
+              rows={chunk.map((item) => {
+                const tone = statusTone(item.status);
+                return [
+                  <View>
+                    <Text style={styles.rowTitle}>{text(item.name, "Item", 26)}</Text>
+                    <Text style={styles.subText}>{text(item.brand, "No brand", 18)}</Text>
+                  </View>,
+                  `${formatNumber(item.quantity)} ${text(item.unit, "unit", 6)}`,
+                  money(item.stockValue),
+                  <View>
+                    <Text>Buy {money(item.buyPrice)}</Text>
+                    <Text style={styles.subText}>Sell {money(item.sellPrice)}</Text>
+                  </View>,
+                  <Text style={item.marginPercent >= 15 ? styles.positive : styles.warning}>
+                    {pct(item.marginPercent)}
+                  </Text>,
+                  <View>
+                    <Text>Upd {shortDate(item.lastUpdated)}</Text>
+                    <Text style={styles.subText}>Sold {shortDate(item.lastSoldDate)}</Text>
+                  </View>,
+                  <Text
+                    style={[
+                      styles.pill,
+                      {
+                        color: palette[tone].ink,
+                        backgroundColor: palette[tone].bg,
+                        borderColor: palette[tone].border,
+                        borderWidth: 1,
+                      },
+                    ]}
+                  >
+                    {statusLabel(item.status)}
+                  </Text>,
+                ];
+              })}
+            />
+          </Section>
+          <Footer page={3 + pageIndex} />
+        </Page>
+      ))}
+
+      <Page size="A4" orientation="landscape" style={styles.page}>
+        <ReportHeader data={data} generatedAt={generatedAt} />
+
+        <View style={styles.grid}>
+          <View style={styles.colThird}>
+            <Section index={20} title="Brand Comparison" tone="purple">
+              {data.brandDemand?.length ? (
+                <Table
+                  headers={["Product", "Winning brand", "Brand sales", "Share"]}
+                  widths={["32%", "28%", "22%", "18%"]}
+                  rows={data.brandDemand.slice(0, 8).map((item) => [
+                    <Text style={styles.rowTitle}>{text(item.productName, "Product", 20)}</Text>,
+                    text(item.topBrand, "Brand", 18),
+                    money(item.topBrandRevenue),
+                    <Text style={styles.positive}>
+                      {pct(Math.abs(item.topBrandShare) <= 1 ? item.topBrandShare * 100 : item.topBrandShare)}
+                    </Text>,
+                  ])}
+                />
+              ) : (
+                <Empty>Brand comparison appears when the same product sells across multiple brands.</Empty>
+              )}
+              {bestBrand ? (
+                <View style={styles.callout}>
+                  <Text style={styles.calloutTitle}>Brand insight</Text>
+                  <Text style={styles.calloutText}>
+                    {text(bestBrand.topBrand, "Brand", 20)} is leading in {text(bestBrand.productName, "product", 20)}. Keep reorder priority aligned with demand.
+                  </Text>
                 </View>
-                <View style={[styles.tableHeaderCell, { width: "20%" }]}>
-                  <Text>Current</Text>
-                </View>
-                <View style={[styles.tableHeaderCell, { width: "20%" }]}>
-                  <Text>Limit</Text>
-                </View>
-              </View>
-              {data.lowStockItems.map((item, index) => (
-                <View style={styles.tableRow} key={index}>
-                  <View style={[styles.tableCell, { width: "60%" }]}>
-                    <Text>{item.name}</Text>
-                  </View>
-                  <View style={[styles.tableCell, { width: "20%" }]}>
-                    <Text style={styles.redText}>{item.quantity}</Text>
-                  </View>
-                  <View style={[styles.tableCell, { width: "20%" }]}>
-                    <Text>{item.lowStockLimit}</Text>
-                  </View>
+              ) : null}
+            </Section>
+          </View>
+
+          <View style={styles.colThird}>
+            <Section index={21} title="Low Margin And Loss Items" tone="red">
+              {lossItems.length > 0 ? (
+                <Table
+                  headers={["Loss item", "Sales", "Loss", "Margin"]}
+                  widths={["40%", "20%", "20%", "20%"]}
+                  rows={lossItems.map((item) => [
+                    <Text style={styles.rowTitle}>{text(item.name, "Item", 22)}</Text>,
+                    money(item.revenue),
+                    <Text style={styles.negative}>{money(item.profit)}</Text>,
+                    <Text style={styles.negative}>{pct(item.margin)}</Text>,
+                  ])}
+                />
+              ) : lowMarginItems.length > 0 ? (
+                <Table
+                  headers={["Low margin", "Sales", "Profit", "Margin"]}
+                  widths={["40%", "20%", "20%", "20%"]}
+                  rows={lowMarginItems.map((item) => [
+                    <Text style={styles.rowTitle}>{text(item.name, "Item", 22)}</Text>,
+                    money(item.revenue),
+                    money(item.profit),
+                    <Text style={styles.warning}>{pct(item.margin)}</Text>,
+                  ])}
+                />
+              ) : (
+                <Empty>No loss-making or very low-margin item found.</Empty>
+              )}
+            </Section>
+          </View>
+
+          <View style={styles.colThird}>
+            <Section index={22} title="Insights And Suggestions" tone="amber">
+              {actionItems.slice(0, 7).map((action, index) => (
+                <View
+                  key={index}
+                  style={[
+                    styles.actionRow,
+                    index === Math.min(actionItems.length, 7) - 1
+                      ? { borderBottomWidth: 0 }
+                      : {},
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.actionNo,
+                      {
+                        backgroundColor:
+                          index === 0
+                            ? palette.red.ink
+                            : index === 1
+                              ? palette.amber.ink
+                              : palette.blue.ink,
+                      },
+                    ]}
+                  >
+                    {index + 1}
+                  </Text>
+                  <Text style={styles.actionText}>{text(action, "Suggestion", 115)}</Text>
                 </View>
               ))}
-            </View>
-          </View>
-        )}
 
-        {data.notifications && data.notifications.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Recent Notifications</Text>
-            <View style={styles.table}>
-              <View style={styles.tableHeader}>
-                <View style={[styles.tableHeaderCell, { width: "35%" }]}>
-                  <Text>Title</Text>
-                </View>
-                <View style={[styles.tableHeaderCell, { width: "45%" }]}>
-                  <Text>Details</Text>
-                </View>
-                <View style={[styles.tableHeaderCell, { width: "20%" }]}>
-                  <Text>Meta</Text>
-                </View>
-              </View>
-              {data.notifications.slice(0, 10).map((item, index) => (
-                <View style={styles.tableRow} key={item.id || index}>
-                  <View style={[styles.tableCell, { width: "35%" }]}>
-                    <Text>{truncateText(item.title, 26)}</Text>
-                  </View>
-                  <View style={[styles.tableCell, { width: "45%" }]}>
-                    <Text>{truncateText(item.message, 70)}</Text>
-                  </View>
-                  <View style={[styles.tableCell, { width: "20%" }]}>
-                    <Text style={styles.mutedText}>{item.meta || item.category}</Text>
-                  </View>
-                </View>
-              ))}
-            </View>
-          </View>
-        )}
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Udhari Summary</Text>
-          <View style={styles.summaryGrid}>
-            <View style={styles.summaryCard}>
-              <Text style={styles.summaryLabel}>Udhari Sales</Text>
-              <Text style={[styles.summaryValue, { color: "#f59e0b" }]}>
-                Rs. {formatMoney(data.paymentBreakdown.udhar?.amount || 0)}
-              </Text>
-            </View>
-            <View style={styles.summaryCard}>
-              <Text style={styles.summaryLabel}>Total Pending</Text>
-              <Text style={[styles.summaryValue, { color: "#f59e0b" }]}>
-                Rs. {formatMoney(data.totalPendingUdhari)}
-              </Text>
-            </View>
-            {data.highestUdharCustomer && (
-              <View style={[styles.summaryCard, { width: "100%" }]}>
-                <Text style={styles.summaryLabel}>Highest Udhari Customer</Text>
-                <Text style={styles.summaryValue}>
-                  {data.highestUdharCustomer.name} - Rs.{" "}
-                  {formatMoney(data.highestUdharCustomer.balance)}
+              <View style={styles.callout}>
+                <Text style={styles.calloutTitle}>Owner focus</Text>
+                <Text style={styles.calloutText}>
+                  Start with sales change, worker performance, low stock, and loss items. These four points usually decide tomorrow's profit.
                 </Text>
               </View>
-            )}
+            </Section>
           </View>
         </View>
 
-        <View style={styles.footer} fixed>
-          <Text>© {new Date().getFullYear()} Dukan Management System</Text>
-        </View>
+        <Footer page={3 + Math.max(stockPages.length - 1, 0)} />
       </Page>
     </Document>
   );

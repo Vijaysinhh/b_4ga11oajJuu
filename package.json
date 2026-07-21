@@ -52,6 +52,7 @@
     "dexie-react-hooks": "^1.1.6",
     "embla-carousel-react": "8.6.0",
     "html2canvas": "^1.4.1",
+    "jspdf": "^2.5.1",
     "input-otp": "1.4.2",
     "lucide-react": "^0.564.0",
     "next": "^16.2.7",
