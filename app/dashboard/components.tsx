@@ -11,6 +11,8 @@ import {
   useStockHistory,
   useUdhari,
   usePriceTiers,
+  useCategories,
+  useBatches,
 } from "@/hooks/use-supabase";
 import { useStaff } from "@/hooks/use-staff";
 import {
@@ -520,6 +522,8 @@ export function Dashboard() {
   const { t, language } = useLanguage();
   const { items } = useItems(currentShopId);
   const { units } = useUnits(currentShopId);
+  const { categories } = useCategories(currentShopId);
+  const { batches } = useBatches(currentShopId);
   const { sales, updateSale, deleteSale } = useSales(currentShopId);
   const { stockHistory } = useStockHistory(currentShopId);
   const { staff } = useStaff();
@@ -1262,6 +1266,20 @@ export function Dashboard() {
       }
     });
 
+    const uncategorizedLabel = language === "mr" ? "वर्गीकरण नाही" : "Uncategorized";
+
+    const categoryLookup = new Map<number, string>();
+    categories.forEach((category) => {
+      if (category.id !== undefined) {
+        categoryLookup.set(
+          category.id,
+          language === "mr"
+            ? category.nameMarathi || category.name || uncategorizedLabel
+            : category.name || category.nameMarathi || uncategorizedLabel,
+        );
+      }
+    });
+
     const lastSoldByItemId = new Map<number, string>();
     sales.forEach((sale) => {
       const saleDate = typeof sale?.date === "string" ? sale.date : "";
@@ -1352,8 +1370,16 @@ export function Dashboard() {
                   : ("good" as const);
 
         return {
-          name: item.name || item.nameMarathi || "Unknown",
-          brand: item.brand || item.brandMarathi || undefined,
+          name:
+            language === "mr"
+              ? item.nameMarathi || item.name || "Unknown"
+              : item.name || item.nameMarathi || "Unknown",
+          brand:
+            language === "mr"
+              ? item.brandMarathi || item.brand || undefined
+              : item.brand || item.brandMarathi || undefined,
+          categoryName:
+            categoryLookup.get(Number(item.categoryId)) || uncategorizedLabel,
           quantity,
           unit: unitLookup.get(Number(item.unitId)) || "unit",
           stockValue: quantity * buyPrice,
@@ -1387,7 +1413,7 @@ export function Dashboard() {
           movementTime <= selectedPeriodRange.end.getTime()
         );
       })
-      .slice(0, 24)
+      .sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0))
       .map((movement) => ({
         date: new Date(movement.createdAt).toISOString().slice(0, 10),
         itemName: movement.itemName || "Unknown",
@@ -1396,58 +1422,252 @@ export function Dashboard() {
         quantityBefore: Number(movement.quantityBefore || 0),
         quantityAfter: Number(movement.quantityAfter || 0),
         reason: movement.reason || movement.reference || undefined,
+        costPerUnit: Number(movement.costPerUnit || 0) || undefined,
       }));
+
+    const categoryStockSummary = Array.from(
+      stockItems.reduce((map, item) => {
+        const key = item.categoryName || uncategorizedLabel;
+        const current = map.get(key) || {
+          categoryName: key,
+          itemCount: 0,
+          totalQuantity: 0,
+          stockValue: 0,
+          lowCount: 0,
+          expiringCount: 0,
+        };
+        current.itemCount += 1;
+        current.totalQuantity += item.quantity;
+        current.stockValue += item.stockValue;
+        if (item.status === "low" || item.status === "out") current.lowCount += 1;
+        if (item.status === "expiring" || item.status === "expired") {
+          current.expiringCount += 1;
+        }
+        map.set(key, current);
+        return map;
+      }, new Map<string, {
+        categoryName: string;
+        itemCount: number;
+        totalQuantity: number;
+        stockValue: number;
+        lowCount: number;
+        expiringCount: number;
+      }>()),
+    )
+      .map(([, value]) => value)
+      .sort((a, b) => b.stockValue - a.stockValue);
+
+    const categorySalesMap = new Map<
+      string,
+      { categoryName: string; quantitySold: number; revenue: number; profit: number }
+    >();
+    report.sales.forEach((sale) => {
+      (sale.items || []).forEach((saleItem: any) => {
+        const item = itemLookup.get(Number(saleItem.itemId));
+        const categoryName =
+          categoryLookup.get(Number(item?.categoryId)) || uncategorizedLabel;
+        const current = categorySalesMap.get(categoryName) || {
+          categoryName,
+          quantitySold: 0,
+          revenue: 0,
+          profit: 0,
+        };
+        const revenueValue = Number(saleItem.totalPrice || 0);
+        const profitValue = Number(
+          saleItem.profit ??
+            revenueValue - Number(saleItem.totalCost || 0),
+        );
+        current.quantitySold += Number(saleItem.quantity || 0);
+        current.revenue += revenueValue;
+        current.profit += profitValue;
+        categorySalesMap.set(categoryName, current);
+      });
+    });
+    const categorySalesSummary = Array.from(categorySalesMap.values())
+      .map((entry) => ({
+        ...entry,
+        margin: entry.revenue > 0 ? (entry.profit / entry.revenue) * 100 : 0,
+      }))
+      .sort((a, b) => b.revenue - a.revenue);
+
+    const udhariCustomers = udhariPressures
+      .slice(0, 25)
+      .map(({ customer, pressure }) => ({
+        name: customer.name,
+        phone: customer.phone || undefined,
+        balance: Number(customer.balance || 0),
+        daysPending: pressure.daysPending,
+        riskLevel: pressure.riskLevel,
+      }));
+
+    const saleRegister = [...report.sales]
+      .sort((a, b) => {
+        const dateDiff = String(b.date || "").localeCompare(String(a.date || ""));
+        if (dateDiff !== 0) return dateDiff;
+        return Number(b.createdAt || 0) - Number(a.createdAt || 0);
+      })
+      .slice(0, 100)
+      .map((sale) => ({
+        date: sale.date,
+        time: sale.createdAt
+          ? new Date(sale.createdAt).toLocaleTimeString(
+              language === "mr" ? "mr-IN" : "en-IN",
+              { hour: "numeric", minute: "2-digit", hour12: true },
+            )
+          : undefined,
+        amount: Number(sale.subtotal || 0),
+        profit: Number(
+          sale.totalProfit ??
+            Number(sale.subtotal || 0) - Number(sale.totalCost || 0),
+        ),
+        paymentMethod: sale.paymentMethod || "cash",
+        itemCount: (sale.items || []).length,
+        totalQuantity: (sale.items || []).reduce(
+          (sum: number, saleItem: any) => sum + Number(saleItem.quantity || 0),
+          0,
+        ),
+        notes: sale.notes || undefined,
+      }));
+
+    const batchInventory = batches
+      .filter((batch) => Number(batch.quantityAvailable || 0) > 0)
+      .map((batch) => {
+        const item = itemLookup.get(Number(batch.itemId));
+        const expiryDate = batch.expiryDate ? new Date(batch.expiryDate) : null;
+        const expiryStart = expiryDate ? new Date(expiryDate) : null;
+        if (expiryStart) expiryStart.setHours(0, 0, 0, 0);
+        const quantityAvailable = Number(batch.quantityAvailable || 0);
+        const costPerUnit = Number(batch.costPerUnit || 0);
+        const status =
+          expiryStart && expiryStart < todayStart
+            ? ("expired" as const)
+            : expiryStart && expiryStart <= nextWeek
+              ? ("expiring" as const)
+              : ("active" as const);
+        return {
+          itemName:
+            language === "mr"
+              ? item?.nameMarathi || item?.name || "Unknown"
+              : item?.name || item?.nameMarathi || "Unknown",
+          batchNumber: batch.batchNumber || undefined,
+          expiryDate: batch.expiryDate
+            ? new Date(batch.expiryDate).toISOString().slice(0, 10)
+            : undefined,
+          quantityAvailable,
+          costPerUnit,
+          stockValue: quantityAvailable * costPerUnit,
+          status,
+        };
+      })
+      .sort((a, b) => {
+        const priority = { expired: 0, expiring: 1, active: 2 };
+        const diff = priority[a.status] - priority[b.status];
+        if (diff !== 0) return diff;
+        return b.stockValue - a.stockValue;
+      })
+      .slice(0, 100);
+
+    const normalizeComparisonKey = (item: any) => {
+      const baseName = String(item?.name || item?.nameMarathi || "")
+        .toLowerCase()
+        .trim();
+      const brandNames = [item?.brand, item?.brandMarathi]
+        .map((brand) => String(brand || "").toLowerCase().trim())
+        .filter(Boolean);
+      return brandNames
+        .reduce(
+          (name, brand) => name.replace(new RegExp(`\\b${brand.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "g"), ""),
+          baseName,
+        )
+        .replace(/\s+/g, " ")
+        .trim();
+    };
 
     const productDemand = new Map<
       string,
       {
         productName: string;
-        totalRevenue: number;
-        brandTotals: Map<string, number>;
+        brandTotals: Map<
+          string,
+          {
+            revenue: number;
+            quantity: number;
+            profit: number;
+            stockValue: number;
+          }
+        >;
       }
     >();
 
+    items.forEach((item) => {
+      const productKey = normalizeComparisonKey(item);
+      if (!productKey) return;
+      const productName =
+        language === "mr"
+          ? item.nameMarathi || item.name || "Unknown"
+          : item.name || item.nameMarathi || "Unknown";
+      const brand =
+        language === "mr"
+          ? item.brandMarathi || item.brand || "No brand"
+          : item.brand || item.brandMarathi || "No brand";
+      const product = productDemand.get(productKey) || {
+        productName,
+        brandTotals: new Map(),
+      };
+      const brandTotal = product.brandTotals.get(brand) || {
+        revenue: 0,
+        quantity: 0,
+        profit: 0,
+        stockValue: 0,
+      };
+      brandTotal.stockValue += Number(item.quantity || 0) * Number(item.buyPrice || 0);
+      product.brandTotals.set(brand, brandTotal);
+      productDemand.set(productKey, product);
+    });
+
     report.sales.forEach((sale) => {
       (sale.items || []).forEach((saleItem: any) => {
-        const item = itemLookup.get(saleItem.itemId);
-        const productName =
-          item?.name || item?.nameMarathi || saleItem.itemName || "Unknown";
-        const brand = item?.brand || item?.brandMarathi || "Unknown Brand";
-        const product = productDemand.get(productName) || {
-          productName,
-          totalRevenue: 0,
-          brandTotals: new Map(),
-        };
-        const currentBrandRevenue = product.brandTotals.get(brand) || 0;
-        product.brandTotals.set(
-          brand,
-          currentBrandRevenue + Number(saleItem.totalPrice || 0),
-        );
-        product.totalRevenue += Number(saleItem.totalPrice || 0);
-        productDemand.set(productName, product);
+        const item = itemLookup.get(Number(saleItem.itemId));
+        if (!item) return;
+        const productKey = normalizeComparisonKey(item);
+        const brand =
+          language === "mr"
+            ? item.brandMarathi || item.brand || "No brand"
+            : item.brand || item.brandMarathi || "No brand";
+        const product = productDemand.get(productKey);
+        const brandTotal = product?.brandTotals.get(brand);
+        if (!product || !brandTotal) return;
+        const revenue = Number(saleItem.totalPrice || 0);
+        const cost = Number(saleItem.totalCost || 0);
+        brandTotal.revenue += revenue;
+        brandTotal.quantity += Number(saleItem.quantity || 0);
+        brandTotal.profit += Number(saleItem.profit ?? revenue - cost);
       });
     });
 
     const brandDemand = Array.from(productDemand.values())
       .map((group) => {
         const brandTotals = Array.from(group.brandTotals.entries()).sort(
-          (a, b) => b[1] - a[1],
+          (a, b) => b[1].revenue - a[1].revenue || b[1].stockValue - a[1].stockValue,
         );
+        const totalRevenue = brandTotals.reduce((sum, [, value]) => sum + value.revenue, 0);
         const topBrandEntry = brandTotals[0];
         return {
           productName: group.productName,
-          totalRevenue: group.totalRevenue,
+          totalRevenue,
           topBrand: topBrandEntry?.[0] ?? "Unknown",
-          topBrandRevenue: topBrandEntry?.[1] ?? 0,
-          topBrandShare: group.totalRevenue
-            ? (topBrandEntry?.[1] ?? 0) / group.totalRevenue
+          topBrandRevenue: topBrandEntry?.[1].revenue ?? 0,
+          topBrandShare: totalRevenue
+            ? (topBrandEntry?.[1].revenue ?? 0) / totalRevenue
             : 0,
           brandCount: brandTotals.length,
-          topBrands: brandTotals.slice(0, 3).map(([brand]) => brand),
+          topBrands: brandTotals
+            .slice(0, 3)
+            .map(([brand, value]) => `${brand}: ₹${formatMoney(value.revenue)}`),
         };
       })
       .filter((group) => group.brandCount >= 2)
-      .sort((a, b) => b.totalRevenue - a.totalRevenue)
+      .sort((a, b) => b.totalRevenue - a.totalRevenue || b.brandCount - a.brandCount)
       .slice(0, 5);
 
     const staffSalesMap = new Map<
@@ -1515,69 +1735,84 @@ export function Dashboard() {
     const suggestions: string[] = [];
     if (report.revenue === 0) {
       suggestions.push(
-        "No sales are recorded for this period. Check whether sales were entered or select another period.",
+        language === "mr"
+          ? "या कालावधीत विक्री नोंदलेली नाही. विक्री भरली आहे का किंवा दुसरी कालावधी निवडा."
+          : "No sales are recorded for this period. Check whether sales were entered or select another period.",
       );
     }
     if (comparison.revenueChange < 0) {
       suggestions.push(
-        `Sales are down ${formatPercent(Math.abs(comparison.revenueChange))}% compared with ${comparison.label}. Review top-selling items and worker coverage.`,
+        language === "mr"
+          ? `विक्री ${formatPercent(Math.abs(comparison.revenueChange))}% ने ${comparison.label} पेक्षा कमी आहे. मुख्य वस्तू आणि कर्मचारी तपासा.`
+          : `Sales are down ${formatPercent(Math.abs(comparison.revenueChange))}% compared with ${comparison.label}. Review top-selling items and worker coverage.`,
       );
     }
     if (lowStockItems.length > 0) {
       suggestions.push(
-        `Reorder ${lowStockItems.length} low-stock item${
-          lowStockItems.length > 1 ? "s" : ""
-        } to avoid stockouts.`,
+        language === "mr"
+          ? `${lowStockItems.length} कमी स्टॉक वस्तू पुन्हा मागवा.`
+          : `Reorder ${lowStockItems.length} low-stock item${lowStockItems.length > 1 ? "s" : ""} to avoid stockouts.`,
       );
     }
     if (expiredItems.length > 0) {
       suggestions.push(
-        `Dispose or discount ${expiredItems.length} expired item${
-          expiredItems.length > 1 ? "s" : ""
-        } to reduce losses.`,
+        language === "mr"
+          ? `${expiredItems.length} कालबाह्य वस्तू काढून टाका किंवा सवलतीत विका.`
+          : `Dispose or discount ${expiredItems.length} expired item${expiredItems.length > 1 ? "s" : ""} to reduce losses.`,
       );
     } else if (expiringItems.length > 0) {
       suggestions.push(
-        `Promote ${expiringItems.length} item${
-          expiringItems.length > 1 ? "s" : ""
-        } nearing expiry to clear stock.`,
+        language === "mr"
+          ? `${expiringItems.length} लवकर कालबाह्य होणाऱ्या वस्तू लवकर विका.`
+          : `Promote ${expiringItems.length} item${expiringItems.length > 1 ? "s" : ""} nearing expiry to clear stock.`,
       );
     }
     if (urgentUdhari?.pressure.riskLevel === "high") {
       suggestions.push(
-        "Collect overdue udhari from high-risk credit customers immediately.",
+        language === "mr"
+          ? "उच्च धोक्याच्या उधार ग्राहकांकडून थकबाकी लगेच वसूल करा."
+          : "Collect overdue udhari from high-risk credit customers immediately.",
       );
     } else if (urgentUdhari?.pressure.riskLevel === "recover") {
       suggestions.push(
-        "Follow up with credit customers to recover pending balances soon.",
+        language === "mr"
+          ? "उधार ग्राहकांशी संपर्क करून थकबाकी वसूल करा."
+          : "Follow up with credit customers to recover pending balances soon.",
       );
     }
     if (brandDemand.length > 0) {
+      const topBrandComparison = brandDemand[0];
       suggestions.push(
-        "Focus on top-performing brands for products with high customer demand.",
+        language === "mr"
+          ? `${topBrandComparison.productName} ???? ${topBrandComparison.topBrands.join(", ")} ????? ??? ??? ????? ?????? ?????? ????? ???? ????.`
+          : `Compare ${topBrandComparison.topBrands.join(", ")} for ${topBrandComparison.productName}; keep more stock of the better-selling brand.`,
       );
     }
     if (lossItems.length > 0) {
       suggestions.push(
-        `Fix selling price for ${lossItems.length} loss-making item${
-          lossItems.length > 1 ? "s" : ""
-        } before the next sale.`,
+        language === "mr"
+          ? `${lossItems.length} तोटा वस्तूंचे विक्री दर पुढच्या विक्रीपूर्वी बदला.`
+          : `Fix selling price for ${lossItems.length} loss-making item${lossItems.length > 1 ? "s" : ""} before the next sale.`,
       );
     } else if (lowMarginSoldItems.length > 0) {
       suggestions.push(
-        `Review purchase price or selling price for ${lowMarginSoldItems.length} low-margin item${
-          lowMarginSoldItems.length > 1 ? "s" : ""
-        }.`,
+        language === "mr"
+          ? `${lowMarginSoldItems.length} कमी मार्जिन वस्तूंचे दर तपासा.`
+          : `Review purchase price or selling price for ${lowMarginSoldItems.length} low-margin item${lowMarginSoldItems.length > 1 ? "s" : ""}.`,
       );
     }
     if (strongMarginItems.length > 0) {
       suggestions.push(
-        `Promote ${strongMarginItems[0].name}; it has a strong ${formatPercent(strongMarginItems[0].margin)}% margin.`,
+        language === "mr"
+          ? `${strongMarginItems[0].name} चा ${formatPercent(strongMarginItems[0].margin)}% मार्जिन चांगला आहे — या वस्तूला प्रोत्साहन द्या.`
+          : `Promote ${strongMarginItems[0].name}; it has a strong ${formatPercent(strongMarginItems[0].margin)}% margin.`,
       );
     }
     if (report.profit < 0) {
       suggestions.push(
-        "Reduce costs or adjust prices to improve profitability.",
+        language === "mr"
+          ? "खर्च कमी करा किंवा दर वाढवून नफा सुधारा."
+          : "Reduce costs or adjust prices to improve profitability.",
       );
     }
 
@@ -1601,10 +1836,17 @@ export function Dashboard() {
           topItems: report.topItems,
           itemPerformance,
           shopName: currentShop?.shopName || "Dukan",
+          shopAddress: currentShop?.address || undefined,
+          shopPhone: currentShop?.phoneNumber || undefined,
+          ownerName: currentShop?.ownerName || undefined,
+          language,
           totalStockValue,
           productsCount: items.length,
           lowStockItems: lowStockItems.map((item) => ({
-            name: item.name,
+            name:
+              language === "mr"
+                ? item.nameMarathi || item.name
+                : item.name || item.nameMarathi,
             quantity: item.quantity,
             lowStockLimit: item.lowStockLimit,
           })),
@@ -1624,6 +1866,11 @@ export function Dashboard() {
           staffSales,
           stockItems,
           stockMovements,
+          categoryStockSummary,
+          categorySalesSummary,
+          udhariCustomers,
+          saleRegister,
+          batchInventory,
           suggestions,
           notifications: [],
         },

@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/select";
 import { useLanguage } from "@/providers/language-provider";
 import { Languages } from "lucide-react";
+import { useEffect, useState } from "react";
 
 type PageSize = "default" | "wide" | "narrow";
 
@@ -72,6 +73,13 @@ export function PageHeader({
 
 export function LanguageToggle({ className }: { className?: string }) {
   const { language, setLanguage, t } = useLanguage();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!mounted) return null;
 
   return (
     <Select

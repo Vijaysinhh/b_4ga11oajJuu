@@ -91,6 +91,7 @@ export interface PremiumReportData {
   stockItems?: Array<{
     name: string;
     brand?: string;
+    categoryName?: string;
     quantity: number;
     unit: string;
     stockValue: number;
@@ -112,7 +113,53 @@ export interface PremiumReportData {
     quantityBefore: number;
     quantityAfter: number;
     reason?: string;
+    costPerUnit?: number;
   }>;
+  categoryStockSummary?: Array<{
+    categoryName: string;
+    itemCount: number;
+    totalQuantity: number;
+    stockValue: number;
+    lowCount: number;
+    expiringCount: number;
+  }>;
+  categorySalesSummary?: Array<{
+    categoryName: string;
+    quantitySold: number;
+    revenue: number;
+    profit: number;
+    margin: number;
+  }>;
+  udhariCustomers?: Array<{
+    name: string;
+    phone?: string;
+    balance: number;
+    daysPending: number;
+    riskLevel: "fresh" | "recover" | "high";
+  }>;
+  saleRegister?: Array<{
+    date: string;
+    time?: string;
+    amount: number;
+    profit: number;
+    paymentMethod: string;
+    itemCount: number;
+    totalQuantity: number;
+    notes?: string;
+  }>;
+  batchInventory?: Array<{
+    itemName: string;
+    batchNumber?: string;
+    expiryDate?: string;
+    quantityAvailable: number;
+    costPerUnit: number;
+    stockValue: number;
+    status: "active" | "expiring" | "expired";
+  }>;
+  shopAddress?: string;
+  shopPhone?: string;
+  ownerName?: string;
+  language?: "en" | "mr";
   suggestions?: string[];
   dailyData?: Array<{
     date: string;

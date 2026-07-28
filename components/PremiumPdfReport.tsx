@@ -2,14 +2,26 @@
 
 import React, { ReactNode, useMemo } from "react";
 import { Document, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
-import { formatMoney, formatNumber, formatPercent } from "@/lib/number-format";
+import { formatNumber } from "@/lib/number-format";
+import { getPdfFontFamily } from "@/lib/pdf-fonts";
+import { getPdfLocale, getPdfT } from "@/lib/pdf-i18n";
+import {
+  pdfMoney,
+  pdfPercent,
+  pdfQty,
+  pdfShortDate,
+  pdfSignedPercent,
+  pdfTime,
+  safePdfText,
+} from "@/lib/pdf-utils";
 import type { PremiumReportData } from "@/lib/simple-pdf";
 
 type Tone = "navy" | "green" | "blue" | "amber" | "red" | "purple" | "slate";
 type StockReportItem = NonNullable<PremiumReportData["stockItems"]>[number];
 
-const ROWS_PER_STOCK_PAGE = 14;
+const ROWS_PER_STOCK_PAGE = 12;
 const ROWS_PER_TABLE = 8;
+const ROWS_PER_REGISTER = 14;
 
 const palette: Record<Tone, { ink: string; bg: string; border: string }> = {
   navy: { ink: "#0b245c", bg: "#eef4ff", border: "#bfdbfe" },
@@ -298,6 +310,55 @@ const styles = StyleSheet.create({
     color: "#64748b",
     fontSize: 7.5,
   },
+  partDivider: {
+    borderRadius: 8,
+    backgroundColor: "#0b245c",
+    paddingVertical: 18,
+    paddingHorizontal: 16,
+    marginBottom: 14,
+  },
+  partDividerTitle: {
+    color: "#ffffff",
+    fontSize: 14,
+    fontWeight: "bold",
+    letterSpacing: 0.8,
+  },
+  partDividerSub: {
+    color: "#bfdbfe",
+    fontSize: 8.5,
+    marginTop: 4,
+  },
+  coverMetaRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 8,
+    marginBottom: 10,
+  },
+  coverMetaChip: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#fde68a",
+    backgroundColor: "#fffbeb",
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    color: "#92400e",
+    fontSize: 7.5,
+    fontWeight: "bold",
+  },
+  categoryHeader: {
+    marginTop: 6,
+    marginBottom: 4,
+    paddingVertical: 4,
+    paddingHorizontal: 6,
+    borderRadius: 4,
+    backgroundColor: "#eef4ff",
+  },
+  categoryHeaderText: {
+    color: "#0b245c",
+    fontSize: 8,
+    fontWeight: "bold",
+  },
 });
 
 function clamp(value: number, min = 0, max = 100) {
@@ -312,49 +373,84 @@ function chunkArray<T>(items: T[], size: number) {
   return chunks.length ? chunks : [[]];
 }
 
-function safeText(value: unknown, fallback = "N/A", maxLength = 42) {
-  const cleaned = String(value ?? "")
-    .replace(/[^\x20-\x7E]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-  const finalValue = cleaned || fallback;
-  return finalValue.length > maxLength
-    ? `${finalValue.slice(0, maxLength - 3)}...`
-    : finalValue;
-}
+type PdfLocale = {
+  lang: "en" | "mr";
+  t: ReturnType<typeof getPdfT>;
+  fontFamily: string;
+  text: (value: unknown, fallbackKey?: Parameters<ReturnType<typeof getPdfT>>[0], maxLength?: number) => string;
+  money: (value: number | undefined | null) => string;
+  pct: (value: number | undefined | null) => string;
+  signedPct: (value: number | undefined | null) => string;
+  shortDate: (value?: string) => string;
+  time: (value?: string | number) => string;
+};
 
-function money(value: number | undefined | null) {
-  return `Rs. ${formatMoney(value)}`;
-}
-
-function pct(value: number | undefined | null) {
-  return `${formatPercent(value)}%`;
-}
-
-function signedPct(value: number | undefined | null) {
-  const safe = Number.isFinite(Number(value)) ? Number(value) : 0;
-  return `${safe >= 0 ? "+" : ""}${formatPercent(safe)}%`;
-}
-
-function shortDate(value?: string) {
-  if (!value) return "N/A";
-  const date = new Date(value.includes("T") ? value : `${value}T12:00:00`);
-  if (Number.isNaN(date.getTime())) return safeText(value, "N/A", 14);
-  return date.toLocaleDateString("en-IN", {
-    day: "numeric",
-    month: "short",
-    year: "2-digit",
-  });
-}
-
-function paymentName(method: string) {
-  const labels: Record<string, string> = {
-    cash: "Cash",
-    card: "Card/UPI",
-    partial: "Partial",
-    udhar: "Udhari",
+function createPdfLocale(data: PremiumReportData): PdfLocale {
+  const lang = data.language || "en";
+  const t = getPdfT(lang);
+  return {
+    lang,
+    t,
+    fontFamily: getPdfFontFamily(lang),
+    text: (value, fallbackKey = "na", maxLength = 42) =>
+      safePdfText(value, t(fallbackKey), maxLength, lang),
+    money: (value) => pdfMoney(value, lang),
+    pct: (value) => pdfPercent(value),
+    signedPct: (value) => pdfSignedPercent(value),
+    shortDate: (value) => pdfShortDate(value, lang, t("na")),
+    time: (value) => pdfTime(value, lang),
   };
-  return labels[method] || safeText(method, "Other", 18);
+}
+
+function normalizePremiumReportData(data?: Partial<PremiumReportData> | null): PremiumReportData {
+  return {
+    label: data?.label || "Selected Period",
+    sales: data?.sales || [],
+    transactions: data?.transactions || 0,
+    revenue: data?.revenue || 0,
+    cost: data?.cost || 0,
+    profit: data?.profit || 0,
+    margin: data?.margin || 0,
+    topItems: data?.topItems || [],
+    itemPerformance: data?.itemPerformance || [],
+    shopName: data?.shopName || "Dukan",
+    shopAddress: data?.shopAddress,
+    shopPhone: data?.shopPhone,
+    ownerName: data?.ownerName,
+    language: data?.language || "en",
+    totalStockValue: data?.totalStockValue || 0,
+    productsCount: data?.productsCount || 0,
+    lowStockItems: data?.lowStockItems || [],
+    totalPendingUdhari: data?.totalPendingUdhari || 0,
+    highestUdharCustomer: data?.highestUdharCustomer || null,
+    paymentBreakdown: data?.paymentBreakdown || {},
+    totalItemsSold: data?.totalItemsSold || 0,
+    averageBill: data?.averageBill || 0,
+    comparison: data?.comparison,
+    expiryAlerts: data?.expiryAlerts || [],
+    brandDemand: data?.brandDemand || [],
+    staffSales: data?.staffSales || [],
+    stockItems: data?.stockItems || [],
+    stockMovements: data?.stockMovements || [],
+    categoryStockSummary: data?.categoryStockSummary || [],
+    categorySalesSummary: data?.categorySalesSummary || [],
+    udhariCustomers: data?.udhariCustomers || [],
+    saleRegister: data?.saleRegister || [],
+    batchInventory: data?.batchInventory || [],
+    suggestions: data?.suggestions || [],
+    dailyData: data?.dailyData || [],
+    notifications: data?.notifications || [],
+  };
+}
+
+function paymentName(method: string, loc: PdfLocale) {
+  const labels: Record<string, string> = {
+    cash: loc.t("cash"),
+    card: loc.t("card"),
+    partial: loc.t("partial"),
+    udhar: loc.t("udhar"),
+  };
+  return labels[method] || loc.text(method, "other", 18);
 }
 
 function statusTone(status: StockReportItem["status"]): Tone {
@@ -363,37 +459,72 @@ function statusTone(status: StockReportItem["status"]): Tone {
   return "green";
 }
 
-function statusLabel(status: StockReportItem["status"]) {
+function statusLabel(status: StockReportItem["status"], loc: PdfLocale) {
   const labels: Record<StockReportItem["status"], string> = {
-    good: "Good",
-    low: "Low",
-    out: "Out",
-    expired: "Expired",
-    expiring: "Expiring",
+    good: loc.t("good"),
+    low: loc.t("low"),
+    out: loc.t("outStatus"),
+    expired: loc.t("expired"),
+    expiring: loc.t("expiringStatus"),
   };
   return labels[status];
 }
 
-function movementLabel(type: string) {
-  const labels: Record<string, string> = {
-    purchase: "Stock In",
-    sale: "Sale",
-    adjustment: "Adjust",
-    damage: "Damage",
-    expiry: "Expiry",
+function batchStatusLabel(status: "active" | "expiring" | "expired", loc: PdfLocale) {
+  const labels = {
+    active: loc.t("active"),
+    expiring: loc.t("expiringStatus"),
+    expired: loc.t("expired"),
   };
-  return labels[type] || safeText(type, "Update", 14);
+  return labels[status];
 }
 
-function PageFooter({ label }: { label: string }) {
+function riskLabel(risk: "fresh" | "recover" | "high", loc: PdfLocale) {
+  const labels = {
+    fresh: loc.t("fresh"),
+    recover: loc.t("recover"),
+    high: loc.t("high"),
+  };
+  return labels[risk];
+}
+
+function movementLabel(type: string, loc: PdfLocale) {
+  const labels: Record<string, string> = {
+    purchase: loc.t("stockIn"),
+    sale: loc.t("sale"),
+    adjustment: loc.t("adjust"),
+    damage: loc.t("damage"),
+    expiry: loc.t("expiryType"),
+  };
+  return labels[type] || loc.text(type, "update", 14);
+}
+
+function PageFooter({ label, loc }: { label: string; loc: PdfLocale }) {
   return (
     <View style={styles.footer} fixed>
-      <Text>DUKAN · {label}</Text>
+      <Text>
+        DUKAN · {label}
+      </Text>
       <Text
         render={({ pageNumber, totalPages }) =>
-          `Page ${pageNumber} of ${totalPages}`
+          `${loc.t("pageOf")} ${pageNumber} ${loc.t("of")} ${totalPages}`
         }
       />
+    </View>
+  );
+}
+
+function PartDivider({
+  title,
+  subtitle,
+}: {
+  title: string;
+  subtitle?: string;
+}) {
+  return (
+    <View style={styles.partDivider}>
+      <Text style={styles.partDividerTitle}>{title}</Text>
+      {subtitle ? <Text style={styles.partDividerSub}>{subtitle}</Text> : null}
     </View>
   );
 }
@@ -401,29 +532,34 @@ function PageFooter({ label }: { label: string }) {
 function ReportHeader({
   data,
   generatedAt,
+  loc,
   compact = false,
 }: {
   data: PremiumReportData;
   generatedAt: Date;
+  loc?: PdfLocale;
   compact?: boolean;
 }) {
+  const headerLoc = loc ?? createPdfLocale(data);
+  loc = headerLoc;
+  const locale = getPdfLocale(headerLoc.lang);
   if (compact) {
     return (
       <View style={styles.headerCompact}>
         <View>
           <Text style={styles.titleCompact}>
-            {safeText(data.label, "Selected Period")} Report
+            {headerLoc.text(data.label, "selectedPeriod")} {headerLoc.t("report")}
           </Text>
           <Text style={styles.meta}>
-            {safeText(data.shopName, "Dukan Shop")} ·{" "}
-            {generatedAt.toLocaleDateString("en-IN", {
+            {loc.text(data.shopName, "dukanShop")} ·{" "}
+            {generatedAt.toLocaleDateString(locale, {
               day: "numeric",
               month: "short",
               year: "numeric",
             })}
           </Text>
         </View>
-        <Text style={styles.badge}>PREMIUM REPORT</Text>
+        <Text style={styles.badge}>{headerLoc.t("premiumReport")}</Text>
       </View>
     );
   }
@@ -437,28 +573,43 @@ function ReportHeader({
           </View>
           <View>
             <Text style={styles.brand}>DUKAN</Text>
-            <Text style={styles.shopName}>{safeText(data.shopName, "Dukan Shop")}</Text>
+            <Text style={styles.shopName}>{headerLoc.text(data.shopName, "dukanShop")}</Text>
+            {data.ownerName ? (
+              <Text style={styles.meta}>
+                {headerLoc.t("owner")}: {headerLoc.text(data.ownerName, "unknown", 28)}
+              </Text>
+            ) : null}
+            {data.shopPhone ? (
+              <Text style={styles.meta}>
+                {headerLoc.t("phone")}: {headerLoc.text(data.shopPhone, "na", 20)}
+              </Text>
+            ) : null}
+            {data.shopAddress ? (
+              <Text style={styles.meta}>
+                {headerLoc.t("address")}: {headerLoc.text(data.shopAddress, "na", 48)}
+              </Text>
+            ) : null}
           </View>
         </View>
         <Text style={styles.title}>
-          {safeText(data.label, "Selected Period")} Business Report
+          {headerLoc.text(data.label, "selectedPeriod")} {headerLoc.t("businessReport")}
         </Text>
         <Text style={styles.meta}>
-          Generated{" "}
-          {generatedAt.toLocaleDateString("en-IN", {
+          {headerLoc.t("generated")}{" "}
+          {generatedAt.toLocaleDateString(locale, {
             day: "numeric",
             month: "short",
             year: "numeric",
           })}{" "}
-          at{" "}
-          {generatedAt.toLocaleTimeString("en-IN", {
+          {headerLoc.t("at")}{" "}
+          {generatedAt.toLocaleTimeString(locale, {
             hour: "numeric",
             minute: "2-digit",
             hour12: true,
           })}
         </Text>
       </View>
-      <Text style={styles.badge}>PREMIUM{"\n"}DUKAN REPORT</Text>
+      <Text style={styles.badge}>{headerLoc.t("premiumDukanReport")}</Text>
     </View>
   );
 }
@@ -612,11 +763,13 @@ function TrendRow({
   revenue,
   profit,
   maxRevenue,
+  loc,
 }: {
   label: string;
   revenue: number;
   profit: number;
   maxRevenue: number;
+  loc: PdfLocale;
 }) {
   return (
     <View wrap={false} style={styles.trendRow}>
@@ -633,27 +786,34 @@ function TrendRow({
         />
       </View>
       <Text style={styles.trendValue}>
-        {money(revenue)} / {money(profit)}
+        {loc.money(revenue)} / {loc.money(profit)}
       </Text>
     </View>
   );
 }
 
-function buildStockRows(items: StockReportItem[]) {
+function buildStockRows(items: StockReportItem[], loc: PdfLocale) {
   return items.map((item) => {
     const tone = statusTone(item.status);
     return [
       <View key={`name-${item.name}`}>
-        <Text style={styles.rowTitle}>{safeText(item.name, "Item", 28)}</Text>
-        <Text style={styles.subText}>{safeText(item.brand, "No brand", 20)}</Text>
+        <Text style={styles.rowTitle}>{loc.text(item.name, "item", 24)}</Text>
+        <Text style={styles.subText}>
+          {loc.text(item.brand, "noBrand", 18)} · {loc.text(item.categoryName, "uncategorized", 16)}
+        </Text>
       </View>,
-      `${formatNumber(item.quantity)} ${safeText(item.unit, "unit", 6)}`,
-      money(item.stockValue),
+      `${pdfQty(item.quantity)} ${loc.text(item.unit, "item", 6)}`,
+      loc.money(item.buyPrice),
+      loc.money(item.sellPrice),
+      loc.money(item.stockValue),
       <View key={`margin-${item.name}`}>
         <Text style={item.marginPercent >= 15 ? styles.positive : styles.warning}>
-          {pct(item.marginPercent)}
+          {loc.pct(item.marginPercent)}
         </Text>
-        <Text style={styles.subText}>{money(item.marginAmount)}/unit</Text>
+        <Text style={styles.subText}>
+          {loc.money(item.marginAmount)}
+          {loc.t("perUnit")}
+        </Text>
       </View>,
       <Text
         key={`status-${item.name}`}
@@ -667,18 +827,37 @@ function buildStockRows(items: StockReportItem[]) {
           },
         ]}
       >
-        {statusLabel(item.status)}
+        {statusLabel(item.status, loc)}
       </Text>,
       <View key={`dates-${item.name}`}>
-        <Text>Upd {shortDate(item.lastUpdated)}</Text>
-        <Text style={styles.subText}>Sold {shortDate(item.lastSoldDate)}</Text>
+        <Text>
+          {loc.t("limit")}: {pdfQty(item.lowStockLimit)}
+        </Text>
+        <Text style={styles.subText}>
+          {loc.t("expiry")}: {loc.shortDate(item.expiryDate)}
+        </Text>
+        <Text style={styles.subText}>
+          {loc.t("updated")}: {loc.shortDate(item.lastUpdated)} · {loc.t("sold")}:{" "}
+          {loc.shortDate(item.lastSoldDate)}
+        </Text>
       </View>,
     ];
   });
 }
 
-export const PremiumPdfReport = ({ data }: { data: PremiumReportData }) => {
+export const PremiumPdfReport = ({
+  data: rawData,
+}: {
+  data?: Partial<PremiumReportData> | null;
+}) => {
+  const data = useMemo(() => normalizePremiumReportData(rawData), [rawData]);
   const generatedAt = useMemo(() => new Date(), []);
+  const loc = useMemo(() => createPdfLocale(data), [data]);
+  const pageStyle = useMemo(
+    () => [styles.page, { fontFamily: loc.fontFamily }],
+    [loc.fontFamily],
+  );
+  const reportLabel = loc.text(data.label, "selectedPeriodShort");
 
   const dailyData = useMemo(() => {
     if (data.dailyData?.length) return data.dailyData;
@@ -741,7 +920,7 @@ export const PremiumPdfReport = ({ data }: { data: PremiumReportData }) => {
   const bestProfitItem = [...itemPerformance].sort((a, b) => b.profit - a.profit)[0];
   const bestStaff = data.staffSales?.[0];
   const bestBrand = data.brandDemand?.[0];
-  const comparisonLabel = data.comparison?.label || "Previous period";
+  const comparisonLabel = data.comparison?.label || loc.t("previousPeriod");
 
   const stockHealth = data.productsCount
     ? ((data.productsCount - data.lowStockItems.length - stockSummary.out) /
@@ -750,15 +929,23 @@ export const PremiumPdfReport = ({ data }: { data: PremiumReportData }) => {
     : 0;
 
   const stockMovements = data.stockMovements || [];
-  const movementPages = chunkArray(stockMovements.slice(0, 24), ROWS_PER_TABLE);
+  const movementPages = chunkArray(stockMovements, ROWS_PER_TABLE);
+  const categoryStock = data.categoryStockSummary || [];
+  const categorySales = data.categorySalesSummary || [];
+  const expiryAlerts = data.expiryAlerts || [];
+  const udhariCustomers = data.udhariCustomers || [];
+  const saleRegister = data.saleRegister || [];
+  const batchInventory = data.batchInventory || [];
+  const notifications = data.notifications || [];
+  const saleRegisterPages = chunkArray(saleRegister, ROWS_PER_REGISTER);
+  const batchPages = chunkArray(batchInventory, ROWS_PER_TABLE);
+  const lowStockRegister = stockItems.filter(
+    (item) => item.status === "low" || item.status === "out",
+  );
   const actionItems =
     data.suggestions && data.suggestions.length > 0
       ? data.suggestions
-      : [
-          "Restock low and out-of-stock items before peak sale time.",
-          "Check low-margin item prices against latest purchase cost.",
-          "Use worker-wise sales to coach billing and margin habits.",
-        ];
+      : [loc.t("defaultAction1"), loc.t("defaultAction2"), loc.t("defaultAction3")];
 
   const stockRiskCount =
     stockSummary.out + stockSummary.low + stockSummary.expired + stockSummary.expiring;
@@ -784,71 +971,103 @@ export const PremiumPdfReport = ({ data }: { data: PremiumReportData }) => {
     reportScore >= 75 ? "green" : reportScore >= 55 ? "amber" : "red";
   const scoreLabel =
     reportScore >= 80
-      ? "Strong period"
+      ? loc.t("strongPeriod")
       : reportScore >= 65
-        ? "Healthy period"
+        ? loc.t("healthyPeriod")
         : reportScore >= 50
-          ? "Needs attention"
-          : "At risk";
+          ? loc.t("needsAttention")
+          : loc.t("atRisk");
 
   const urgentStock = stockItems.find((item) => item.status !== "good");
   const biggestRisk = lossItems[0]
-    ? `${safeText(lossItems[0].name, "Item", 22)} sold at ${money(lossItems[0].profit)} profit.`
+    ? `${loc.text(lossItems[0].name, "item", 22)} · ${loc.money(lossItems[0].profit)}`
     : urgentStock
-      ? `${safeText(urgentStock.name, "Item", 22)} stock is ${statusLabel(urgentStock.status).toLowerCase()}.`
+      ? `${loc.text(urgentStock.name, "item", 22)} · ${statusLabel(urgentStock.status, loc)}`
       : data.totalPendingUdhari > 0
-        ? `${money(data.totalPendingUdhari)} total udhari is pending.`
-        : "No major risk found in this report.";
+        ? `${loc.money(data.totalPendingUdhari)} ${loc.t("pending")}`
+        : loc.t("noMajorRisk");
 
   const bestOpportunity = bestProfitItem
-    ? `${safeText(bestProfitItem.name, "Item", 22)} gave ${money(bestProfitItem.profit)} profit.`
+    ? `${loc.text(bestProfitItem.name, "item", 22)} · ${loc.money(bestProfitItem.profit)}`
     : bestBrand
-      ? `${safeText(bestBrand.topBrand, "Brand", 18)} is leading demand.`
-      : "Add more sales data to reveal the strongest opportunity.";
+      ? `${loc.text(bestBrand.topBrand, "unknown", 18)}`
+      : loc.t("addSalesData");
 
   const trendRows = dailyData.slice(-7);
   const maxTrendRevenue = Math.max(...trendRows.map((entry) => entry.revenue), 1);
+  const alertCount =
+    stockRiskCount +
+    expiryAlerts.length +
+    lossItems.length +
+    (data.totalPendingUdhari > 0 ? 1 : 0);
 
-  const stockSectionIndex = 9;
-  const movementSectionIndex = 10;
   let sectionIndex = 1;
+  const stockSectionIndex = sectionIndex;
+  const movementSectionIndex = sectionIndex;
+
+  const money = (v: number | undefined | null) => loc.money(v);
+  const pct = (v: number | undefined | null) => loc.pct(v);
+  const signedPct = (v: number | undefined | null) => loc.signedPct(v);
+  const safeText = (v: unknown, fallback: string, max = 42) =>
+    safePdfText(v, fallback, max, loc.lang);
+  const shortDate = (v?: string) => loc.shortDate(v);
+  const stockPageHint = (pageIndex: number) =>
+    pageIndex === 0
+      ? `${pdfQty(stockItems.length)} ${loc.t("currentInventory")}`
+      : `${loc.t("items")} ${pdfQty(pageIndex * ROWS_PER_STOCK_PAGE + 1)}-${pdfQty(
+          Math.min((pageIndex + 1) * ROWS_PER_STOCK_PAGE, stockItems.length),
+        )} ${loc.t("of")} ${pdfQty(stockItems.length)}`;
 
   return (
-    <Document title={`${data.label} Dukan Report`} author="Dukan">
-      {/* Page 1 — Executive summary */}
-      <Page size="A4" style={styles.page}>
-        <ReportHeader data={data} generatedAt={generatedAt} />
+    <Document title={`${reportLabel} Dukan Report`} author="Dukan">
+      <Page size="A4" style={pageStyle}>
+        <ReportHeader data={data} generatedAt={generatedAt} loc={loc} />
+
+        <View style={styles.coverMetaRow}>
+          <Text style={styles.coverMetaChip}>
+            {pdfQty(data.transactions)} {loc.t("bills")}
+          </Text>
+          <Text style={styles.coverMetaChip}>
+            {pdfQty(stockSummary.low + stockSummary.out)} {loc.t("low")}/{loc.t("out")}
+          </Text>
+          <Text style={styles.coverMetaChip}>
+            {pdfQty(expiryAlerts.length)} {loc.t("expiry")}
+          </Text>
+          <Text style={styles.coverMetaChip}>
+            {loc.money(data.totalPendingUdhari)} {loc.t("udhar")}
+          </Text>
+        </View>
 
         <View style={styles.heroRow}>
           <View style={styles.heroMain}>
-            <Text style={styles.heroKicker}>Executive summary</Text>
+            <Text style={styles.heroKicker}>{loc.t("executiveSummary")}</Text>
             <Text style={styles.heroTitle}>
-              {safeText(data.label, "Selected period", 32)} performance
+              {reportLabel} {loc.t("performance")}
             </Text>
-            <Text style={styles.heroValue}>{money(data.revenue)}</Text>
+            <Text style={styles.heroValue}>{loc.money(data.revenue)}</Text>
             <Text style={styles.heroSub}>
               {data.comparison
-                ? `${signedPct(data.comparison.revenueChange)} sales and ${signedPct(data.comparison.profitChange)} profit vs ${comparisonLabel}.`
-                : `${formatNumber(data.transactions)} bills · ${formatNumber(data.totalItemsSold)} items sold`}
+                ? `${loc.signedPct(data.comparison.revenueChange)} ${loc.t("sales")} ${loc.t("and")} ${loc.signedPct(data.comparison.profitChange)} ${loc.t("profit")} ${loc.t("vs")} ${comparisonLabel}.`
+                : `${pdfQty(data.transactions)} ${loc.t("bills")} · ${pdfQty(data.totalItemsSold)} ${loc.t("itemsSoldLabel")}`}
             </Text>
             <View style={styles.heroStats}>
               <View style={styles.heroStat}>
-                <Text style={styles.heroStatLabel}>Profit</Text>
-                <Text style={styles.heroStatValue}>{money(data.profit)}</Text>
+                <Text style={styles.heroStatLabel}>{loc.t("profit")}</Text>
+                <Text style={styles.heroStatValue}>{loc.money(data.profit)}</Text>
               </View>
               <View style={styles.heroStat}>
-                <Text style={styles.heroStatLabel}>Margin</Text>
-                <Text style={styles.heroStatValue}>{pct(data.margin)}</Text>
+                <Text style={styles.heroStatLabel}>{loc.t("margin")}</Text>
+                <Text style={styles.heroStatValue}>{loc.pct(data.margin)}</Text>
               </View>
               <View style={styles.heroStat}>
-                <Text style={styles.heroStatLabel}>Stock value</Text>
-                <Text style={styles.heroStatValue}>{money(data.totalStockValue)}</Text>
+                <Text style={styles.heroStatLabel}>{loc.t("stockValue")}</Text>
+                <Text style={styles.heroStatValue}>{loc.money(data.totalStockValue)}</Text>
               </View>
             </View>
           </View>
 
           <View style={styles.heroSide}>
-            <Text style={styles.scoreLabel}>Health score</Text>
+            <Text style={styles.scoreLabel}>{loc.t("healthScore")}</Text>
             <Text style={styles.scoreValue}>{reportScore}/100</Text>
             <Text style={[styles.scoreText, { color: palette[scoreTone].ink }]}>
               {scoreLabel}
@@ -862,94 +1081,97 @@ export const PremiumPdfReport = ({ data }: { data: PremiumReportData }) => {
               />
             </View>
             <Text style={[styles.meta, { marginTop: 8 }]}>
-              {stockRiskCount} stock alerts · {lossItems.length} loss item(s) ·{" "}
-              {pct(creditPressure)} udhari pressure
+              {pdfQty(stockRiskCount)} {loc.t("stockAlerts")} · {pdfQty(lossItems.length)}{" "}
+              {loc.t("lossItems")} · {loc.pct(creditPressure)} {loc.t("udhariPressure")}
+            </Text>
+            <Text style={[styles.meta, { marginTop: 4 }]}>
+              {pdfQty(alertCount)} {loc.t("alertStrip")}
             </Text>
           </View>
         </View>
 
-        <Section index={sectionIndex++} title="Owner Snapshot" tone="navy">
+        <Section index={sectionIndex++} title={loc.t("ownerSnapshot")} tone="navy">
           <View style={styles.snapshotGrid}>
             <SnapshotCard
-              label="Best seller"
-              value={topItems[0] ? safeText(topItems[0].name, "Item", 22) : "No sale"}
+              label={loc.t("bestSeller")}
+              value={topItems[0] ? loc.text(topItems[0].name, "item", 22) : loc.t("noSale")}
               note={
                 topItems[0]
-                  ? `${money(topItems[0].revenue)} sales`
-                  : "No item sold in period"
+                  ? `${loc.money(topItems[0].revenue)} ${loc.t("sales")}`
+                  : loc.t("noItemSold")
               }
               tone="green"
             />
             <SnapshotCard
-              label="Profit leader"
-              value={bestProfitItem ? safeText(bestProfitItem.name, "Item", 22) : "No item"}
+              label={loc.t("profitLeader")}
+              value={bestProfitItem ? loc.text(bestProfitItem.name, "item", 22) : loc.t("noItem")}
               note={
                 bestProfitItem
-                  ? `${money(bestProfitItem.profit)} profit`
-                  : "Profit appears after sales"
+                  ? `${loc.money(bestProfitItem.profit)} ${loc.t("profit")}`
+                  : loc.t("profitAfterSales")
               }
               tone="blue"
             />
             <SnapshotCard
-              label="Worker leader"
-              value={bestStaff ? safeText(bestStaff.staffName, "Worker", 22) : "No worker"}
+              label={loc.t("workerLeader")}
+              value={bestStaff ? loc.text(bestStaff.staffName, "worker", 22) : loc.t("noWorker")}
               note={
                 bestStaff
-                  ? `${money(bestStaff.revenue)} sales`
-                  : "Link sales to staff users"
+                  ? `${loc.money(bestStaff.revenue)} ${loc.t("sales")}`
+                  : loc.t("linkStaff")
               }
               tone="purple"
             />
             <SnapshotCard
-              label="Stock focus"
-              value={urgentStock ? safeText(urgentStock.name, "Item", 22) : "Stock OK"}
+              label={loc.t("stockFocus")}
+              value={urgentStock ? loc.text(urgentStock.name, "item", 22) : loc.t("stockOk")}
               note={
                 urgentStock
-                  ? `${statusLabel(urgentStock.status)} · ${formatNumber(urgentStock.quantity)} ${safeText(urgentStock.unit, "unit", 6)}`
-                  : `${stockSummary.healthy} healthy items`
+                  ? `${statusLabel(urgentStock.status, loc)} · ${pdfQty(urgentStock.quantity)} ${loc.text(urgentStock.unit, "item", 6)}`
+                  : `${pdfQty(stockSummary.healthy)} ${loc.t("healthyItems")}`
               }
               tone={urgentStock ? statusTone(urgentStock.status) : "green"}
             />
           </View>
           <View style={styles.callout}>
-            <Text style={styles.calloutTitle}>Priority action</Text>
+            <Text style={styles.calloutTitle}>{loc.t("priorityAction")}</Text>
             <Text style={styles.calloutText}>
-              {safeText(actionItems[0], "Review today's sales and stock.", 160)}
+              {loc.text(actionItems[0], "reviewSalesStock", 160)}
             </Text>
           </View>
         </Section>
 
-        <PageFooter label={safeText(data.label, "Report")} />
+        <PageFooter label={reportLabel} loc={loc} />
       </Page>
 
       {/* Page 2 — Profit watch & daily trend */}
-      <Page size="A4" style={styles.page}>
-        <ReportHeader data={data} generatedAt={generatedAt} compact />
+      <Page size="A4" style={pageStyle}>
+        <ReportHeader data={data} generatedAt={generatedAt} loc={loc} compact />
 
         <Section
           index={sectionIndex++}
-          title="Profit Watch"
+          title={loc.t("profitWatch")}
           tone={lossItems.length > 0 ? "red" : "green"}
         >
           <Table
-            headers={["Point", "Value", "Meaning"]}
+            headers={[loc.t("metric"), loc.t("value"), loc.t("recommendations")]}
             widths={["28%", "22%", "50%"]}
             rows={[
               [
-                "Opportunity",
-                bestProfitItem ? money(bestProfitItem.profit) : "N/A",
+                loc.t("opportunity"),
+                bestProfitItem ? money(bestProfitItem.profit) : loc.t("na"),
                 bestOpportunity,
               ],
-              ["Biggest risk", lossItems[0] ? money(lossItems[0].profit) : "N/A", biggestRisk],
-              ["Low margin", formatNumber(lowMarginItems.length), "Items below 10% margin"],
-              ["Stock alerts", formatNumber(stockRiskCount), "Low, out, expired, or expiring"],
+              [loc.t("biggestRisk"), lossItems[0] ? money(lossItems[0].profit) : loc.t("na"), biggestRisk],
+              [loc.t("lowMargin"), formatNumber(lowMarginItems.length), loc.t("lowMarginCount")],
+              [loc.t("stockAlertsTitle"), formatNumber(stockRiskCount), loc.t("stockAlerts")],
             ]}
           />
         </Section>
 
         <View style={styles.twoCol}>
           <View style={styles.colHalf}>
-            <Section index={sectionIndex++} title="Immediate Actions" tone="amber">
+            <Section index={sectionIndex++} title={loc.t("immediateActions")} tone="amber">
               {actionItems.slice(0, 5).map((action, index) => (
                 <View
                   key={index}
@@ -983,7 +1205,7 @@ export const PremiumPdfReport = ({ data }: { data: PremiumReportData }) => {
           </View>
 
           <View style={styles.colHalf}>
-            <Section index={sectionIndex++} title="Daily Sales Movement" tone="green">
+            <Section index={sectionIndex++} title={loc.t("dailySalesMovement")} tone="green">
               {trendRows.length > 0 ? (
                 trendRows.slice(-6).map((entry, index) => (
                   <TrendRow
@@ -992,32 +1214,33 @@ export const PremiumPdfReport = ({ data }: { data: PremiumReportData }) => {
                     revenue={entry.revenue}
                     profit={entry.profit}
                     maxRevenue={maxTrendRevenue}
+                    loc={loc}
                   />
                 ))
               ) : (
-                <Empty>No daily sale movement for this report period.</Empty>
+                <Empty>{loc.t("noSaleRegister")}</Empty>
               )}
-              <Text style={styles.subText}>Format: sales / profit</Text>
+              <Text style={styles.subText}>{loc.t("salesProfitFormat")}</Text>
             </Section>
           </View>
         </View>
 
-        <PageFooter label={safeText(data.label, "Report")} />
+        <PageFooter label={safeText(data.label, "Report")} loc={loc} />
       </Page>
 
       {/* Page 3 — Sales analysis */}
-      <Page size="A4" style={styles.page}>
-        <ReportHeader data={data} generatedAt={generatedAt} compact />
+      <Page size="A4" style={pageStyle}>
+        <ReportHeader data={data} generatedAt={generatedAt} loc={loc} compact />
 
         <Section
           index={sectionIndex++}
-          title="Sales Analysis"
-          hint={`vs ${comparisonLabel}`}
+          title={loc.t("salesAnalysis")}
+          hint={`${loc.t("vs")} ${comparisonLabel}`}
           tone="green"
         >
           <View style={styles.metricGrid}>
             <Metric
-              label="Total Sales"
+              label={loc.t("totalSales")}
               value={money(data.revenue)}
               sub={
                 data.comparison
@@ -1027,19 +1250,19 @@ export const PremiumPdfReport = ({ data }: { data: PremiumReportData }) => {
               tone="green"
             />
             <Metric
-              label="Total Bills"
+              label={loc.t("totalBills")}
               value={formatNumber(data.transactions)}
               sub={`Average bill ${money(data.averageBill)}`}
               tone="blue"
             />
             <Metric
-              label="Items Sold"
+              label={loc.t("itemsSold")}
               value={formatNumber(data.totalItemsSold)}
-              sub="Quantity moved"
+              sub={loc.t("quantityMoved")}
               tone="purple"
             />
             <Metric
-              label="Udhari Sales"
+              label={loc.t("udhariSales")}
               value={money(data.paymentBreakdown.udhar?.amount || 0)}
               sub={`${data.paymentBreakdown.udhar?.count || 0} bills`}
               tone="amber"
@@ -1047,13 +1270,13 @@ export const PremiumPdfReport = ({ data }: { data: PremiumReportData }) => {
           </View>
 
           <Table
-            headers={["Metric", "This report", comparisonLabel, "Change"]}
+            headers={[loc.t("metric"), loc.t("thisReport"), comparisonLabel, loc.t("change")]}
             widths={["28%", "24%", "24%", "24%"]}
             rows={[
               [
                 <Text style={styles.rowTitle}>Sales</Text>,
                 money(data.revenue),
-                data.comparison ? money(data.comparison.revenue) : "N/A",
+                data.comparison ? money(data.comparison.revenue) : loc.t("na"),
                 <Text
                   style={
                     data.comparison && data.comparison.revenueChange < 0
@@ -1061,13 +1284,13 @@ export const PremiumPdfReport = ({ data }: { data: PremiumReportData }) => {
                       : styles.positive
                   }
                 >
-                  {data.comparison ? signedPct(data.comparison.revenueChange) : "N/A"}
+                  {data.comparison ? signedPct(data.comparison.revenueChange) : loc.t("na")}
                 </Text>,
               ],
               [
                 <Text style={styles.rowTitle}>Profit</Text>,
                 money(data.profit),
-                data.comparison ? money(data.comparison.profit) : "N/A",
+                data.comparison ? money(data.comparison.profit) : loc.t("na"),
                 <Text
                   style={
                     data.comparison && data.comparison.profitChange < 0
@@ -1075,13 +1298,13 @@ export const PremiumPdfReport = ({ data }: { data: PremiumReportData }) => {
                       : styles.positive
                   }
                 >
-                  {data.comparison ? signedPct(data.comparison.profitChange) : "N/A"}
+                  {data.comparison ? signedPct(data.comparison.profitChange) : loc.t("na")}
                 </Text>,
               ],
               [
                 <Text style={styles.rowTitle}>Margin</Text>,
                 pct(data.margin),
-                data.comparison ? pct(data.comparison.margin) : "N/A",
+                data.comparison ? pct(data.comparison.margin) : loc.t("na"),
                 <Text
                   style={
                     data.comparison && data.comparison.marginChange < 0
@@ -1089,16 +1312,16 @@ export const PremiumPdfReport = ({ data }: { data: PremiumReportData }) => {
                       : styles.positive
                   }
                 >
-                  {data.comparison ? signedPct(data.comparison.marginChange) : "N/A"}
+                  {data.comparison ? signedPct(data.comparison.marginChange) : loc.t("na")}
                 </Text>,
               ],
               [
                 <Text style={styles.rowTitle}>Bills</Text>,
                 formatNumber(data.transactions),
-                data.comparison ? formatNumber(data.comparison.transactions) : "N/A",
+                data.comparison ? formatNumber(data.comparison.transactions) : loc.t("na"),
                 data.comparison
                   ? formatNumber(data.transactions - data.comparison.transactions)
-                  : "N/A",
+                  : loc.t("na"),
               ],
             ]}
           />
@@ -1107,7 +1330,7 @@ export const PremiumPdfReport = ({ data }: { data: PremiumReportData }) => {
             {paymentRows.length > 0 ? (
               paymentRows.map(([method, entry]) => (
                 <View key={method} wrap={false} style={styles.chip}>
-                  <Text style={styles.chipLabel}>{paymentName(method)}</Text>
+                  <Text style={styles.chipLabel}>{paymentName(method, loc)}</Text>
                   <Text style={styles.chipValue}>{money(entry.amount)}</Text>
                   <Text style={styles.subText}>
                     {paymentTotal > 0 ? pct((entry.amount / paymentTotal) * 100) : "0%"} mix
@@ -1116,31 +1339,31 @@ export const PremiumPdfReport = ({ data }: { data: PremiumReportData }) => {
               ))
             ) : (
               <View style={styles.chip}>
-                <Text style={styles.chipLabel}>Payments</Text>
-                <Text style={styles.chipValue}>No sale</Text>
+                <Text style={styles.chipLabel}>{loc.t("payments")}</Text>
+                <Text style={styles.chipValue}>{loc.t("noSale")}</Text>
               </View>
             )}
           </View>
         </Section>
 
-        <PageFooter label={safeText(data.label, "Report")} />
+        <PageFooter label={safeText(data.label, "Report")} loc={loc} />
       </Page>
 
       {/* Page 4 — Profit, workers, top items */}
-      <Page size="A4" style={styles.page}>
-        <ReportHeader data={data} generatedAt={generatedAt} compact />
+      <Page size="A4" style={pageStyle}>
+        <ReportHeader data={data} generatedAt={generatedAt} loc={loc} compact />
 
-        <Section index={sectionIndex++} title="Profit & Margin" tone="blue">
+        <Section index={sectionIndex++} title={loc.t("profitMargin")} tone="blue">
           <View style={styles.metricGrid}>
             <Metric
-              label="Total Cost"
+              label={loc.t("totalCost")}
               value={money(data.cost)}
-              sub="Sold stock cost"
+              sub={loc.t("soldStockCost")}
               tone="slate"
               wide
             />
             <Metric
-              label="Total Profit"
+              label={loc.t("totalProfit")}
               value={money(data.profit)}
               sub={`${pct(data.margin)} margin`}
               tone={data.profit >= 0 ? "green" : "red"}
@@ -1150,7 +1373,7 @@ export const PremiumPdfReport = ({ data }: { data: PremiumReportData }) => {
 
           {goodMarginItems.length > 0 ? (
             <Table
-              headers={["Good margin item", "Sales", "Profit", "Margin"]}
+              headers={[loc.t("goodMarginItem"), loc.t("sales"), loc.t("profit"), loc.t("margin")]}
               widths={["42%", "20%", "20%", "18%"]}
               rows={goodMarginItems.map((item) => [
                 <Text style={styles.rowTitle}>{safeText(item.name, "Item", 28)}</Text>,
@@ -1160,30 +1383,30 @@ export const PremiumPdfReport = ({ data }: { data: PremiumReportData }) => {
               ])}
             />
           ) : (
-            <Empty>No good-margin item found in this period.</Empty>
+            <Empty>{loc.t("noGoodMargin")}</Empty>
           )}
 
           {(lowMarginItems.length > 0 || lossItems.length > 0) && (
             <View style={styles.callout}>
-              <Text style={styles.calloutTitle}>Margin watch</Text>
+              <Text style={styles.calloutTitle}>{loc.t("marginWatch")}</Text>
               <Text style={styles.calloutText}>
                 {lossItems.length > 0
-                  ? `${lossItems.length} item(s) sold at loss. Fix price or purchase rate before next sale.`
-                  : `${lowMarginItems.length} item(s) sold below 10% margin. Review pricing.`}
+                  ? `${lossItems.length} ${loc.t("lossSold")}`
+                  : `${lowMarginItems.length} ${loc.t("lowMarginSold")}`}
               </Text>
             </View>
           )}
         </Section>
 
-        <Section index={sectionIndex++} title="Worker-wise Sales" tone="purple">
+        <Section index={sectionIndex++} title={loc.t("workerWiseSales")} tone="purple">
           {data.staffSales?.length ? (
             <Table
-              headers={["Worker", "Sales", "Profit", "Bills", "Udhari"]}
+              headers={[loc.t("worker"), loc.t("sales"), loc.t("profit"), loc.t("bills"), loc.t("udhar")]}
               widths={["30%", "22%", "20%", "13%", "15%"]}
               rows={data.staffSales.slice(0, 7).map((worker) => [
                 <View>
                   <Text style={styles.rowTitle}>{safeText(worker.staffName, "Worker", 20)}</Text>
-                  <Text style={styles.subText}>Avg {money(worker.averageBill)}</Text>
+                  <Text style={styles.subText}>{loc.t("avg")} {money(worker.averageBill)}</Text>
                 </View>,
                 money(worker.revenue),
                 <Text style={(worker.profit || 0) >= 0 ? styles.positive : styles.negative}>
@@ -1194,14 +1417,14 @@ export const PremiumPdfReport = ({ data }: { data: PremiumReportData }) => {
               ])}
             />
           ) : (
-            <Empty>Worker-wise sales appear when sales are linked to staff accounts.</Empty>
+            <Empty>{loc.t("noStaffSales")}</Empty>
           )}
         </Section>
 
-        <Section index={sectionIndex++} title="Top Sold Items" tone="green">
+        <Section index={sectionIndex++} title={loc.t("topSoldItems")} tone="green">
           {topItems.length > 0 ? (
             <Table
-              headers={["Item", "Qty", "Sales", "Profit"]}
+              headers={[loc.t("item"), loc.t("qty"), loc.t("sales"), loc.t("profit")]}
               widths={["42%", "16%", "22%", "20%"]}
               rows={topItems.map((item) => [
                 <Text style={styles.rowTitle}>{safeText(item.name, "Item", 28)}</Text>,
@@ -1213,60 +1436,60 @@ export const PremiumPdfReport = ({ data }: { data: PremiumReportData }) => {
               ])}
             />
           ) : (
-            <Empty>No sold item data for this report period.</Empty>
+            <Empty>{loc.t("noTopItems")}</Empty>
           )}
         </Section>
 
-        <PageFooter label={safeText(data.label, "Report")} />
+        <PageFooter label={safeText(data.label, "Report")} loc={loc} />
       </Page>
 
       {/* Stock inventory — one dedicated page per chunk */}
       {stockPages.map((chunk, pageIndex) => (
-        <Page key={`stock-page-${pageIndex}`} size="A4" style={styles.page}>
-          <ReportHeader data={data} generatedAt={generatedAt} compact />
+        <Page key={`stock-page-${pageIndex}`} size="A4" style={pageStyle}>
+          <ReportHeader data={data} generatedAt={generatedAt} loc={loc} compact />
 
           <Section
             index={stockSectionIndex}
-            title={pageIndex === 0 ? "Stock Inventory" : "Stock Inventory (continued)"}
-            hint={
+            title={
               pageIndex === 0
-                ? `${stockItems.length} items · current inventory`
-                : `Items ${pageIndex * ROWS_PER_STOCK_PAGE + 1}–${Math.min((pageIndex + 1) * ROWS_PER_STOCK_PAGE, stockItems.length)} of ${stockItems.length}`
+                ? loc.t("stockInventory")
+                : loc.t("stockInventoryContinued")
             }
+            hint={stockPageHint(pageIndex)}
             tone="amber"
           >
             {pageIndex === 0 && (
               <View style={styles.metricGrid}>
                 <Metric
-                  label="Stock Value"
+                  label={loc.t("stockValue")}
                   value={money(data.totalStockValue)}
-                  sub="Current inventory worth"
+                  sub={loc.t("currentInventoryWorth")}
                   tone="purple"
                   wide
                 />
                 <Metric
-                  label="Total Items"
+                  label={loc.t("totalItems")}
                   value={formatNumber(data.productsCount)}
-                  sub={`${stockSummary.healthy} healthy`}
+                  sub={`${pdfQty(stockSummary.healthy)} ${loc.t("healthy")}`}
                   tone="blue"
                   wide
                 />
                 <Metric
-                  label="Need Attention"
+                  label={loc.t("needAttention")}
                   value={formatNumber(
                     stockSummary.low +
                       stockSummary.out +
                       stockSummary.expired +
                       stockSummary.expiring,
                   )}
-                  sub={`${stockSummary.out} out · ${stockSummary.low} low`}
+                  sub={`${pdfQty(stockSummary.out)} ${loc.t("out")} - ${pdfQty(stockSummary.low)} ${loc.t("low")}`}
                   tone={stockSummary.low + stockSummary.out > 0 ? "red" : "green"}
                   wide
                 />
                 <Metric
-                  label="Stock Health"
+                  label={loc.t("stockHealth")}
                   value={pct(stockHealth)}
-                  sub={`${stockSummary.expired + stockSummary.expiring} expiry alerts`}
+                  sub={`${pdfQty(stockSummary.expired + stockSummary.expiring)} ${loc.t("expiryAlertsCount")}`}
                   tone={stockHealth >= 75 ? "green" : "amber"}
                   wide
                 />
@@ -1275,40 +1498,44 @@ export const PremiumPdfReport = ({ data }: { data: PremiumReportData }) => {
 
             {chunk.length > 0 ? (
               <Table
-                headers={["Item", "Stock", "Value", "Margin", "Status", "Dates"]}
+                headers={[loc.t("item"), loc.t("stockValue"), loc.t("value"), loc.t("margin"), loc.t("status"), loc.t("dates")]}
                 widths={["30%", "14%", "15%", "14%", "12%", "15%"]}
-                rows={buildStockRows(chunk)}
+                rows={buildStockRows(chunk, loc)}
               />
             ) : (
-              <Empty>No stock items are available for this shop.</Empty>
+              <Empty>{loc.t("noStockItems")}</Empty>
             )}
           </Section>
 
-          <PageFooter label={safeText(data.label, "Report")} />
+          <PageFooter label={safeText(data.label, "Report")} loc={loc} />
         </Page>
       ))}
 
       {/* Stock movements */}
       {stockMovements.length > 0 &&
         movementPages.map((chunk, pageIndex) => (
-        <Page key={`movement-page-${pageIndex}`} size="A4" style={styles.page}>
-          <ReportHeader data={data} generatedAt={generatedAt} compact />
+        <Page key={`movement-page-${pageIndex}`} size="A4" style={pageStyle}>
+          <ReportHeader data={data} generatedAt={generatedAt} loc={loc} compact />
 
           <Section
             index={movementSectionIndex}
-            title={pageIndex === 0 ? "Stock Movements" : "Stock Movements (continued)"}
+            title={
+              pageIndex === 0
+                ? loc.t("stockMovements")
+                : loc.t("stockMovementsContinued")
+            }
             tone="blue"
           >
             {chunk.length > 0 ? (
               <Table
-                headers={["Date", "Item", "Type", "Change", "After"]}
+                headers={[loc.t("date"), loc.t("item"), loc.t("type"), loc.t("change"), loc.t("after")]}
                 widths={["18%", "34%", "17%", "16%", "15%"]}
                 rows={chunk.map((movement) => [
                   shortDate(movement.date),
                   <Text style={styles.rowTitle}>
                     {safeText(movement.itemName, "Item", 24)}
                   </Text>,
-                  movementLabel(movement.type),
+                  movementLabel(movement.type, loc),
                   <Text
                     style={
                       movement.quantityChanged < 0 ? styles.negative : styles.positive
@@ -1320,29 +1547,29 @@ export const PremiumPdfReport = ({ data }: { data: PremiumReportData }) => {
                 ])}
               />
             ) : (
-              <Empty>No stock movement entries were found for this report period.</Empty>
+              <Empty>{loc.t("noMovements")}</Empty>
             )}
           </Section>
 
-          <PageFooter label={safeText(data.label, "Report")} />
+          <PageFooter label={safeText(data.label, "Report")} loc={loc} />
         </Page>
       ))}
 
       {/* Udhari & insights */}
-      <Page size="A4" style={styles.page}>
-        <ReportHeader data={data} generatedAt={generatedAt} compact />
+      <Page size="A4" style={pageStyle}>
+        <ReportHeader data={data} generatedAt={generatedAt} loc={loc} compact />
 
-        <Section index={11} title="Udhari Position" tone="red">
+        <Section index={11} title={loc.t("udhariPosition")} tone="red">
           <View style={styles.metricGrid}>
             <Metric
-              label="Total Pending"
+              label={loc.t("totalPending")}
               value={money(data.totalPendingUdhari)}
-              sub="All customers"
+              sub={loc.t("allCustomers")}
               tone="red"
               wide
             />
             <Metric
-              label="Report Udhari"
+              label={loc.t("reportUdhari")}
               value={money(data.paymentBreakdown.udhar?.amount || 0)}
               sub={`${data.paymentBreakdown.udhar?.count || 0} bills`}
               tone="amber"
@@ -1351,29 +1578,30 @@ export const PremiumPdfReport = ({ data }: { data: PremiumReportData }) => {
           </View>
           {data.highestUdharCustomer ? (
             <View style={[styles.callout, { marginTop: 0 }]}>
-              <Text style={styles.calloutTitle}>Collect first</Text>
+              <Text style={styles.calloutTitle}>{loc.t("collectFirst")}</Text>
               <Text style={styles.calloutText}>
-                {safeText(data.highestUdharCustomer.name, "Customer", 24)} has{" "}
-                {money(data.highestUdharCustomer.balance)} pending.
+                {safeText(data.highestUdharCustomer.name, loc.t("customer"), 24)}{" "}
+                {loc.t("hasPending")} {money(data.highestUdharCustomer.balance)}{" "}
+                {loc.t("pending")}
               </Text>
             </View>
           ) : (
-            <Empty>No pending udhari customer in this report.</Empty>
+            <Empty>{loc.t("noUdhariCustomer")}</Empty>
           )}
         </Section>
 
         <View style={styles.twoCol}>
           <View style={styles.colHalf}>
-            <Section index={12} title="Brand Comparison" tone="purple">
+            <Section index={12} title={loc.t("brandComparison")} tone="purple">
               {data.brandDemand?.length ? (
                 <Table
-                  headers={["Product", "Top brand", "Sales", "Share"]}
-                  widths={["32%", "28%", "22%", "18%"]}
+                  headers={[loc.t("product"), loc.t("comparedBrands"), loc.t("sales"), loc.t("share")]}
+                  widths={["28%", "36%", "20%", "16%"]}
                   rows={data.brandDemand.slice(0, 6).map((item) => [
                     <Text style={styles.rowTitle}>
-                      {safeText(item.productName, "Product", 20)}
+                      {safeText(item.productName, loc.t("product"), 20)}
                     </Text>,
-                    safeText(item.topBrand, "Brand", 18),
+                    safeText(item.topBrands?.join(" | ") || item.topBrand, loc.t("topBrand"), 42),
                     money(item.topBrandRevenue),
                     <Text style={styles.positive}>
                       {pct(
@@ -1386,7 +1614,7 @@ export const PremiumPdfReport = ({ data }: { data: PremiumReportData }) => {
                 />
               ) : (
                 <Empty>
-                  Brand comparison appears when the same product sells across multiple brands.
+                  {loc.t("noBrandComparison")}
                 </Empty>
               )}
             </Section>
@@ -1395,15 +1623,15 @@ export const PremiumPdfReport = ({ data }: { data: PremiumReportData }) => {
           <View style={styles.colHalf}>
             <Section
               index={13}
-              title="Low Margin & Loss Items"
+              title={loc.t("lowMarginLoss")}
               tone="red"
             >
               {lossItems.length > 0 ? (
                 <Table
-                  headers={["Loss item", "Sales", "Loss", "Margin"]}
+                  headers={[loc.t("lossItem"), loc.t("sales"), loc.t("loss"), loc.t("margin")]}
                   widths={["40%", "20%", "20%", "20%"]}
                   rows={lossItems.map((item) => [
-                    <Text style={styles.rowTitle}>{safeText(item.name, "Item", 22)}</Text>,
+                    <Text style={styles.rowTitle}>{safeText(item.name, loc.t("item"), 22)}</Text>,
                     money(item.revenue),
                     <Text style={styles.negative}>{money(item.profit)}</Text>,
                     <Text style={styles.negative}>{pct(item.margin)}</Text>,
@@ -1411,23 +1639,23 @@ export const PremiumPdfReport = ({ data }: { data: PremiumReportData }) => {
                 />
               ) : lowMarginItems.length > 0 ? (
                 <Table
-                  headers={["Low margin", "Sales", "Profit", "Margin"]}
+                  headers={[loc.t("lowMargin"), loc.t("sales"), loc.t("profit"), loc.t("margin")]}
                   widths={["40%", "20%", "20%", "20%"]}
                   rows={lowMarginItems.map((item) => [
-                    <Text style={styles.rowTitle}>{safeText(item.name, "Item", 22)}</Text>,
+                    <Text style={styles.rowTitle}>{safeText(item.name, loc.t("item"), 22)}</Text>,
                     money(item.revenue),
                     money(item.profit),
                     <Text style={styles.warning}>{pct(item.margin)}</Text>,
                   ])}
                 />
               ) : (
-                <Empty>No loss-making or very low-margin item found.</Empty>
+                <Empty>{loc.t("noLossItems")}</Empty>
               )}
             </Section>
           </View>
         </View>
 
-        <Section index={14} title="Recommendations" tone="amber">
+        <Section index={14} title={loc.t("recommendations")} tone="amber">
           {actionItems.slice(0, 6).map((action, index) => (
             <View
               key={index}
@@ -1454,19 +1682,16 @@ export const PremiumPdfReport = ({ data }: { data: PremiumReportData }) => {
               >
                 {index + 1}
               </Text>
-              <Text style={styles.actionText}>{safeText(action, "Suggestion", 120)}</Text>
+              <Text style={styles.actionText}>{safeText(action, loc.t("suggestion"), 120)}</Text>
             </View>
           ))}
           <View style={styles.callout}>
-            <Text style={styles.calloutTitle}>Owner focus</Text>
-            <Text style={styles.calloutText}>
-              Start with sales change, worker performance, low stock, and loss items. These
-              four points usually decide tomorrow&apos;s profit.
-            </Text>
+            <Text style={styles.calloutTitle}>{loc.t("ownerFocus")}</Text>
+            <Text style={styles.calloutText}>{loc.t("ownerFocusText")}</Text>
           </View>
         </Section>
 
-        <PageFooter label={safeText(data.label, "Report")} />
+        <PageFooter label={safeText(data.label, "Report")} loc={loc} />
       </Page>
     </Document>
   );

@@ -56,8 +56,8 @@ export default function RootLayout({
   return (
     <html lang="mr" suppressHydrationWarning>
       <head />
-      <body className="font-sans antialiased bg-background overflow-x-hidden m-0 p-0">
-        <ErrorBoundary key="app-error-boundary">
+      <body className="font-sans antialiased bg-background overflow-x-hidden m-0 p-0" suppressHydrationWarning>
+        <ErrorBoundary>
           <ThemeProvider
             attribute="class"
             defaultTheme="light"
@@ -79,7 +79,7 @@ export default function RootLayout({
                 </ServiceWorkerProvider>
               </OfflineSyncProvider>
             </AuthProvider>
-            </ThemeProvider>
+          </ThemeProvider>
         </ErrorBoundary>
         {process.env.NODE_ENV === "production" && <Analytics />}
       </body>
