@@ -499,6 +499,16 @@ function movementLabel(type: string, loc: PdfLocale) {
   return labels[type] || loc.text(type, "update", 14);
 }
 
+function comparisonLabel(value: string | undefined, loc: PdfLocale) {
+  const labels: Record<string, string> = {
+    previous_year: loc.lang === "mr" ? "मागील वर्ष" : "Previous year",
+    previous_month: loc.lang === "mr" ? "मागील महिना" : "Previous month",
+    yesterday: loc.lang === "mr" ? "काल" : "Yesterday",
+    comparison: loc.t("previousPeriod"),
+  };
+  return labels[value || ""] || loc.text(value, "previousPeriod", 24);
+}
+
 function PageFooter({ label, loc }: { label: string; loc: PdfLocale }) {
   return (
     <View style={styles.footer} fixed>
@@ -920,7 +930,7 @@ export const PremiumPdfReport = ({
   const bestProfitItem = [...itemPerformance].sort((a, b) => b.profit - a.profit)[0];
   const bestStaff = data.staffSales?.[0];
   const bestBrand = data.brandDemand?.[0];
-  const comparisonLabel = data.comparison?.label || loc.t("previousPeriod");
+  const reportComparisonLabel = comparisonLabel(data.comparison?.label, loc);
 
   const stockHealth = data.productsCount
     ? ((data.productsCount - data.lowStockItems.length - stockSummary.out) /
@@ -1047,7 +1057,7 @@ export const PremiumPdfReport = ({
             <Text style={styles.heroValue}>{loc.money(data.revenue)}</Text>
             <Text style={styles.heroSub}>
               {data.comparison
-                ? `${loc.signedPct(data.comparison.revenueChange)} ${loc.t("sales")} ${loc.t("and")} ${loc.signedPct(data.comparison.profitChange)} ${loc.t("profit")} ${loc.t("vs")} ${comparisonLabel}.`
+                ? `${loc.signedPct(data.comparison.revenueChange)} ${loc.t("sales")} ${loc.t("and")} ${loc.signedPct(data.comparison.profitChange)} ${loc.t("profit")} ${loc.t("vs")} ${reportComparisonLabel}.`
                 : `${pdfQty(data.transactions)} ${loc.t("bills")} · ${pdfQty(data.totalItemsSold)} ${loc.t("itemsSoldLabel")}`}
             </Text>
             <View style={styles.heroStats}>
@@ -1235,7 +1245,7 @@ export const PremiumPdfReport = ({
         <Section
           index={sectionIndex++}
           title={loc.t("salesAnalysis")}
-          hint={`${loc.t("vs")} ${comparisonLabel}`}
+          hint={`${loc.t("vs")} ${reportComparisonLabel}`}
           tone="green"
         >
           <View style={styles.metricGrid}>
@@ -1244,15 +1254,15 @@ export const PremiumPdfReport = ({
               value={money(data.revenue)}
               sub={
                 data.comparison
-                  ? `${signedPct(data.comparison.revenueChange)} from ${comparisonLabel}`
-                  : `${formatNumber(data.transactions)} bills`
+                  ? `${signedPct(data.comparison.revenueChange)} ${loc.t("from")} ${reportComparisonLabel}`
+                  : `${formatNumber(data.transactions)} ${loc.t("bills")}`
               }
               tone="green"
             />
             <Metric
               label={loc.t("totalBills")}
               value={formatNumber(data.transactions)}
-              sub={`Average bill ${money(data.averageBill)}`}
+              sub={`${loc.t("averageBill")} ${money(data.averageBill)}`}
               tone="blue"
             />
             <Metric
@@ -1264,17 +1274,17 @@ export const PremiumPdfReport = ({
             <Metric
               label={loc.t("udhariSales")}
               value={money(data.paymentBreakdown.udhar?.amount || 0)}
-              sub={`${data.paymentBreakdown.udhar?.count || 0} bills`}
+              sub={`${data.paymentBreakdown.udhar?.count || 0} ${loc.t("bills")}`}
               tone="amber"
             />
           </View>
 
           <Table
-            headers={[loc.t("metric"), loc.t("thisReport"), comparisonLabel, loc.t("change")]}
+            headers={[loc.t("metric"), loc.t("thisReport"), reportComparisonLabel, loc.t("change")]}
             widths={["28%", "24%", "24%", "24%"]}
             rows={[
               [
-                <Text style={styles.rowTitle}>Sales</Text>,
+                <Text style={styles.rowTitle}>{loc.t("sales")}</Text>,
                 money(data.revenue),
                 data.comparison ? money(data.comparison.revenue) : loc.t("na"),
                 <Text
@@ -1288,7 +1298,7 @@ export const PremiumPdfReport = ({
                 </Text>,
               ],
               [
-                <Text style={styles.rowTitle}>Profit</Text>,
+                <Text style={styles.rowTitle}>{loc.t("profit")}</Text>,
                 money(data.profit),
                 data.comparison ? money(data.comparison.profit) : loc.t("na"),
                 <Text
@@ -1302,7 +1312,7 @@ export const PremiumPdfReport = ({
                 </Text>,
               ],
               [
-                <Text style={styles.rowTitle}>Margin</Text>,
+                <Text style={styles.rowTitle}>{loc.t("margin")}</Text>,
                 pct(data.margin),
                 data.comparison ? pct(data.comparison.margin) : loc.t("na"),
                 <Text
@@ -1316,7 +1326,7 @@ export const PremiumPdfReport = ({
                 </Text>,
               ],
               [
-                <Text style={styles.rowTitle}>Bills</Text>,
+                <Text style={styles.rowTitle}>{loc.t("bills")}</Text>,
                 formatNumber(data.transactions),
                 data.comparison ? formatNumber(data.comparison.transactions) : loc.t("na"),
                 data.comparison
@@ -1333,7 +1343,8 @@ export const PremiumPdfReport = ({
                   <Text style={styles.chipLabel}>{paymentName(method, loc)}</Text>
                   <Text style={styles.chipValue}>{money(entry.amount)}</Text>
                   <Text style={styles.subText}>
-                    {paymentTotal > 0 ? pct((entry.amount / paymentTotal) * 100) : "0%"} mix
+                    {paymentTotal > 0 ? pct((entry.amount / paymentTotal) * 100) : "0%"}{" "}
+                    {loc.t("mix")}
                   </Text>
                 </View>
               ))
@@ -1365,7 +1376,7 @@ export const PremiumPdfReport = ({
             <Metric
               label={loc.t("totalProfit")}
               value={money(data.profit)}
-              sub={`${pct(data.margin)} margin`}
+              sub={`${pct(data.margin)} ${loc.t("margin")}`}
               tone={data.profit >= 0 ? "green" : "red"}
               wide
             />
@@ -1571,7 +1582,7 @@ export const PremiumPdfReport = ({
             <Metric
               label={loc.t("reportUdhari")}
               value={money(data.paymentBreakdown.udhar?.amount || 0)}
-              sub={`${data.paymentBreakdown.udhar?.count || 0} bills`}
+              sub={`${data.paymentBreakdown.udhar?.count || 0} ${loc.t("bills")}`}
               tone="amber"
               wide
             />

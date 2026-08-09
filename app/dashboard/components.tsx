@@ -48,7 +48,6 @@ import {
   CreditCard,
   Crown,
   Edit,
-  FileDown,
   Package,
   ShoppingBag,
   Trash2,
@@ -1158,17 +1157,28 @@ export function Dashboard() {
 
     const previousSales = getPreviousPeriodSales();
     const previousSummary = summarizeSales(previousSales);
+    const comparisonReportLabel =
+      selectedReportType === "today"
+        ? language === "mr"
+          ? "काल"
+          : "Yesterday"
+        : selectedReportType === "month"
+          ? language === "mr"
+            ? "मागील महिना"
+            : "Previous month"
+          : selectedReportType === "year"
+            ? language === "mr"
+              ? "मागील वर्ष"
+              : "Previous year"
+            : selectedReportType === "specificMonth"
+              ? language === "mr"
+                ? "मागील महिना"
+                : "Previous month"
+              : language === "mr"
+                ? "मागील कालावधी"
+                : "Previous period";
     const comparison = {
-      label:
-        selectedReportType === "today"
-          ? t("yesterday")
-          : selectedReportType === "month"
-            ? t("previous_month")
-            : selectedReportType === "year"
-              ? t("previous_year")
-              : selectedReportType === "specificMonth"
-                ? t("previous_month")
-                : t("comparison"),
+      label: comparisonReportLabel,
       revenue: previousSummary.revenue,
       profit: previousSummary.profit,
       margin: previousSummary.margin,
@@ -1196,7 +1206,11 @@ export function Dashboard() {
         }
         case "month": {
           const start = new Date(current.getFullYear(), current.getMonth(), 1);
-          const end = new Date(current.getFullYear(), current.getMonth() + 1, 0);
+          const end = new Date(
+            current.getFullYear(),
+            current.getMonth() + 1,
+            0,
+          );
           end.setHours(23, 59, 59, 999);
           return { start, end };
         }
@@ -1206,7 +1220,11 @@ export function Dashboard() {
             current.getMonth() - 5,
             1,
           );
-          const end = new Date(current.getFullYear(), current.getMonth() + 1, 0);
+          const end = new Date(
+            current.getFullYear(),
+            current.getMonth() + 1,
+            0,
+          );
           end.setHours(23, 59, 59, 999);
           return { start, end };
         }
@@ -1266,7 +1284,8 @@ export function Dashboard() {
       }
     });
 
-    const uncategorizedLabel = language === "mr" ? "वर्गीकरण नाही" : "Uncategorized";
+    const uncategorizedLabel =
+      language === "mr" ? "वर्गीकरण नाही" : "Uncategorized";
 
     const categoryLookup = new Map<number, string>();
     categories.forEach((category) => {
@@ -1312,7 +1331,8 @@ export function Dashboard() {
         const item = itemLookup.get(Number(saleItem.itemId));
         const key = String(saleItem.itemId || saleItem.itemName);
         const current = itemPerformanceMap.get(key) || {
-          name: item?.name || item?.nameMarathi || saleItem.itemName || "Unknown",
+          name:
+            item?.name || item?.nameMarathi || saleItem.itemName || "Unknown",
           brand: item?.brand || item?.brandMarathi || undefined,
           quantity: 0,
           revenue: 0,
@@ -1326,7 +1346,10 @@ export function Dashboard() {
         current.revenue += revenueValue;
         current.cost += costValue;
         current.profit += Number(saleItem.profit ?? revenueValue - costValue);
-        if (saleDate && (!current.lastSoldDate || saleDate > current.lastSoldDate)) {
+        if (
+          saleDate &&
+          (!current.lastSoldDate || saleDate > current.lastSoldDate)
+        ) {
           current.lastSoldDate = saleDate;
         }
         itemPerformanceMap.set(key, current);
@@ -1356,8 +1379,10 @@ export function Dashboard() {
         const marginAmount =
           Number(item.marginAmount ?? sellPrice - buyPrice) || 0;
         const marginPercent =
-          Number(item.marginPercent ?? (buyPrice > 0 ? (marginAmount / buyPrice) * 100 : 0)) ||
-          0;
+          Number(
+            item.marginPercent ??
+              (buyPrice > 0 ? (marginAmount / buyPrice) * 100 : 0),
+          ) || 0;
         const status =
           quantity <= 0
             ? ("out" as const)
@@ -1391,7 +1416,9 @@ export function Dashboard() {
           lastUpdated: item.updatedAt
             ? new Date(item.updatedAt).toISOString().slice(0, 10)
             : undefined,
-          lastSoldDate: item.id ? lastSoldByItemId.get(Number(item.id)) : undefined,
+          lastSoldDate: item.id
+            ? lastSoldByItemId.get(Number(item.id))
+            : undefined,
           expiryDate: item.expiryDate
             ? new Date(item.expiryDate).toISOString().slice(0, 10)
             : undefined,
@@ -1426,40 +1453,52 @@ export function Dashboard() {
       }));
 
     const categoryStockSummary = Array.from(
-      stockItems.reduce((map, item) => {
-        const key = item.categoryName || uncategorizedLabel;
-        const current = map.get(key) || {
-          categoryName: key,
-          itemCount: 0,
-          totalQuantity: 0,
-          stockValue: 0,
-          lowCount: 0,
-          expiringCount: 0,
-        };
-        current.itemCount += 1;
-        current.totalQuantity += item.quantity;
-        current.stockValue += item.stockValue;
-        if (item.status === "low" || item.status === "out") current.lowCount += 1;
-        if (item.status === "expiring" || item.status === "expired") {
-          current.expiringCount += 1;
-        }
-        map.set(key, current);
-        return map;
-      }, new Map<string, {
-        categoryName: string;
-        itemCount: number;
-        totalQuantity: number;
-        stockValue: number;
-        lowCount: number;
-        expiringCount: number;
-      }>()),
+      stockItems.reduce(
+        (map, item) => {
+          const key = item.categoryName || uncategorizedLabel;
+          const current = map.get(key) || {
+            categoryName: key,
+            itemCount: 0,
+            totalQuantity: 0,
+            stockValue: 0,
+            lowCount: 0,
+            expiringCount: 0,
+          };
+          current.itemCount += 1;
+          current.totalQuantity += item.quantity;
+          current.stockValue += item.stockValue;
+          if (item.status === "low" || item.status === "out")
+            current.lowCount += 1;
+          if (item.status === "expiring" || item.status === "expired") {
+            current.expiringCount += 1;
+          }
+          map.set(key, current);
+          return map;
+        },
+        new Map<
+          string,
+          {
+            categoryName: string;
+            itemCount: number;
+            totalQuantity: number;
+            stockValue: number;
+            lowCount: number;
+            expiringCount: number;
+          }
+        >(),
+      ),
     )
       .map(([, value]) => value)
       .sort((a, b) => b.stockValue - a.stockValue);
 
     const categorySalesMap = new Map<
       string,
-      { categoryName: string; quantitySold: number; revenue: number; profit: number }
+      {
+        categoryName: string;
+        quantitySold: number;
+        revenue: number;
+        profit: number;
+      }
     >();
     report.sales.forEach((sale) => {
       (sale.items || []).forEach((saleItem: any) => {
@@ -1474,8 +1513,7 @@ export function Dashboard() {
         };
         const revenueValue = Number(saleItem.totalPrice || 0);
         const profitValue = Number(
-          saleItem.profit ??
-            revenueValue - Number(saleItem.totalCost || 0),
+          saleItem.profit ?? revenueValue - Number(saleItem.totalCost || 0),
         );
         current.quantitySold += Number(saleItem.quantity || 0);
         current.revenue += revenueValue;
@@ -1502,7 +1540,9 @@ export function Dashboard() {
 
     const saleRegister = [...report.sales]
       .sort((a, b) => {
-        const dateDiff = String(b.date || "").localeCompare(String(a.date || ""));
+        const dateDiff = String(b.date || "").localeCompare(
+          String(a.date || ""),
+        );
         if (dateDiff !== 0) return dateDiff;
         return Number(b.createdAt || 0) - Number(a.createdAt || 0);
       })
@@ -1572,11 +1612,22 @@ export function Dashboard() {
         .toLowerCase()
         .trim();
       const brandNames = [item?.brand, item?.brandMarathi]
-        .map((brand) => String(brand || "").toLowerCase().trim())
+        .map((brand) =>
+          String(brand || "")
+            .toLowerCase()
+            .trim(),
+        )
         .filter(Boolean);
       return brandNames
         .reduce(
-          (name, brand) => name.replace(new RegExp(`\\b${brand.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "g"), ""),
+          (name, brand) =>
+            name.replace(
+              new RegExp(
+                `\\b${brand.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`,
+                "g",
+              ),
+              "",
+            ),
           baseName,
         )
         .replace(/\s+/g, " ")
@@ -1620,7 +1671,8 @@ export function Dashboard() {
         profit: 0,
         stockValue: 0,
       };
-      brandTotal.stockValue += Number(item.quantity || 0) * Number(item.buyPrice || 0);
+      brandTotal.stockValue +=
+        Number(item.quantity || 0) * Number(item.buyPrice || 0);
       product.brandTotals.set(brand, brandTotal);
       productDemand.set(productKey, product);
     });
@@ -1648,9 +1700,13 @@ export function Dashboard() {
     const brandDemand = Array.from(productDemand.values())
       .map((group) => {
         const brandTotals = Array.from(group.brandTotals.entries()).sort(
-          (a, b) => b[1].revenue - a[1].revenue || b[1].stockValue - a[1].stockValue,
+          (a, b) =>
+            b[1].revenue - a[1].revenue || b[1].stockValue - a[1].stockValue,
         );
-        const totalRevenue = brandTotals.reduce((sum, [, value]) => sum + value.revenue, 0);
+        const totalRevenue = brandTotals.reduce(
+          (sum, [, value]) => sum + value.revenue,
+          0,
+        );
         const topBrandEntry = brandTotals[0];
         return {
           productName: group.productName,
@@ -1663,11 +1719,16 @@ export function Dashboard() {
           brandCount: brandTotals.length,
           topBrands: brandTotals
             .slice(0, 3)
-            .map(([brand, value]) => `${brand}: ₹${formatMoney(value.revenue)}`),
+            .map(
+              ([brand, value]) => `${brand}: ₹${formatMoney(value.revenue)}`,
+            ),
         };
       })
       .filter((group) => group.brandCount >= 2)
-      .sort((a, b) => b.totalRevenue - a.totalRevenue || b.brandCount - a.brandCount)
+      .sort(
+        (a, b) =>
+          b.totalRevenue - a.totalRevenue || b.brandCount - a.brandCount,
+      )
       .slice(0, 5);
 
     const staffSalesMap = new Map<
@@ -1702,7 +1763,8 @@ export function Dashboard() {
       currentEntry.revenue += Number(sale.subtotal || 0);
       currentEntry.cost += Number(sale.totalCost || 0);
       currentEntry.profit += Number(
-        sale.totalProfit ?? Number(sale.subtotal || 0) - Number(sale.totalCost || 0),
+        sale.totalProfit ??
+          Number(sale.subtotal || 0) - Number(sale.totalCost || 0),
       );
       currentEntry.transactions += 1;
       currentEntry.udhariAmount +=
@@ -1784,7 +1846,7 @@ export function Dashboard() {
       const topBrandComparison = brandDemand[0];
       suggestions.push(
         language === "mr"
-          ? `${topBrandComparison.productName} ???? ${topBrandComparison.topBrands.join(", ")} ????? ??? ??? ????? ?????? ?????? ????? ???? ????.`
+          ? `${topBrandComparison.productName} साठी ${topBrandComparison.topBrands.join(", ")} यांची तुलना करा आणि जास्त विक्री देणारा ब्रँड जास्त ठेवा.`
           : `Compare ${topBrandComparison.topBrands.join(", ")} for ${topBrandComparison.productName}; keep more stock of the better-selling brand.`,
       );
     }
@@ -1886,6 +1948,15 @@ export function Dashboard() {
       );
       throw error;
     }
+  };
+
+  const handleViewReport = () => {
+    const params = new URLSearchParams({
+      period: selectedReportType,
+      month: selectedMonth,
+      date: dateKey(selectedDate),
+    });
+    router.push(`/reports/overview?${params.toString()}`);
   };
 
   // --- Loading state ---
@@ -2431,7 +2502,8 @@ export function Dashboard() {
             <div>
               <h2 className="text-xl font-bold">{t("reports")}</h2>
               <p className="text-xs text-muted-foreground">
-                Visual PDF with sales, profit, stock, brand, udhari, and staff insights
+                Visual report with sales, profit, stock, brand, and udhari
+                insights
               </p>
             </div>
           </div>
@@ -2500,20 +2572,14 @@ export function Dashboard() {
                 </p>
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                   <Button
-                    onClick={handleDownloadReport}
+                    onClick={handleViewReport}
                     variant="outline"
                     size="sm"
                     className="h-9 gap-2 border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 hover:text-blue-800"
-                    disabled={!isPremium}
                   >
-                    <FileDown className="h-4 w-4" />
-                    Download visual PDF
+                    <BarChart3 className="h-4 w-4" />
+                    View report
                   </Button>
-                  {!isPremium && (
-                    <p className="text-xs text-orange-700">
-                      {t("premium_pdf_requires_subscription")}
-                    </p>
-                  )}
                 </div>
               </div>
             </div>
@@ -2543,7 +2609,9 @@ export function Dashboard() {
                     </p>
                   </div>
                   <div>
-                    <p className="text-xs text-muted-foreground">{t("margin")}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {t("margin")}
+                    </p>
                     <p className="font-bold">
                       {formatPercent(currentReport.margin)}%
                     </p>
@@ -2558,7 +2626,10 @@ export function Dashboard() {
                     </p>
                     <div className="space-y-1">
                       {currentReport.topItems.map((item, index) => (
-                        <div key={index} className="flex justify-between text-sm">
+                        <div
+                          key={index}
+                          className="flex justify-between text-sm"
+                        >
                           <span className="truncate">{item.name}</span>
                           <span className="font-bold">
                             Rs. {formatMoney(item.revenue)}
@@ -2577,10 +2648,11 @@ export function Dashboard() {
                       Premium visual report
                     </p>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      Numbered blocks, health score, smart tables, and next actions.
+                      Overview, sales, stock, payment, and udhari insights for
+                      this period.
                     </p>
                   </div>
-                  <FileDown className="h-5 w-5 shrink-0 text-blue-700" />
+                  <BarChart3 className="h-5 w-5 shrink-0 text-blue-700" />
                 </div>
                 <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
                   <div className="flex items-center gap-2 rounded-md bg-white/80 px-2 py-2">

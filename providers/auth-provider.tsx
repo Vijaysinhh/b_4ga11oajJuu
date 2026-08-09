@@ -134,7 +134,7 @@ export function canUserAccessPath(
     return permissions.canCreateSales || permissions.canViewSales;
   if (pathname.startsWith("/items")) return permissions.canViewItems;
   if (pathname.startsWith("/udhari")) return permissions.canViewUdhari;
-  if (pathname.startsWith("/reports")) return false;
+  if (pathname.startsWith("/reports")) return permissions.canViewReports;
   if (pathname.startsWith("/settings")) return false;
   if (pathname.startsWith("/staff") || pathname.startsWith("/super-admin"))
     return false;

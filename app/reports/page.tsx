@@ -1,5 +1,10 @@
-import { redirect } from "next/navigation";
+import { Suspense } from "react";
+import { ReportsDashboard } from "./components";
 
 export default function ReportsPage() {
-  redirect("/dashboard");
+  return (
+    <Suspense fallback={null}>
+      <ReportsDashboard />
+    </Suspense>
+  );
 }
