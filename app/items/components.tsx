@@ -66,6 +66,16 @@ interface ItemFormData {
   lowStockLimit: number;
 }
 
+const categoryMarathiLabels: Record<string, string> = {
+  Grocery: "किराणा",
+  "Dairy & Milk": "दुग्ध",
+  Beverages: "पेय पदार्थ",
+  "Snacks & Sweets": "स्नॅक्स व मिठाई",
+  "Household Items": "घरगुती वस्तू",
+  "Personal Care": "वैयक्तिक स्वच्छता",
+  "Pooja & Festival": "पूजा व सणासुदीचे साहित्य",
+};
+
 export function ItemsManagement() {
   const { t, language } = useLanguage();
   const { currentShopId } = useAuth();
@@ -683,7 +693,7 @@ export function ItemsManagement() {
               Add Item
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-full sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogContent className="w-[calc(100%-1rem)] sm:max-w-2xl max-h-[90vh] overflow-x-hidden overflow-y-auto">
             <DialogHeader>
               <DialogTitle>
                 {editingId ? "Edit Item" : "Add New Item"}
@@ -1202,7 +1212,7 @@ export function ItemsManagement() {
                 : "bg-card text-muted-foreground hover:bg-accent",
             )}
           >
-            सर्व
+            {language === "mr" ? "सर्व" : "All"}
           </button>
           {categories.map((category) => (
             <button
@@ -1216,7 +1226,9 @@ export function ItemsManagement() {
                   : "bg-card text-muted-foreground hover:bg-accent",
               )}
             >
-              {category.nameMarathi || category.name}
+              {language === "mr"
+                ? categoryMarathiLabels[category.name] || category.nameMarathi || category.name
+                : category.name}
             </button>
           ))}
         </div>

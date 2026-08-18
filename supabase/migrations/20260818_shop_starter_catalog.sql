@@ -60,6 +60,13 @@ ON CONFLICT (code) DO UPDATE SET
   category_name=EXCLUDED.category_name, unit_short_form=EXCLUDED.unit_short_form,
   icon_key=EXCLUDED.icon_key;
 
+-- Repair the old malformed Marathi label only when it is blank or mojibake.
+-- A shopkeeper's valid custom translation is never overwritten.
+UPDATE public.categories
+SET name_marathi = 'पेय पदार्थ', updated_at = NOW()
+WHERE lower(trim(name)) = 'beverages'
+  AND (name_marathi IS NULL OR position('à' IN name_marathi) > 0);
+
 CREATE OR REPLACE FUNCTION public.seed_shop_starter_catalog(p_shop_id BIGINT)
 RETURNS VOID LANGUAGE plpgsql SECURITY INVOKER SET search_path = public AS $$
 BEGIN
