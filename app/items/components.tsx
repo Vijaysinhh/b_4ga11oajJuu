@@ -42,7 +42,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Trash2, Edit2, Plus, Search } from "lucide-react";
+import { Trash2, Edit2, Plus, Minus, Search, Package } from "lucide-react";
 import { HelpTooltip, LabelWithTooltip } from "@/components/help-tooltip";
 import { cn } from "@/lib/utils";
 import {
@@ -697,9 +697,18 @@ export function ItemsManagement() {
                 </TabsTrigger>
               </TabsList>
 
-              <TabsContent value="basic" className="space-y-6 mt-4">
-                <div className="rounded-2xl border border-border/70 bg-slate-50 p-5">
-                  <p className="text-sm font-semibold">Product details</p>
+              <TabsContent value="basic" className="space-y-5 mt-4">
+                <div className="rounded-3xl border border-border/70 bg-card p-5 shadow-sm">
+                  <div className="flex items-center gap-3">
+                    <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                      <Package className="h-6 w-6" />
+                    </span>
+                    <div>
+                      <p className="font-semibold">{formData.name || "New product"}</p>
+                      <p className="text-xs text-muted-foreground">{formData.nameMarathi || "नवीन वस्तू"}</p>
+                      <p className="mt-0.5 text-xs font-medium text-primary">Product details</p>
+                    </div>
+                  </div>
                   <div className="mt-4 space-y-4">
                     <div>
                       <LabelWithTooltip
@@ -784,25 +793,12 @@ export function ItemsManagement() {
                     </div>
 
                     <div>
-                      <LabelWithTooltip
-                        label="Current Quantity"
-                        tooltip="How much stock you have right now in the shop"
-                        required
-                      />
-                      <Input
-                        type="text"
-                        inputMode="numeric"
-                        pattern="[0-9]*"
-                        value={formData.quantity || ""}
-                        onChange={(e) =>
-                          setFormData({
-                            ...formData,
-                            quantity: parseWholeNumberInput(e.target.value),
-                          })
-                        }
-                        placeholder="0"
-                        className="mt-1"
-                      />
+                      <LabelWithTooltip label="Current Quantity" tooltip="How much stock you have right now in the shop" required />
+                      <div className="mt-2 flex items-center justify-between rounded-2xl bg-muted p-2">
+                        <Button type="button" variant="ghost" size="icon" onClick={() => setFormData((prev) => ({ ...prev, quantity: Math.max(0, prev.quantity - 1) }))} aria-label="Decrease quantity"><Minus className="h-5 w-5" /></Button>
+                        <span className="text-2xl font-bold">{formatWholeNumber(formData.quantity)} <span className="text-sm font-medium text-muted-foreground">{getUnitName(formData.unitId)}</span></span>
+                        <Button type="button" variant="ghost" size="icon" onClick={() => setFormData((prev) => ({ ...prev, quantity: prev.quantity + 1 }))} aria-label="Increase quantity"><Plus className="h-5 w-5" /></Button>
+                      </div>
                     </div>
 
                     <div>
@@ -858,11 +854,14 @@ export function ItemsManagement() {
                   </div>
                 </div>
 
-                <div>
-                  <LabelWithTooltip
-                    label="Expiry Date"
-                    tooltip="Optional. If set, the system can show expiry alerts for this item."
-                  />
+                <div className="rounded-2xl border border-border/70 bg-card p-5 shadow-sm">
+                  <div className="flex items-center justify-between gap-3">
+                    <LabelWithTooltip
+                      label="Expiry Date"
+                      tooltip="Optional. If set, the system can show expiry alerts for this item."
+                    />
+                    <span className="text-xs text-muted-foreground">Optional</span>
+                  </div>
                   <div className="mt-1 flex flex-col gap-2 sm:flex-row sm:items-center">
                     <Input
                       type="date"
@@ -913,7 +912,7 @@ export function ItemsManagement() {
                 </div>
 
                 <div className="grid gap-4 lg:grid-cols-2">
-                  <div className="rounded-2xl border border-border/70 bg-slate-50 p-5">
+                  <div className="rounded-2xl border border-border/70 bg-card p-5 shadow-sm">
                     <p className="text-sm font-semibold">Pricing</p>
                     <div className="mt-4 space-y-4">
                       <div>
@@ -1040,7 +1039,7 @@ export function ItemsManagement() {
                     </div>
                   </div>
 
-                  <div className="rounded-2xl border border-border/70 bg-slate-50 p-4 text-sm text-slate-700">
+                  <div className="rounded-2xl border border-border/70 bg-card p-4 text-sm text-slate-700 shadow-sm">
                     <p className="text-sm font-semibold">Inventory preview</p>
                     <div className="mt-3 grid gap-3 sm:grid-cols-2">
                       <div className="rounded-xl bg-white p-3 shadow-sm">
@@ -1143,26 +1142,37 @@ export function ItemsManagement() {
           </div>
         </div>
 
-        <div className="grid gap-2 lg:grid-cols-5">
-          {/* Category Filter */}
-          <Select
-            value={selectedCategoryId?.toString() || "all"}
-            onValueChange={(value) =>
-              setSelectedCategoryId(value === "all" ? null : Number(value))
-            }
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          <button
+            type="button"
+            onClick={() => setSelectedCategoryId(null)}
+            className={cn(
+              "shrink-0 rounded-full border px-4 py-2 text-sm font-semibold transition-colors",
+              selectedCategoryId === null
+                ? "border-primary bg-primary text-primary-foreground"
+                : "bg-card text-muted-foreground hover:bg-accent",
+            )}
           >
-            <SelectTrigger className="w-full">
-              <SelectValue placeholder="Category" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Categories</SelectItem>
-              {categories.map((cat) => (
-                <SelectItem key={cat.id} value={cat.id!.toString()}>
-                  {cat.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            सर्व
+          </button>
+          {categories.map((category) => (
+            <button
+              key={category.id}
+              type="button"
+              onClick={() => setSelectedCategoryId(category.id)}
+              className={cn(
+                "shrink-0 rounded-full border px-4 py-2 text-sm font-semibold transition-colors",
+                selectedCategoryId === category.id
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "bg-card text-muted-foreground hover:bg-accent",
+              )}
+            >
+              {category.nameMarathi || category.name}
+            </button>
+          ))}
+        </div>
+
+        <div className="grid gap-2 lg:grid-cols-4">
 
           {/* Expiry Status Filter */}
           <Select
@@ -1420,7 +1430,11 @@ export function ItemsManagement() {
                     <div className="space-y-2">
                       {/* Item Name and Category */}
                       <div className="flex items-start justify-between">
-                        <div className="flex-1">
+                        <div className="flex flex-1 items-start gap-3">
+                          <span className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                            <Package className="h-5 w-5" />
+                          </span>
+                          <div className="min-w-0 flex-1">
                           <h3 className="font-bold text-base">
                             {primaryItemName}
                           </h3>
@@ -1485,6 +1499,7 @@ export function ItemsManagement() {
                               ⚠️ {expiryUrgencyText}
                             </p>
                           )}
+                          </div>
                         </div>
                         <div className="text-right">
                           <p className="text-sm font-semibold text-blue-600">

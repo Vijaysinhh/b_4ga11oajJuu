@@ -237,7 +237,20 @@ export default function SuperAdminPage() {
             return;
           }
 
-          toast({ title: 'Success', description: 'Shop created with default categories and units!' });
+          // Creates ordinary, shop-owned item rows at quantity 0. From this
+          // point they use the same edit/delete/price-variant flow as any item.
+          const { error: starterCatalogError } = await (supabase as any).rpc(
+            'seed_shop_starter_catalog',
+            { p_shop_id: newShop.id },
+          );
+
+          if (starterCatalogError) {
+            console.error('Seed starter catalog error:', starterCatalogError);
+            toast({ title: 'Error', description: `Shop was created, but starter products could not be added: ${starterCatalogError.message}` });
+            return;
+          }
+
+          toast({ title: 'Success', description: 'Shop created with starter products, categories and units!' });
         }
       }
 

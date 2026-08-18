@@ -147,6 +147,8 @@ export interface Database {
           name_marathi: string | null;
           brand: string | null;
           brand_marathi: string | null;
+          catalog_code: string | null;
+          icon_key: string;
           category_id: number | null;
           unit_id: number | null;
           quantity: number;
@@ -166,6 +168,8 @@ export interface Database {
           name_marathi?: string | null;
           brand?: string | null;
           brand_marathi?: string | null;
+          catalog_code?: string | null;
+          icon_key?: string;
           category_id?: number | null;
           unit_id?: number | null;
           quantity?: number;
@@ -185,6 +189,8 @@ export interface Database {
           name_marathi?: string | null;
           brand?: string | null;
           brand_marathi?: string | null;
+          catalog_code?: string | null;
+          icon_key?: string;
           category_id?: number | null;
           unit_id?: number | null;
           quantity?: number;
