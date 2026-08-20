@@ -1,15 +1,13 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card } from '@/components/ui/card';
 import { Trash2, Plus } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useRealtimePriceTiers } from '@/hooks/use-realtime-price-tiers';
 import type { Unit, PriceTier } from '@/lib/db';
 import { calculatePricingMetrics } from '@/lib/pricing-calculator';
-import { convertUnit } from '@/lib/unit-conversion';
 import { formatMoney, formatPercent, formatWholeNumber, parseWholeNumberInput } from '@/lib/number-format';
 
 interface PriceTierManagerProps {
@@ -18,14 +16,13 @@ interface PriceTierManagerProps {
   units: Unit[];
   wholesaleCost: number;
   wholesaleQty: number;
-  wholesaleUnitId: number; // Add this
+  wholesaleUnitId: number;
   onAdd: (tier: Omit<PriceTier, 'id' | 'createdAt' | 'updatedAt'>) => void;
   onDelete: (tierId: number) => void;
 }
 
 export function PriceTierManager({
   itemId,
-  priceTiers: initialPriceTiers,
   units,
   wholesaleCost,
   wholesaleQty,
@@ -35,17 +32,33 @@ export function PriceTierManager({
 }: PriceTierManagerProps) {
   const [newTier, setNewTier] = useState({
     quantity: '',
-    unitId: units[0]?.id || 0,
+    unitId: wholesaleUnitId || units[0]?.id || 0,
     price: '',
   });
 
-  // Use real-time price tiers from Supabase
   const { priceTiers, isConnected } = useRealtimePriceTiers(itemId || null);
 
-  const handleAdd = () => {
-    if (!newTier.quantity || !newTier.price || !itemId) {
-      return;
+  const getUnitName = (unitId: number) => {
+    const unit = units.find((item) => item.id === unitId);
+    return unit?.shortForm || unit?.name || 'unit';
+  };
+
+  const getMetrics = (price: number, quantity: number, tierUnitId: number) => {
+    if (!wholesaleCost || !wholesaleQty) {
+      return { cost: 0, profit: 0, margin: 0, markup: 0 };
     }
+
+    return calculatePricingMetrics(
+      wholesaleCost,
+      getUnitName(wholesaleUnitId),
+      quantity,
+      getUnitName(tierUnitId),
+      price,
+    );
+  };
+
+  const handleAdd = () => {
+    if (!newTier.quantity || !newTier.price || !itemId) return;
 
     onAdd({
       itemId,
@@ -54,218 +67,164 @@ export function PriceTierManager({
       price: parseWholeNumberInput(newTier.price),
     });
 
-    setNewTier({
-      quantity: '',
-      unitId: units[0]?.id || 0,
-      price: '',
-    });
+    setNewTier({ quantity: '', unitId: wholesaleUnitId || units[0]?.id || 0, price: '' });
   };
 
-  const calculateMargin = (price: number, quantity: number, tierUnitId: number) => {
-    if (wholesaleQty === 0 || wholesaleCost === 0) return 0;
-    const metrics = getMetrics(price, quantity, tierUnitId);
-    return metrics.profit;
-  };
-
-  const calculateMarginPercent = (price: number, quantity: number, tierUnitId: number) => {
-    if (wholesaleQty === 0 || wholesaleCost === 0) return 0;
-    const metrics = getMetrics(price, quantity, tierUnitId);
-    return metrics.margin;
-  };
-
-  const calculateMarkupPercent = (price: number, quantity: number, tierUnitId: number) => {
-    if (wholesaleQty === 0 || wholesaleCost === 0) return 0;
-    const metrics = getMetrics(price, quantity, tierUnitId);
-    return metrics.markup;
-  };
-
-  const getUnitName = (unitId: number) => {
-    const unit = units.find((u) => u.id === unitId);
-    return unit?.shortForm || unit?.name || 'N/A';
-  };
-
-  const getMetrics = (price: number, quantity: number, tierUnitId: number) => {
-    if (!wholesaleCost || !wholesaleQty) {
-      return { cost: 0, profit: 0, margin: 0, markup: 0 };
-    }
-
-    const wholesaleUnit = units.find(u => u.id === wholesaleUnitId)?.shortForm || 'unit';
-    const tierUnit = units.find(u => u.id === tierUnitId)?.shortForm || 'unit';
-    
-    // wholesaleCost is already per-unit price (e.g., Rs. 300 per L)
-    const costPerBaseUnit = wholesaleCost;
-
-    return calculatePricingMetrics(
-      costPerBaseUnit,
-      wholesaleUnit,
-      quantity,
-      tierUnit,
-      price
-    );
-  };
+  const previewMetrics = newTier.price && newTier.quantity
+    ? getMetrics(
+        parseWholeNumberInput(newTier.price),
+        parseWholeNumberInput(newTier.quantity),
+        newTier.unitId,
+      )
+    : null;
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-bold mb-3">Multi-Level Pricing Tiers</h3>
-        {isConnected && (
-          <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded flex items-center gap-1">
-            <span className="w-2 h-2 bg-green-600 rounded-full animate-pulse"></span>
-            Live Sync
-          </span>
-        )}
-      </div>
-      
-      {/* Legend with Examples */}
-      <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-3 mb-4 text-xs space-y-2">
-        <div className="font-bold text-blue-900 mb-2">How Calculations Work (Auto-Converted)</div>
-        
-        <div className="grid grid-cols-1 gap-2 text-blue-900">
-          <div className="bg-white rounded p-2 border border-blue-100">
-            <span className="font-semibold">Example: Buy 3kg rice at Rs. 200/kg, sell 50g at Rs. 15</span>
-            <div className="text-xs text-gray-700 mt-1 space-y-0.5">
-              <div>Step 1: Choose grams/ml so no decimal entry is needed</div>
-              <div>Step 2: App converts units automatically</div>
-              <div>Step 3: Profit = Rs. 15 - Rs. 10 = Rs. 5</div>
-              <div className="font-semibold text-green-700">✓ Margin: 33.33% | Markup: 50%</div>
-            </div>
+    <div className="mx-auto max-w-lg">
+      <div className="rounded-3xl border bg-card p-5 shadow-sm">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-lg font-bold">Price variants</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Add another pack size or selling price for this item.
+            </p>
           </div>
-          
-          <div className="grid grid-cols-2 gap-2">
-            <div className="bg-green-50 border border-green-200 rounded p-2">
-              <div className="font-semibold text-green-900">Margin % (Better for shopkeepers)</div>
-              <div className="text-xs text-green-800 mt-1">
-                Shows % of selling price that is profit
-                <br/>
-                Formula: Profit / Selling Price * 100
-              </div>
-            </div>
-            <div className="bg-orange-50 border border-orange-200 rounded p-2">
-              <div className="font-semibold text-orange-900">Markup % (For comparison)</div>
-              <div className="text-xs text-orange-800 mt-1">
-                Shows % markup above cost price
-                <br/>
-                Formula: Profit / Cost * 100
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Existing Tiers */}
-      {priceTiers.length > 0 && (
-        <div className="space-y-2 mb-4">
-          {priceTiers.map((tier) => (
-            <Card key={tier.id} className="p-3 flex items-center justify-between">
-              <div className="flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="font-semibold text-sm">
-                    {formatWholeNumber(tier.quantity)} {getUnitName(tier.unitId)}
-                  </span>
-                  <span className="text-sm text-gray-600">@ Rs. {formatMoney(tier.price)}</span>
-                </div>
-                <div className="text-xs text-green-700 mt-1 space-y-0.5">
-                  <div>
-                    {(() => {
-                      const metrics = getMetrics(tier.price, tier.quantity, tier.unitId);
-                      return <>
-                        <div>Cost: Rs. {formatMoney(metrics.cost)} | Profit: Rs. {formatMoney(metrics.profit)}</div>
-                        <div className="flex gap-3">
-                          <span>Margin: {formatPercent(metrics.margin)}%</span>
-                          <span className="text-gray-500">Markup: {formatPercent(metrics.markup)}%</span>
-                        </div>
-                      </>;
-                    })()}
-                  </div>
-                </div>
-              </div>
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={() => onDelete(tier.id || 0)}
-                className="h-8 w-8 p-0"
-              >
-                <Trash2 className="w-4 h-4" />
-              </Button>
-            </Card>
-          ))}
-        </div>
-      )}
-
-      <div className="border-t pt-4 space-y-3">
-        <div className="text-sm font-semibold">Add New Price Tier</div>
-        <div className="grid grid-cols-3 gap-2">
-          <div>
-            <label className="text-xs font-semibold text-gray-700 mb-1 block">Qty</label>
-            <Input
-              type="text"
-              inputMode="numeric"
-              pattern="[0-9]*"
-              value={newTier.quantity}
-              onChange={(e) => setNewTier({ ...newTier, quantity: String(parseWholeNumberInput(e.target.value) || '') })}
-              placeholder="e.g., 50"
-              className="h-9 text-sm"
-            />
-          </div>
-          <div>
-            <label className="text-xs font-semibold text-gray-700 mb-1 block">Unit</label>
-            <Select
-              value={newTier.unitId.toString()}
-              onValueChange={(value) => setNewTier({ ...newTier, unitId: Number(value) })}
-            >
-              <SelectTrigger className="h-9 text-sm">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {units.map((unit) => (
-                  <SelectItem key={unit.id} value={unit.id!.toString()}>
-                    {unit.shortForm}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <label className="text-xs font-semibold text-gray-700 mb-1 block">Price</label>
-            <Input
-              type="text"
-              inputMode="numeric"
-              pattern="[0-9]*"
-              value={newTier.price}
-              onChange={(e) => setNewTier({ ...newTier, price: String(parseWholeNumberInput(e.target.value) || '') })}
-              placeholder="Rs. Price"
-              className="h-9 text-sm"
-            />
-          </div>
+          {isConnected && (
+            <span className="shrink-0 rounded-full bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700">
+              Saved live
+            </span>
+          )}
         </div>
 
-        {newTier.price && newTier.quantity && (
-          <div className="bg-blue-50 border border-blue-200 rounded p-2 text-xs space-y-1">
-            {(() => {
-              const metrics = getMetrics(parseWholeNumberInput(newTier.price), parseWholeNumberInput(newTier.quantity), newTier.unitId);
-              return (
-                <>
-                  <div className="font-semibold text-blue-900">
-                    Cost: Rs. {formatMoney(metrics.cost)} | Profit: Rs. {formatMoney(metrics.profit)}
-                  </div>
-                  <div className="text-blue-800 flex gap-3">
-                    <span>Margin: {formatPercent(metrics.margin)}%</span>
-                    <span className="text-blue-600">Markup: {formatPercent(metrics.markup)}%</span>
-                  </div>
-                </>
-              );
-            })()}
-          </div>
-        )}
+        <div className="mt-5 rounded-2xl border bg-muted/30 p-4 text-sm">
+          <p className="font-semibold">Your normal buying price</p>
+          <p className="mt-1 text-muted-foreground">
+            ₹{formatMoney(wholesaleCost)} per {getUnitName(wholesaleUnitId)}
+          </p>
+        </div>
 
-        <Button
-          onClick={handleAdd}
-          disabled={!newTier.quantity || !newTier.price}
-          className="w-full h-9 text-sm"
-        >
-          <Plus className="w-4 h-4 mr-1" />
-          Add Tier
-        </Button>
+        <section className="mt-7 border-t pt-6">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm font-bold">Saved price variants</p>
+            <span className="text-xs font-medium text-muted-foreground">
+              {priceTiers.length}
+            </span>
+          </div>
+
+          {priceTiers.length === 0 ? (
+            <p className="mt-3 rounded-xl bg-muted p-3 text-sm text-muted-foreground">
+              No extra pack prices added yet.
+            </p>
+          ) : (
+            <div className="mt-3 space-y-3">
+              {priceTiers.map((tier) => {
+                const metrics = getMetrics(tier.price, tier.quantity, tier.unitId);
+
+                return (
+                  <div key={tier.id} className="flex items-center gap-3 rounded-2xl border bg-card p-4 shadow-sm">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-baseline justify-between gap-3">
+                        <p className="font-bold">
+                          {formatWholeNumber(tier.quantity)} {getUnitName(tier.unitId)}
+                        </p>
+                        <p className="shrink-0 text-lg font-bold text-primary">
+                          ₹{formatMoney(tier.price)}
+                        </p>
+                      </div>
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        Cost ₹{formatMoney(metrics.cost)} · You earn ₹{formatMoney(metrics.profit)}
+                      </p>
+                      <p className="mt-1 text-xs font-semibold text-emerald-700">
+                        {formatPercent(metrics.margin)}% margin
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      aria-label="Delete price variant"
+                      onClick={() => onDelete(tier.id || 0)}
+                      className="h-10 w-10 shrink-0 rounded-xl border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
+        <section className="mt-7 border-t pt-6">
+          <p className="text-sm font-bold">Add a price variant</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Example: sell a 50 g pack at a different price.
+          </p>
+
+          <div className="mt-4 grid grid-cols-2 gap-3">
+            <label className="min-w-0 text-sm font-semibold">
+              Pack quantity
+              <Input
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                value={newTier.quantity}
+                onChange={(event) => setNewTier({ ...newTier, quantity: String(parseWholeNumberInput(event.target.value) || '') })}
+                placeholder="e.g. 50"
+                className="mt-1.5 min-w-0"
+              />
+            </label>
+            <label className="min-w-0 text-sm font-semibold">
+              Unit
+              <Select value={newTier.unitId.toString()} onValueChange={(value) => setNewTier({ ...newTier, unitId: Number(value) })}>
+                <SelectTrigger className="mt-1.5 min-w-0"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {units.map((unit) => (
+                    <SelectItem key={unit.id} value={unit.id!.toString()}>
+                      {unit.name} ({unit.shortForm})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </label>
+          </div>
+
+          <label className="mt-4 block text-sm font-semibold">
+            Selling price <span className="text-destructive">*</span>
+            <div className="relative mt-1.5">
+              <span className="absolute left-3 top-2.5 text-muted-foreground">₹</span>
+              <Input
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                value={newTier.price}
+                onChange={(event) => setNewTier({ ...newTier, price: String(parseWholeNumberInput(event.target.value) || '') })}
+                placeholder="0"
+                className="pl-7 text-base"
+              />
+            </div>
+          </label>
+
+          {previewMetrics && (
+            <div className="mt-4 rounded-xl bg-emerald-50 px-3 py-3 text-sm text-emerald-800">
+              <p className="font-semibold">
+                You earn ₹{formatMoney(previewMetrics.profit)} · {formatPercent(previewMetrics.margin)}% margin
+              </p>
+              <p className="mt-1 text-xs">
+                Your cost for this pack: ₹{formatMoney(previewMetrics.cost)}
+              </p>
+            </div>
+          )}
+
+          <Button
+            type="button"
+            onClick={handleAdd}
+            disabled={!newTier.quantity || !newTier.price}
+            className="mt-5 h-12 w-full rounded-xl text-base font-bold"
+          >
+            <Plus className="mr-2 h-5 w-5" />
+            Add price variant
+          </Button>
+        </section>
       </div>
     </div>
   );

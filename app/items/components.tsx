@@ -1249,12 +1249,20 @@ export function ItemsManagement() {
               </TabsContent>
             </Tabs>
             <DialogFooter className="sticky bottom-0 -mx-4 mt-5 gap-2 border-t bg-background/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6">
-              <Button type="button" variant="outline" onClick={resetForm} className="h-12">
-                Cancel
-              </Button>
-              <Button type="button" onClick={handleSave} className="h-12 flex-1 rounded-xl text-base font-bold">
-                {editingId ? "Update Item" : "Add Item"}
-              </Button>
+              {activeTab === "pricing" ? (
+                <Button type="button" onClick={resetForm} className="h-12 w-full rounded-xl text-base font-bold">
+                  Done
+                </Button>
+              ) : (
+                <>
+                  <Button type="button" variant="outline" onClick={resetForm} className="h-12">
+                    Cancel
+                  </Button>
+                  <Button type="button" onClick={handleSave} className="h-12 flex-1 rounded-xl text-base font-bold">
+                    {editingId ? "Update Item" : "Add Item"}
+                  </Button>
+                </>
+              )}
             </DialogFooter>
           </DialogContent>
         </Dialog>
