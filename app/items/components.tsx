@@ -721,32 +721,22 @@ export function ItemsManagement() {
                         <Package className="h-7 w-7" />
                       </span>
                       <div className="min-w-0">
-                        <p className="truncate text-lg font-bold leading-tight">{formData.name || "New product"}</p>
-                        <p className="mt-1 truncate text-base text-muted-foreground">{formData.nameMarathi || "नवीन वस्तू"}</p>
-                        <p className="mt-2 text-xs font-semibold text-primary">{getUnitName(formData.unitId)} · Ready to add</p>
+                        <p className="truncate text-lg font-bold leading-tight">{language === "mr" ? formData.nameMarathi || formData.name || "नवीन वस्तू" : formData.name || formData.nameMarathi || "New product"}</p>
+                        <p className="mt-1 text-sm text-muted-foreground">{language === "mr" ? "स्टॉकमध्ये जोडण्यासाठी तयार" : "Ready to add to stock"}</p>
+                        <p className="mt-2 text-xs font-semibold text-primary">{getUnitName(formData.unitId)}</p>
                       </div>
                     </div>
 
                     <div className="mt-6 space-y-4 rounded-2xl border bg-muted/30 p-4">
                       <p className="text-sm font-bold">Product details</p>
                       <label className="block text-sm font-semibold">
-                        Item name <span className="text-destructive">*</span>
-                        <Input value={formData.name} onChange={(event) => { setFormData({ ...formData, name: event.target.value }); clearFieldError("name"); }} className="mt-1.5" placeholder="e.g. Bathing Soap" />
+                        {language === "mr" ? "वस्तूचे नाव" : "Item name"} <span className="text-destructive">*</span>
+                        <Input value={language === "mr" ? formData.nameMarathi : formData.name} onChange={(event) => { setFormData({ ...formData, [language === "mr" ? "nameMarathi" : "name"]: event.target.value }); clearFieldError(language === "mr" ? "nameMarathi" : "name"); }} className="mt-1.5" placeholder={language === "mr" ? "उदा. आंघोळीचा साबण" : "e.g. Bathing Soap"} />
                       </label>
                       <label className="block text-sm font-semibold">
-                        वस्तूचे नाव
-                        <Input value={formData.nameMarathi} onChange={(event) => setFormData({ ...formData, nameMarathi: event.target.value })} className="mt-1.5" placeholder="उदा. आंघोळीचा साबण" />
+                        {language === "mr" ? "ब्रँड नाव" : "Brand name"}
+                        <Input value={language === "mr" ? formData.brandMarathi : formData.brand} onChange={(event) => setFormData({ ...formData, [language === "mr" ? "brandMarathi" : "brand"]: event.target.value })} className="mt-1.5" placeholder={language === "mr" ? "उदा. संतूर" : "e.g. Santoor"} />
                       </label>
-                      <div className="grid grid-cols-2 gap-3">
-                        <label className="min-w-0 text-xs font-semibold sm:text-sm">
-                          Brand
-                          <Input value={formData.brand} onChange={(event) => setFormData({ ...formData, brand: event.target.value })} className="mt-1.5 min-w-0" placeholder="Santoor" />
-                        </label>
-                        <label className="min-w-0 text-xs font-semibold sm:text-sm">
-                          ब्रँड नाव
-                          <Input value={formData.brandMarathi} onChange={(event) => setFormData({ ...formData, brandMarathi: event.target.value })} className="mt-1.5 min-w-0" placeholder="संतूर" />
-                        </label>
-                      </div>
                       <div className="grid grid-cols-2 gap-3">
                         <label className="min-w-0 text-xs font-semibold sm:text-sm">
                           Category
@@ -766,18 +756,22 @@ export function ItemsManagement() {
                     </div>
 
                     <section className="mt-7">
-                      <p className="text-sm font-bold">How many do you have?</p>
-                      <div className="mt-3 flex items-center justify-between rounded-2xl bg-muted p-2">
-                        <Button type="button" variant="ghost" size="icon" aria-label="Decrease quantity" onClick={() => setFormData((value) => ({ ...value, quantity: Math.max(0, value.quantity - 1) }))}><Minus className="h-5 w-5" /></Button>
-                        <span className="text-2xl font-bold">{formatWholeNumber(formData.quantity)} <span className="text-sm font-medium text-muted-foreground">{getUnitName(formData.unitId)}</span></span>
-                        <Button type="button" variant="ghost" size="icon" aria-label="Increase quantity" onClick={() => setFormData((value) => ({ ...value, quantity: value.quantity + 1 }))}><Plus className="h-5 w-5" /></Button>
+                      <div className="flex items-center justify-between"><p className="text-sm font-bold">How many do you have?</p><span className="text-xs font-medium text-muted-foreground">Current stock</span></div>
+                      <div className="mt-3 flex items-center justify-between rounded-2xl border bg-muted/70 p-2">
+                        <Button type="button" variant="ghost" size="icon" aria-label="Decrease quantity" className="h-11 w-11 rounded-xl bg-background shadow-sm" onClick={() => setFormData((value) => ({ ...value, quantity: Math.max(0, value.quantity - 1) }))}><Minus className="h-5 w-5" /></Button>
+                        <span className="text-2xl font-bold tabular-nums">{formatWholeNumber(formData.quantity)} <span className="text-sm font-medium text-muted-foreground">{getUnitName(formData.unitId)}</span></span>
+                        <Button type="button" variant="ghost" size="icon" aria-label="Increase quantity" className="h-11 w-11 rounded-xl bg-primary text-primary-foreground shadow-sm hover:bg-primary/90 hover:text-primary-foreground" onClick={() => setFormData((value) => ({ ...value, quantity: value.quantity + 1 }))}><Plus className="h-5 w-5" /></Button>
                       </div>
                     </section>
 
-                    <div className="mt-6 grid grid-cols-2 gap-3">
+                    <section className="mt-7 border-t pt-6">
+                      <p className="text-sm font-bold">Price</p>
+                    <div className="mt-3 grid grid-cols-2 gap-3">
                       <label className="min-w-0 text-xs font-semibold sm:text-sm">Buying price <span className="text-destructive">*</span><div className="relative mt-2"><span className="absolute left-3 top-2.5 text-muted-foreground">₹</span><Input inputMode="numeric" value={formData.buyPrice || ""} onChange={(event) => { setFormData({ ...formData, buyPrice: parseWholeNumberInput(event.target.value) }); clearFieldError("buyPrice"); }} className="min-w-0 pl-7 text-base" placeholder="0" /></div></label>
-                      <label className="min-w-0 text-xs font-semibold sm:text-sm">Selling price <span className="text-destructive">*</span><div className="relative mt-2"><span className="absolute left-3 top-2.5 text-muted-foreground">₹</span><Input inputMode="numeric" value={formData.sellPrice || ""} onChange={(event) => { setFormData({ ...formData, sellPrice: parseWholeNumberInput(event.target.value) }); clearFieldError("sellPrice"); }} className="min-w-0 pl-7 text-base" placeholder="0" /></div>{formData.buyPrice > 0 && formData.sellPrice > 0 && <p className="mt-2 text-xs text-green-600">Margin: {formatPercent(calculateMargin(formData.buyPrice, formData.sellPrice))}%</p>}</label>
+                      <label className="min-w-0 text-xs font-semibold sm:text-sm">Selling price <span className="text-destructive">*</span><div className="relative mt-2"><span className="absolute left-3 top-2.5 text-muted-foreground">₹</span><Input inputMode="numeric" value={formData.sellPrice || ""} onChange={(event) => { setFormData({ ...formData, sellPrice: parseWholeNumberInput(event.target.value) }); clearFieldError("sellPrice"); }} className="min-w-0 pl-7 text-base" placeholder="0" /></div></label>
                     </div>
+                    {formData.buyPrice > 0 && formData.sellPrice > 0 && <div className="mt-3 rounded-xl bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700">You earn ₹{formatMoney(Math.max(0, formData.sellPrice - formData.buyPrice))} · {formatPercent(calculateMargin(formData.buyPrice, formData.sellPrice))}% margin</div>}
+                    </section>
 
                     <section className="mt-7 border-t pt-6">
                       <p className="text-sm font-bold">Expiry</p>
@@ -788,7 +782,7 @@ export function ItemsManagement() {
                       {showExpiryPicker && <div className="mt-3 space-y-3"><div className="grid grid-cols-3 gap-2"><Button type="button" variant="outline" size="sm" onClick={() => setExpiryInDays(0)}>Today</Button><Button type="button" variant="outline" size="sm" onClick={() => setExpiryInDays(7)}>+7 days</Button><Button type="button" variant="outline" size="sm" onClick={() => setExpiryInDays(30)}>+30 days</Button></div><Input type="date" value={formData.expiryDate} onChange={(event) => setFormData({ ...formData, expiryDate: event.target.value })} /></div>}
                     </section>
 
-                    <label className="mt-6 block text-sm font-bold">Low stock alert limit<div className="mt-2 flex items-center gap-2"><Input type="number" min="0" value={formData.lowStockLimit || ""} onChange={(event) => setFormData({ ...formData, lowStockLimit: parseWholeNumberInput(event.target.value) })} className="max-w-24" placeholder="Disabled" /><span className="min-w-0 truncate text-sm text-muted-foreground">{getUnitName(formData.unitId)}</span></div></label>
+                    <section className="mt-7 border-t pt-6"><label className="block text-sm font-bold">Low stock alert limit<div className="mt-2 flex items-center gap-2"><Input type="number" min="0" value={formData.lowStockLimit || ""} onChange={(event) => setFormData({ ...formData, lowStockLimit: parseWholeNumberInput(event.target.value) })} className="max-w-24" placeholder="0" /><span className="min-w-0 truncate text-sm text-muted-foreground">{getUnitName(formData.unitId)}</span></div><span className="mt-2 block text-xs font-normal text-muted-foreground">0 means no alert</span></label></section>
                     <div className="mt-5 grid grid-cols-2 gap-3"><div className="min-w-0 rounded-xl bg-muted p-3"><p className="text-xs text-muted-foreground">Stock value</p><p className="mt-1 truncate font-semibold">₹ {formatMoney(formData.quantity * formData.buyPrice)}</p></div><div className="min-w-0 rounded-xl bg-muted p-3"><p className="text-xs text-muted-foreground">Profit margin</p><p className="mt-1 font-semibold text-green-600">{formData.buyPrice > 0 ? `${formatPercent(calculateMargin(formData.buyPrice, formData.sellPrice))}%` : "—"}</p></div></div>
                   </div>
                 </div>
@@ -1254,11 +1248,11 @@ export function ItemsManagement() {
                 )}
               </TabsContent>
             </Tabs>
-            <DialogFooter className="mt-4 gap-2">
-              <Button type="button" variant="outline" onClick={resetForm}>
+            <DialogFooter className="sticky bottom-0 -mx-4 mt-5 gap-2 border-t bg-background/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6">
+              <Button type="button" variant="outline" onClick={resetForm} className="h-12">
                 Cancel
               </Button>
-              <Button type="button" onClick={handleSave}>
+              <Button type="button" onClick={handleSave} className="h-12 flex-1 rounded-xl text-base font-bold">
                 {editingId ? "Update Item" : "Add Item"}
               </Button>
             </DialogFooter>
