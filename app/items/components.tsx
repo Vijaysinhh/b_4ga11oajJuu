@@ -623,60 +623,34 @@ export function ItemsManagement() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 pb-24 pt-2 sm:pb-10 sm:pt-4">
-      <div className="rounded-2xl border border-border/70 bg-card/70 p-4 shadow-sm backdrop-blur sm:p-5">
-        <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+      <div className="rounded-3xl border border-border/70 bg-card p-5 shadow-sm">
+        <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
           {t("items")}
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Manage your product inventory
+          {items.length} products in your shop
         </p>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Card className="border shadow-sm">
-          <CardContent className="p-4">
-            <p className="text-sm font-semibold">{t("total_value_label")}</p>
-            <p className="text-xs text-muted-foreground">
-              {items.length} {t("products")}
-            </p>
-            <p className="mt-3 text-xl font-bold text-purple-700">
-              Rs. {formatMoney(totalStockValue)}
-            </p>
-          </CardContent>
-        </Card>
-        <Card className="border shadow-sm">
-          <CardContent className="p-4">
-            <p className="text-sm font-semibold">Low Stock</p>
-            <p className="mt-3 text-2xl font-bold text-orange-700">
-              {lowStockCount}
-            </p>
-            <p className="text-xs text-muted-foreground mt-1">
-              Items at or below reorder threshold
-            </p>
-          </CardContent>
-        </Card>
-        <Card className="border shadow-sm">
-          <CardContent className="p-4">
-            <p className="text-sm font-semibold">Out of Stock</p>
-            <p className="mt-3 text-2xl font-bold text-red-700">
-              {outOfStockCount}
-            </p>
-            <p className="text-xs text-muted-foreground mt-1">
-              Items with zero quantity
-            </p>
-          </CardContent>
-        </Card>
-        <Card className="border shadow-sm">
-          <CardContent className="p-4">
-            <p className="text-sm font-semibold">Expiring Soon</p>
-            <p className="mt-3 text-2xl font-bold text-amber-700">
-              {expiringSoonCount}
-            </p>
-            <p className="text-xs text-muted-foreground mt-1">
-              Items expiring within 7 days
-            </p>
-          </CardContent>
-        </Card>
+      <div className="grid grid-cols-3 gap-3">
+        <div className="rounded-2xl border bg-card p-3 shadow-sm">
+          <p className="text-xs text-muted-foreground">Stock value</p>
+          <p className="mt-1 truncate text-base font-bold text-primary">
+            ₹{formatMoney(totalStockValue)}
+          </p>
+        </div>
+        <div className="rounded-2xl border bg-card p-3 shadow-sm">
+          <p className="text-xs text-muted-foreground">Low stock</p>
+          <p className="mt-1 text-xl font-bold text-orange-700">
+            {lowStockCount}
+          </p>
+        </div>
+        <div className="rounded-2xl border bg-card p-3 shadow-sm">
+          <p className="text-xs text-muted-foreground">Out of stock</p>
+          <p className="mt-1 text-xl font-bold text-red-700">
+            {outOfStockCount}
+          </p>
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -687,7 +661,7 @@ export function ItemsManagement() {
           <DialogTrigger asChild>
             <Button
               onClick={() => handleOpenDialog()}
-              className="w-full sm:w-auto gap-2"
+              className="h-12 w-full gap-2 rounded-xl text-base font-bold sm:w-auto"
             >
               <Plus className="w-4 h-4" />
               Add Item
@@ -721,69 +695,371 @@ export function ItemsManagement() {
                         <Package className="h-7 w-7" />
                       </span>
                       <div className="min-w-0">
-                        <p className="truncate text-lg font-bold leading-tight">{language === "mr" ? formData.nameMarathi || formData.name || "नवीन वस्तू" : formData.name || formData.nameMarathi || "New product"}</p>
-                        <p className="mt-1 text-sm text-muted-foreground">{language === "mr" ? "स्टॉकमध्ये जोडण्यासाठी तयार" : "Ready to add to stock"}</p>
-                        <p className="mt-2 text-xs font-semibold text-primary">{getUnitName(formData.unitId)}</p>
+                        <p className="truncate text-lg font-bold leading-tight">
+                          {language === "mr"
+                            ? formData.nameMarathi ||
+                              formData.name ||
+                              "नवीन वस्तू"
+                            : formData.name ||
+                              formData.nameMarathi ||
+                              "New product"}
+                        </p>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          {language === "mr"
+                            ? "स्टॉकमध्ये जोडण्यासाठी तयार"
+                            : "Ready to add to stock"}
+                        </p>
+                        <p className="mt-2 text-xs font-semibold text-primary">
+                          {getUnitName(formData.unitId)}
+                        </p>
                       </div>
                     </div>
 
                     <div className="mt-6 space-y-4 rounded-2xl border bg-muted/30 p-4">
                       <p className="text-sm font-bold">Product details</p>
                       <label className="block text-sm font-semibold">
-                        {language === "mr" ? "वस्तूचे नाव" : "Item name"} <span className="text-destructive">*</span>
-                        <Input value={language === "mr" ? formData.nameMarathi : formData.name} onChange={(event) => { setFormData({ ...formData, [language === "mr" ? "nameMarathi" : "name"]: event.target.value }); clearFieldError(language === "mr" ? "nameMarathi" : "name"); }} className="mt-1.5" placeholder={language === "mr" ? "उदा. आंघोळीचा साबण" : "e.g. Bathing Soap"} />
+                        {language === "mr" ? "वस्तूचे नाव" : "Item name"}{" "}
+                        <span className="text-destructive">*</span>
+                        <Input
+                          value={
+                            language === "mr"
+                              ? formData.nameMarathi
+                              : formData.name
+                          }
+                          onChange={(event) => {
+                            setFormData({
+                              ...formData,
+                              [language === "mr" ? "nameMarathi" : "name"]:
+                                event.target.value,
+                            });
+                            clearFieldError(
+                              language === "mr" ? "nameMarathi" : "name",
+                            );
+                          }}
+                          className="mt-1.5"
+                          placeholder={
+                            language === "mr"
+                              ? "उदा. आंघोळीचा साबण"
+                              : "e.g. Bathing Soap"
+                          }
+                        />
                       </label>
                       <label className="block text-sm font-semibold">
                         {language === "mr" ? "ब्रँड नाव" : "Brand name"}
-                        <Input value={language === "mr" ? formData.brandMarathi : formData.brand} onChange={(event) => setFormData({ ...formData, [language === "mr" ? "brandMarathi" : "brand"]: event.target.value })} className="mt-1.5" placeholder={language === "mr" ? "उदा. संतूर" : "e.g. Santoor"} />
+                        <Input
+                          value={
+                            language === "mr"
+                              ? formData.brandMarathi
+                              : formData.brand
+                          }
+                          onChange={(event) =>
+                            setFormData({
+                              ...formData,
+                              [language === "mr" ? "brandMarathi" : "brand"]:
+                                event.target.value,
+                            })
+                          }
+                          className="mt-1.5"
+                          placeholder={
+                            language === "mr" ? "उदा. संतूर" : "e.g. Santoor"
+                          }
+                        />
                       </label>
                       <div className="grid grid-cols-2 gap-3">
                         <label className="min-w-0 text-xs font-semibold sm:text-sm">
                           Category
-                          <Select value={formData.categoryId.toString()} onValueChange={(value) => setFormData({ ...formData, categoryId: Number(value) })}>
-                            <SelectTrigger className="mt-1.5 min-w-0"><SelectValue /></SelectTrigger>
-                            <SelectContent>{categories.map((category) => <SelectItem key={category.id} value={category.id!.toString()}>{language === "mr" ? categoryMarathiLabels[category.name] || category.nameMarathi || category.name : category.name}</SelectItem>)}</SelectContent>
+                          <Select
+                            value={formData.categoryId.toString()}
+                            onValueChange={(value) =>
+                              setFormData({
+                                ...formData,
+                                categoryId: Number(value),
+                              })
+                            }
+                          >
+                            <SelectTrigger className="mt-1.5 min-w-0">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {categories.map((category) => (
+                                <SelectItem
+                                  key={category.id}
+                                  value={category.id!.toString()}
+                                >
+                                  {language === "mr"
+                                    ? categoryMarathiLabels[category.name] ||
+                                      category.nameMarathi ||
+                                      category.name
+                                    : category.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
                           </Select>
                         </label>
                         <label className="min-w-0 text-xs font-semibold sm:text-sm">
                           Unit
-                          <Select value={formData.unitId.toString()} onValueChange={(value) => setFormData({ ...formData, unitId: Number(value) })}>
-                            <SelectTrigger className="mt-1.5 min-w-0"><SelectValue /></SelectTrigger>
-                            <SelectContent>{units.map((unit) => <SelectItem key={unit.id} value={unit.id!.toString()}>{unit.name} ({unit.shortForm})</SelectItem>)}</SelectContent>
+                          <Select
+                            value={formData.unitId.toString()}
+                            onValueChange={(value) =>
+                              setFormData({
+                                ...formData,
+                                unitId: Number(value),
+                              })
+                            }
+                          >
+                            <SelectTrigger className="mt-1.5 min-w-0">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {units.map((unit) => (
+                                <SelectItem
+                                  key={unit.id}
+                                  value={unit.id!.toString()}
+                                >
+                                  {unit.name} ({unit.shortForm})
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
                           </Select>
                         </label>
                       </div>
                     </div>
 
                     <section className="mt-7">
-                      <div className="flex items-center justify-between"><p className="text-sm font-bold">How many do you have?</p><span className="text-xs font-medium text-muted-foreground">Current stock</span></div>
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm font-bold">
+                          How many do you have?
+                        </p>
+                        <span className="text-xs font-medium text-muted-foreground">
+                          Current stock
+                        </span>
+                      </div>
                       <div className="mt-3 flex items-center justify-between rounded-2xl border bg-muted/70 p-2">
-                        <Button type="button" variant="ghost" size="icon" aria-label="Decrease quantity" className="h-11 w-11 rounded-xl bg-background shadow-sm" onClick={() => setFormData((value) => ({ ...value, quantity: Math.max(0, value.quantity - 1) }))}><Minus className="h-5 w-5" /></Button>
-                        <span className="text-2xl font-bold tabular-nums">{formatWholeNumber(formData.quantity)} <span className="text-sm font-medium text-muted-foreground">{getUnitName(formData.unitId)}</span></span>
-                        <Button type="button" variant="ghost" size="icon" aria-label="Increase quantity" className="h-11 w-11 rounded-xl bg-primary text-primary-foreground shadow-sm hover:bg-primary/90 hover:text-primary-foreground" onClick={() => setFormData((value) => ({ ...value, quantity: value.quantity + 1 }))}><Plus className="h-5 w-5" /></Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          aria-label="Decrease quantity"
+                          className="h-11 w-11 rounded-xl bg-background shadow-sm"
+                          onClick={() =>
+                            setFormData((value) => ({
+                              ...value,
+                              quantity: Math.max(0, value.quantity - 1),
+                            }))
+                          }
+                        >
+                          <Minus className="h-5 w-5" />
+                        </Button>
+                        <span className="text-2xl font-bold tabular-nums">
+                          {formatWholeNumber(formData.quantity)}{" "}
+                          <span className="text-sm font-medium text-muted-foreground">
+                            {getUnitName(formData.unitId)}
+                          </span>
+                        </span>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          aria-label="Increase quantity"
+                          className="h-11 w-11 rounded-xl bg-primary text-primary-foreground shadow-sm hover:bg-primary/90 hover:text-primary-foreground"
+                          onClick={() =>
+                            setFormData((value) => ({
+                              ...value,
+                              quantity: value.quantity + 1,
+                            }))
+                          }
+                        >
+                          <Plus className="h-5 w-5" />
+                        </Button>
                       </div>
                     </section>
 
                     <section className="mt-7 border-t pt-6">
                       <p className="text-sm font-bold">Price</p>
-                    <div className="mt-3 grid grid-cols-2 gap-3">
-                      <label className="min-w-0 text-xs font-semibold sm:text-sm">Buying price <span className="text-destructive">*</span><div className="relative mt-2"><span className="absolute left-3 top-2.5 text-muted-foreground">₹</span><Input inputMode="numeric" value={formData.buyPrice || ""} onChange={(event) => { setFormData({ ...formData, buyPrice: parseWholeNumberInput(event.target.value) }); clearFieldError("buyPrice"); }} className="min-w-0 pl-7 text-base" placeholder="0" /></div></label>
-                      <label className="min-w-0 text-xs font-semibold sm:text-sm">Selling price <span className="text-destructive">*</span><div className="relative mt-2"><span className="absolute left-3 top-2.5 text-muted-foreground">₹</span><Input inputMode="numeric" value={formData.sellPrice || ""} onChange={(event) => { setFormData({ ...formData, sellPrice: parseWholeNumberInput(event.target.value) }); clearFieldError("sellPrice"); }} className="min-w-0 pl-7 text-base" placeholder="0" /></div></label>
-                    </div>
-                    {formData.buyPrice > 0 && formData.sellPrice > 0 && <div className="mt-3 rounded-xl bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700">You earn ₹{formatMoney(Math.max(0, formData.sellPrice - formData.buyPrice))} · {formatPercent(calculateMargin(formData.buyPrice, formData.sellPrice))}% margin</div>}
+                      <div className="mt-3 grid grid-cols-2 gap-3">
+                        <label className="min-w-0 text-xs font-semibold sm:text-sm">
+                          Buying price{" "}
+                          <span className="text-destructive">*</span>
+                          <div className="relative mt-2">
+                            <span className="absolute left-3 top-2.5 text-muted-foreground">
+                              ₹
+                            </span>
+                            <Input
+                              inputMode="numeric"
+                              value={formData.buyPrice || ""}
+                              onChange={(event) => {
+                                setFormData({
+                                  ...formData,
+                                  buyPrice: parseWholeNumberInput(
+                                    event.target.value,
+                                  ),
+                                });
+                                clearFieldError("buyPrice");
+                              }}
+                              className="min-w-0 pl-7 text-base"
+                              placeholder="0"
+                            />
+                          </div>
+                        </label>
+                        <label className="min-w-0 text-xs font-semibold sm:text-sm">
+                          Selling price{" "}
+                          <span className="text-destructive">*</span>
+                          <div className="relative mt-2">
+                            <span className="absolute left-3 top-2.5 text-muted-foreground">
+                              ₹
+                            </span>
+                            <Input
+                              inputMode="numeric"
+                              value={formData.sellPrice || ""}
+                              onChange={(event) => {
+                                setFormData({
+                                  ...formData,
+                                  sellPrice: parseWholeNumberInput(
+                                    event.target.value,
+                                  ),
+                                });
+                                clearFieldError("sellPrice");
+                              }}
+                              className="min-w-0 pl-7 text-base"
+                              placeholder="0"
+                            />
+                          </div>
+                        </label>
+                      </div>
+                      {formData.buyPrice > 0 && formData.sellPrice > 0 && (
+                        <div className="mt-3 rounded-xl bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700">
+                          You earn ₹
+                          {formatMoney(
+                            Math.max(0, formData.sellPrice - formData.buyPrice),
+                          )}{" "}
+                          ·{" "}
+                          {formatPercent(
+                            calculateMargin(
+                              formData.buyPrice,
+                              formData.sellPrice,
+                            ),
+                          )}
+                          % margin
+                        </div>
+                      )}
                     </section>
 
                     <section className="mt-7 border-t pt-6">
                       <p className="text-sm font-bold">Expiry</p>
                       <div className="mt-3 grid grid-cols-2 gap-2">
-                        <Button type="button" className="min-w-0 px-2 text-xs sm:text-sm" variant={!showExpiryPicker ? "default" : "outline"} onClick={() => { setShowExpiryPicker(false); setFormData((value) => ({ ...value, expiryDate: "" })); }}>No expiry</Button>
-                        <Button type="button" className="min-w-0 px-2 text-xs sm:text-sm" variant={showExpiryPicker ? "default" : "outline"} onClick={() => setShowExpiryPicker(true)}>Add expiry date</Button>
+                        <Button
+                          type="button"
+                          className="min-w-0 px-2 text-xs sm:text-sm"
+                          variant={!showExpiryPicker ? "default" : "outline"}
+                          onClick={() => {
+                            setShowExpiryPicker(false);
+                            setFormData((value) => ({
+                              ...value,
+                              expiryDate: "",
+                            }));
+                          }}
+                        >
+                          No expiry
+                        </Button>
+                        <Button
+                          type="button"
+                          className="min-w-0 px-2 text-xs sm:text-sm"
+                          variant={showExpiryPicker ? "default" : "outline"}
+                          onClick={() => setShowExpiryPicker(true)}
+                        >
+                          Add expiry date
+                        </Button>
                       </div>
-                      {showExpiryPicker && <div className="mt-3 space-y-3"><div className="grid grid-cols-3 gap-2"><Button type="button" variant="outline" size="sm" onClick={() => setExpiryInDays(0)}>Today</Button><Button type="button" variant="outline" size="sm" onClick={() => setExpiryInDays(7)}>+7 days</Button><Button type="button" variant="outline" size="sm" onClick={() => setExpiryInDays(30)}>+30 days</Button></div><Input type="date" value={formData.expiryDate} onChange={(event) => setFormData({ ...formData, expiryDate: event.target.value })} /></div>}
+                      {showExpiryPicker && (
+                        <div className="mt-3 space-y-3">
+                          <div className="grid grid-cols-3 gap-2">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setExpiryInDays(0)}
+                            >
+                              Today
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setExpiryInDays(7)}
+                            >
+                              +7 days
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setExpiryInDays(30)}
+                            >
+                              +30 days
+                            </Button>
+                          </div>
+                          <Input
+                            type="date"
+                            value={formData.expiryDate}
+                            onChange={(event) =>
+                              setFormData({
+                                ...formData,
+                                expiryDate: event.target.value,
+                              })
+                            }
+                          />
+                        </div>
+                      )}
                     </section>
 
-                    <section className="mt-7 border-t pt-6"><label className="block text-sm font-bold">Low stock alert limit<div className="mt-2 flex items-center gap-2"><Input type="number" min="0" value={formData.lowStockLimit || ""} onChange={(event) => setFormData({ ...formData, lowStockLimit: parseWholeNumberInput(event.target.value) })} className="max-w-24" placeholder="0" /><span className="min-w-0 truncate text-sm text-muted-foreground">{getUnitName(formData.unitId)}</span></div><span className="mt-2 block text-xs font-normal text-muted-foreground">0 means no alert</span></label></section>
-                    <div className="mt-5 grid grid-cols-2 gap-3"><div className="min-w-0 rounded-xl bg-muted p-3"><p className="text-xs text-muted-foreground">Stock value</p><p className="mt-1 truncate font-semibold">₹ {formatMoney(formData.quantity * formData.buyPrice)}</p></div><div className="min-w-0 rounded-xl bg-muted p-3"><p className="text-xs text-muted-foreground">Profit margin</p><p className="mt-1 font-semibold text-green-600">{formData.buyPrice > 0 ? `${formatPercent(calculateMargin(formData.buyPrice, formData.sellPrice))}%` : "—"}</p></div></div>
+                    <section className="mt-7 border-t pt-6">
+                      <label className="block text-sm font-bold">
+                        Low stock alert limit
+                        <div className="mt-2 flex items-center gap-2">
+                          <Input
+                            type="number"
+                            min="0"
+                            value={formData.lowStockLimit || ""}
+                            onChange={(event) =>
+                              setFormData({
+                                ...formData,
+                                lowStockLimit: parseWholeNumberInput(
+                                  event.target.value,
+                                ),
+                              })
+                            }
+                            className="max-w-24"
+                            placeholder="0"
+                          />
+                          <span className="min-w-0 truncate text-sm text-muted-foreground">
+                            {getUnitName(formData.unitId)}
+                          </span>
+                        </div>
+                        <span className="mt-2 block text-xs font-normal text-muted-foreground">
+                          0 means no alert
+                        </span>
+                      </label>
+                    </section>
+                    <div className="mt-5 grid grid-cols-2 gap-3">
+                      <div className="min-w-0 rounded-xl bg-muted p-3">
+                        <p className="text-xs text-muted-foreground">
+                          Stock value
+                        </p>
+                        <p className="mt-1 truncate font-semibold">
+                          ₹ {formatMoney(formData.quantity * formData.buyPrice)}
+                        </p>
+                      </div>
+                      <div className="min-w-0 rounded-xl bg-muted p-3">
+                        <p className="text-xs text-muted-foreground">
+                          Profit margin
+                        </p>
+                        <p className="mt-1 font-semibold text-green-600">
+                          {formData.buyPrice > 0
+                            ? `${formatPercent(calculateMargin(formData.buyPrice, formData.sellPrice))}%`
+                            : "—"}
+                        </p>
+                      </div>
+                    </div>
                   </div>
                 </div>
 
@@ -1250,15 +1526,28 @@ export function ItemsManagement() {
             </Tabs>
             <DialogFooter className="sticky bottom-0 -mx-4 mt-5 gap-2 border-t bg-background/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6">
               {activeTab === "pricing" ? (
-                <Button type="button" onClick={resetForm} className="h-12 w-full rounded-xl text-base font-bold">
+                <Button
+                  type="button"
+                  onClick={resetForm}
+                  className="h-12 w-full rounded-xl text-base font-bold"
+                >
                   Done
                 </Button>
               ) : (
                 <>
-                  <Button type="button" variant="outline" onClick={resetForm} className="h-12">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={resetForm}
+                    className="h-12"
+                  >
                     Cancel
                   </Button>
-                  <Button type="button" onClick={handleSave} className="h-12 flex-1 rounded-xl text-base font-bold">
+                  <Button
+                    type="button"
+                    onClick={handleSave}
+                    className="h-12 flex-1 rounded-xl text-base font-bold"
+                  >
                     {editingId ? "Update Item" : "Add Item"}
                   </Button>
                 </>
@@ -1281,12 +1570,12 @@ export function ItemsManagement() {
           </div>
         </div>
 
-        <div className="flex gap-2 overflow-x-auto pb-1">
+        <div className="flex gap-2 overflow-x-auto rounded-2xl border bg-card p-2 pb-2 shadow-sm">
           <button
             type="button"
             onClick={() => setSelectedCategoryId(null)}
             className={cn(
-              "shrink-0 rounded-full border px-4 py-2 text-sm font-semibold transition-colors",
+              "shrink-0 rounded-xl border px-4 py-2 text-sm font-semibold transition-colors",
               selectedCategoryId === null
                 ? "border-primary bg-primary text-primary-foreground"
                 : "bg-card text-muted-foreground hover:bg-accent",
@@ -1300,21 +1589,22 @@ export function ItemsManagement() {
               type="button"
               onClick={() => setSelectedCategoryId(category.id)}
               className={cn(
-                "shrink-0 rounded-full border px-4 py-2 text-sm font-semibold transition-colors",
+                "shrink-0 rounded-xl border px-4 py-2 text-sm font-semibold transition-colors",
                 selectedCategoryId === category.id
                   ? "border-primary bg-primary text-primary-foreground"
                   : "bg-card text-muted-foreground hover:bg-accent",
               )}
             >
               {language === "mr"
-                ? categoryMarathiLabels[category.name] || category.nameMarathi || category.name
+                ? categoryMarathiLabels[category.name] ||
+                  category.nameMarathi ||
+                  category.name
                 : category.name}
             </button>
           ))}
         </div>
 
-        <div className="grid gap-2 lg:grid-cols-4">
-
+        <div className="hidden">
           {/* Expiry Status Filter */}
           <Select
             value={selectedExpiryStatus || "all"}
@@ -1392,7 +1682,7 @@ export function ItemsManagement() {
           selectedExpiryStatus ||
           selectedStockStatus ||
           sortBy !== "name-asc") && (
-          <div className="flex flex-wrap gap-2">
+          <div className="hidden">
             {searchTerm && (
               <span className="rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-sm text-slate-700">
                 Search: {searchTerm}
@@ -1432,7 +1722,7 @@ export function ItemsManagement() {
 
       {/* Batch Operations Toolbar */}
       {selectedItems.size > 0 && (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-center justify-between">
+        <div className="hidden">
           <div className="flex items-center gap-2">
             <input
               type="checkbox"
@@ -1576,70 +1866,70 @@ export function ItemsManagement() {
                             <Package className="h-5 w-5" />
                           </span>
                           <div className="min-w-0 flex-1">
-                          <h3 className="font-bold text-base">
-                            {primaryItemName}
-                          </h3>
-                          {showSecondaryItemName && (
-                            <p className="text-sm font-medium text-muted-foreground">
-                              {secondaryItemName}
-                            </p>
-                          )}
-                          <div className="mt-2 flex flex-wrap gap-2">
-                            <span className="rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-700">
-                              {getCategoryName(item.categoryId)}
-                            </span>
-                            {primaryBrandName && (
-                              <span className="rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700">
-                                {primaryBrandName}
-                              </span>
+                            <h3 className="font-bold text-base">
+                              {primaryItemName}
+                            </h3>
+                            {showSecondaryItemName && (
+                              <p className="text-sm font-medium text-muted-foreground">
+                                {secondaryItemName}
+                              </p>
                             )}
-                            {item.quantity === 0 ? (
-                              <span className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-700">
-                                Out of stock
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              <span className="rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-700">
+                                {getCategoryName(item.categoryId)}
                               </span>
-                            ) : isLowStock ? (
-                              <span className="rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-[11px] font-semibold text-orange-700">
-                                Low stock
-                              </span>
-                            ) : (
-                              <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
-                                In stock
-                              </span>
-                            )}
-                          </div>
-                          {expiryStart && (
-                            <p
-                              className={
-                                expiryStatus === "expired"
-                                  ? "text-xs font-semibold text-red-600"
-                                  : expiryStatus === "expiring"
-                                    ? "text-xs font-semibold text-orange-600"
-                                    : "text-xs text-muted-foreground"
-                              }
-                            >
-                              Expiry:{" "}
-                              {expiryStart.toLocaleDateString(
-                                language === "mr" ? "mr-IN" : "en-IN",
+                              {primaryBrandName && (
+                                <span className="rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700">
+                                  {primaryBrandName}
+                                </span>
                               )}
-                              {expiryStatus === "expired"
-                                ? " (Expired)"
-                                : expiryStatus === "expiring"
-                                  ? " (Near Expiry)"
-                                  : ""}
-                              {daysLeftText}
-                            </p>
-                          )}
-                          {expiryUrgencyText && (
-                            <p
-                              className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-xs font-bold ${
-                                expiryStatus === "expired"
-                                  ? "bg-red-100 text-red-700"
-                                  : "bg-orange-100 text-orange-700"
-                              }`}
-                            >
-                              ⚠️ {expiryUrgencyText}
-                            </p>
-                          )}
+                              {item.quantity === 0 ? (
+                                <span className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-700">
+                                  Out of stock
+                                </span>
+                              ) : isLowStock ? (
+                                <span className="rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-[11px] font-semibold text-orange-700">
+                                  Low stock
+                                </span>
+                              ) : (
+                                <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
+                                  In stock
+                                </span>
+                              )}
+                            </div>
+                            {expiryStart && (
+                              <p
+                                className={
+                                  expiryStatus === "expired"
+                                    ? "text-xs font-semibold text-red-600"
+                                    : expiryStatus === "expiring"
+                                      ? "text-xs font-semibold text-orange-600"
+                                      : "text-xs text-muted-foreground"
+                                }
+                              >
+                                Expiry:{" "}
+                                {expiryStart.toLocaleDateString(
+                                  language === "mr" ? "mr-IN" : "en-IN",
+                                )}
+                                {expiryStatus === "expired"
+                                  ? " (Expired)"
+                                  : expiryStatus === "expiring"
+                                    ? " (Near Expiry)"
+                                    : ""}
+                                {daysLeftText}
+                              </p>
+                            )}
+                            {expiryUrgencyText && (
+                              <p
+                                className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-xs font-bold ${
+                                  expiryStatus === "expired"
+                                    ? "bg-red-100 text-red-700"
+                                    : "bg-orange-100 text-orange-700"
+                                }`}
+                              >
+                                ⚠️ {expiryUrgencyText}
+                              </p>
+                            )}
                           </div>
                         </div>
                         <div className="text-right">

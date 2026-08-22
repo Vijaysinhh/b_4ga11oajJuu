@@ -52,6 +52,8 @@ import {
   Trash2,
   X,
   MessageCircle,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -304,7 +306,6 @@ export default function UdhariPage() {
     }
   };
 
-  // Form states
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [amount, setAmount] = useState("");
@@ -324,8 +325,22 @@ export default function UdhariPage() {
     () => entries.find((entry) => entry.id === editingEntryId) || null,
     [entries, editingEntryId],
   );
-
   const recentEntries = entries.slice(0, 4);
+
+  const sortedCustomers = [...customers].sort((first, second) => {
+    const firstHasBalance = Number(first.balance > 0);
+    const secondHasBalance = Number(second.balance > 0);
+    return secondHasBalance - firstHasBalance;
+  });
+  const needsPaymentSoonCount = customers.filter((customer) => {
+    if (customer.balance <= 0) return false;
+    const pressure = getCreditPressure(
+      customer.id,
+      Number(customer.balance || 0),
+      entries,
+    );
+    return pressure.riskLevel === "recover" || pressure.riskLevel === "high";
+  }).length;
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -520,40 +535,30 @@ export default function UdhariPage() {
             <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
               {t("udhari")}
             </h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {t("pending_amount")}
-            </p>
           </div>
           <Button onClick={openAddCustomerDialog} className="h-10 gap-2">
             <Plus className="h-4 w-4" />
-            {t("customer")}
+            {t("add_customer")}
           </Button>
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
-        <Card className="border shadow-sm">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">
-              {t("pending")}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              Rs. {formatMoney(totalPending)}
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="border shadow-sm">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">
-              {t("customers")}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{customers.length}</div>
-          </CardContent>
-        </Card>
+      <div className="rounded-2xl border border-orange-200 bg-orange-50/80 p-5 shadow-sm sm:p-6">
+        <p className="text-sm font-semibold text-orange-900">
+          {language === "mr" ? "एकूण बाकी" : "Total pending"}
+        </p>
+        <p className="mt-1 text-4xl font-bold tracking-tight text-orange-950 sm:text-5xl">
+          ₹{formatMoney(totalPending)}
+        </p>
+        <p className="mt-2 text-sm text-orange-800">
+          {language === "mr"
+            ? `${customers.length} ग्राहक • ${needsPaymentSoonCount} जणांकडून लवकर पैसे घ्यायचे`
+            : `${customers.length} customers • ${needsPaymentSoonCount} need payment soon`}
+        </p>
+      </div>
+
+      <div>
+        <h2 className="text-lg font-bold">{t("customers")}</h2>
       </div>
 
       {customers.length === 0 ? (
@@ -570,7 +575,7 @@ export default function UdhariPage() {
         </Card>
       ) : (
         <div className="space-y-3">
-          {customers.map((customer) => {
+          {sortedCustomers.map((customer) => {
             const customerEntries = getCustomerEntries(customer.id!).slice(
               0,
               6,
@@ -581,30 +586,14 @@ export default function UdhariPage() {
               Number(customer.balance || 0),
               entries,
             );
-            const pressureLabel =
-              customer.balance <= 0
-                ? "✅ Clear"
-                : creditPressure.riskLevel === "high"
-                  ? "🔴 High risk"
-                  : creditPressure.riskLevel === "recover"
-                    ? "🟠 Recover soon"
-                    : "🟢 Fresh";
-            const pressureClass =
-              customer.balance <= 0
-                ? "border-green-200 bg-green-50 text-green-700"
-                : creditPressure.riskLevel === "high"
-                  ? "border-red-200 bg-red-50 text-red-700"
-                  : creditPressure.riskLevel === "recover"
-                    ? "border-orange-200 bg-orange-50 text-orange-700"
-                    : "border-green-200 bg-green-50 text-green-700";
             const pendingAgeText =
               customer.balance <= 0
                 ? language === "mr"
-                  ? "उधारी clear"
-                  : "Udhari clear"
+                  ? "उधारी पूर्ण"
+                  : "Udhari complete"
                 : language === "mr"
-                  ? `₹${formatMoney(customer.balance)} ${creditPressure.daysPending} दिवस pending`
-                  : `₹${formatMoney(customer.balance)} pending for ${creditPressure.daysPending} days`;
+                  ? `बाकी ${creditPressure.daysPending} दिवसांपासून`
+                  : `Pending for ${creditPressure.daysPending} days`;
 
             return (
               <Card
@@ -630,50 +619,31 @@ export default function UdhariPage() {
                       )}
                     </div>
                     <div className="text-right">
-                      <p className="text-xs text-muted-foreground">
-                        {t("balance")}
-                      </p>
-                      <p className="text-lg font-bold text-orange-700">
-                        Rs. {formatMoney(customer.balance)}
+                      <p className="text-2xl font-bold text-orange-700">
+                        ₹{formatMoney(customer.balance)}
                       </p>
                     </div>
                   </div>
 
-                  <div
-                    className={`mt-3 rounded-md border px-3 py-2 text-xs font-semibold ${pressureClass}`}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span>{pressureLabel}</span>
-                      <span className="text-right">{pendingAgeText}</span>
-                    </div>
+                  <div className="mt-3 text-sm font-semibold text-muted-foreground">
+                    {pendingAgeText}
                   </div>
 
-                  <div className="mt-4 grid grid-cols-5 gap-2">
+                  <div className="mt-4 grid grid-cols-2 gap-2">
                     <Button
                       onClick={() => openEntryDialog(customer.id!, "credit")}
-                      className="h-9 bg-orange-600 text-xs hover:bg-orange-700 col-span-2"
+                      className="h-11 bg-orange-600 text-sm hover:bg-orange-700"
                     >
-                      {t("add")}
+                      {language === "mr" ? "उधार जोडा" : "Add Udhari"}
                     </Button>
                     <Button
                       onClick={() => openEntryDialog(customer.id!, "payment")}
-                      variant="outline"
-                      className="h-9 text-xs col-span-2"
+                      className="h-11 bg-green-600 text-sm text-white hover:bg-green-700"
                       disabled={customer.balance <= 0}
                     >
-                      {t("payment")}
-                    </Button>
-                    <Button
-                      onClick={() =>
-                        setExpandedCustomerId(isExpanded ? null : customer.id!)
-                      }
-                      variant="ghost"
-                      className="h-9 text-xs"
-                    >
-                      {t("history")}
+                      {language === "mr" ? "पैसे मिळाले" : "Receive Payment"}
                     </Button>
                   </div>
-
                   {/* WhatsApp Reminder Button */}
                   {customer.phone && customer.balance > 0 && (
                     <Button
@@ -682,11 +652,32 @@ export default function UdhariPage() {
                       className="mt-2 w-full h-9 bg-green-600 hover:bg-green-700 text-xs gap-2"
                     >
                       <MessageCircle className="h-4 w-4" />
-                      Send WhatsApp Reminder
+                      {language === "mr"
+                        ? "WhatsApp स्मरण"
+                        : "WhatsApp reminder"}
                     </Button>
                   )}
 
-                  <div className="mt-2 flex gap-2 justify-end">
+                  <div className="mt-3 border-t border-border/70">
+                    <Button
+                      onClick={() =>
+                        setExpandedCustomerId(isExpanded ? null : customer.id!)
+                      }
+                      variant="ghost"
+                      className="h-10 w-full justify-between rounded-none px-1 text-sm font-semibold text-muted-foreground hover:bg-transparent hover:text-foreground"
+                    >
+                      <span>
+                        {language === "mr" ? "इतिहास पहा" : "View history"}
+                      </span>
+                      {isExpanded ? (
+                        <ChevronUp className="h-4 w-4" />
+                      ) : (
+                        <ChevronDown className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </div>
+
+                  <div className="mt-2 flex justify-end gap-2 border-t pt-2">
                     <Button
                       variant="ghost"
                       size="icon"
