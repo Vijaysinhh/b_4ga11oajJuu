@@ -1861,76 +1861,71 @@ export function ItemsManagement() {
                     <div className="space-y-2">
                       {/* Item Name and Category */}
                       <div className="flex items-start justify-between">
-                        <div className="flex flex-1 items-start gap-3">
-                          <span className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                            <Package className="h-5 w-5" />
-                          </span>
-                          <div className="min-w-0 flex-1">
-                            <h3 className="font-bold text-base">
-                              {primaryItemName}
-                            </h3>
-                            {showSecondaryItemName && (
-                              <p className="text-sm font-medium text-muted-foreground">
-                                {secondaryItemName}
-                              </p>
-                            )}
-                            <div className="mt-2 flex flex-wrap gap-2">
-                              <span className="rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-700">
-                                {getCategoryName(item.categoryId)}
+                        <div className="min-w-0 flex-1">
+                          <h3 className="font-bold text-base">
+                            {primaryItemName}
+                          </h3>
+                          {showSecondaryItemName && (
+                            <p className="text-sm font-medium text-muted-foreground">
+                              {secondaryItemName}
+                            </p>
+                          )}
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            <span className="rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-700">
+                              {getCategoryName(item.categoryId)}
+                            </span>
+                            {primaryBrandName && (
+                              <span className="rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700">
+                                {primaryBrandName}
                               </span>
-                              {primaryBrandName && (
-                                <span className="rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700">
-                                  {primaryBrandName}
-                                </span>
-                              )}
-                              {item.quantity === 0 ? (
-                                <span className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-700">
-                                  Out of stock
-                                </span>
-                              ) : isLowStock ? (
-                                <span className="rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-[11px] font-semibold text-orange-700">
-                                  Low stock
-                                </span>
-                              ) : (
-                                <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
-                                  In stock
-                                </span>
-                              )}
-                            </div>
-                            {expiryStart && (
-                              <p
-                                className={
-                                  expiryStatus === "expired"
-                                    ? "text-xs font-semibold text-red-600"
-                                    : expiryStatus === "expiring"
-                                      ? "text-xs font-semibold text-orange-600"
-                                      : "text-xs text-muted-foreground"
-                                }
-                              >
-                                Expiry:{" "}
-                                {expiryStart.toLocaleDateString(
-                                  language === "mr" ? "mr-IN" : "en-IN",
-                                )}
-                                {expiryStatus === "expired"
-                                  ? " (Expired)"
-                                  : expiryStatus === "expiring"
-                                    ? " (Near Expiry)"
-                                    : ""}
-                                {daysLeftText}
-                              </p>
                             )}
-                            {expiryUrgencyText && (
-                              <p
-                                className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-xs font-bold ${
-                                  expiryStatus === "expired"
-                                    ? "bg-red-100 text-red-700"
-                                    : "bg-orange-100 text-orange-700"
-                                }`}
-                              >
-                                ⚠️ {expiryUrgencyText}
-                              </p>
+                            {item.quantity === 0 ? (
+                              <span className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-700">
+                                Out of stock
+                              </span>
+                            ) : isLowStock ? (
+                              <span className="rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-[11px] font-semibold text-orange-700">
+                                Low stock
+                              </span>
+                            ) : (
+                              <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
+                                In stock
+                              </span>
                             )}
                           </div>
+                          {expiryStart && (
+                            <p
+                              className={
+                                expiryStatus === "expired"
+                                  ? "text-xs font-semibold text-red-600"
+                                  : expiryStatus === "expiring"
+                                    ? "text-xs font-semibold text-orange-600"
+                                    : "text-xs text-muted-foreground"
+                              }
+                            >
+                              Expiry:{" "}
+                              {expiryStart.toLocaleDateString(
+                                language === "mr" ? "mr-IN" : "en-IN",
+                              )}
+                              {expiryStatus === "expired"
+                                ? " (Expired)"
+                                : expiryStatus === "expiring"
+                                  ? " (Near Expiry)"
+                                  : ""}
+                              {daysLeftText}
+                            </p>
+                          )}
+                          {expiryUrgencyText && (
+                            <p
+                              className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-xs font-bold ${
+                                expiryStatus === "expired"
+                                  ? "bg-red-100 text-red-700"
+                                  : "bg-orange-100 text-orange-700"
+                              }`}
+                            >
+                              ⚠️ {expiryUrgencyText}
+                            </p>
+                          )}
                         </div>
                         <div className="text-right">
                           <p className="text-sm font-semibold text-blue-600">
