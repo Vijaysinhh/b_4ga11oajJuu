@@ -603,8 +603,8 @@ export function ItemsManagement() {
   };
 
   const calculateMargin = (buyPrice: number, sellPrice: number): number => {
-    if (buyPrice === 0) return 0;
-    return ((sellPrice - buyPrice) / buyPrice) * 100;
+    if (sellPrice <= 0) return 0;
+    return ((sellPrice - buyPrice) / sellPrice) * 100;
   };
 
   const formatDateInput = (date: Date) => {
@@ -927,19 +927,35 @@ export function ItemsManagement() {
                         </label>
                       </div>
                       {formData.buyPrice > 0 && formData.sellPrice > 0 && (
-                        <div className="mt-3 rounded-xl bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700">
-                          You earn ₹
-                          {formatMoney(
-                            Math.max(0, formData.sellPrice - formData.buyPrice),
-                          )}{" "}
-                          ·{" "}
-                          {formatPercent(
-                            calculateMargin(
-                              formData.buyPrice,
-                              formData.sellPrice,
-                            ),
-                          )}
-                          % margin
+                        <div className="mt-3 grid grid-cols-2 gap-2 rounded-xl bg-emerald-50 p-3 text-emerald-800">
+                          <div className="min-w-0 rounded-lg bg-white/70 px-3 py-2">
+                            <p className="text-xs font-medium text-emerald-700">
+                              Profit per item
+                            </p>
+                            <p className="mt-0.5 text-base font-bold tabular-nums">
+                              ₹
+                              {formatMoney(
+                                Math.max(
+                                  0,
+                                  formData.sellPrice - formData.buyPrice,
+                                ),
+                              )}
+                            </p>
+                          </div>
+                          <div className="min-w-0 rounded-lg bg-white/70 px-3 py-2">
+                            <p className="text-xs font-medium text-emerald-700">
+                              Profit margin
+                            </p>
+                            <p className="mt-0.5 text-base font-bold tabular-nums">
+                              {formatPercent(
+                                calculateMargin(
+                                  formData.buyPrice,
+                                  formData.sellPrice,
+                                ),
+                              )}
+                              %
+                            </p>
+                          </div>
                         </div>
                       )}
                     </section>
@@ -1063,7 +1079,7 @@ export function ItemsManagement() {
                   </div>
                 </div>
 
-                {/* Previous form markup retained only temporarily while the New Stock layout is validated.
+                {/* Previous form markup retained temporarily while the item form is validated.
                   <div className="overflow-hidden rounded-3xl border bg-card p-5 shadow-sm">
                     <div className="flex items-start gap-4">
                       <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary"><Package className="h-7 w-7" /></span>

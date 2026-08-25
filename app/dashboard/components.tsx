@@ -18,7 +18,6 @@ import { useStaff } from "@/hooks/use-staff";
 import {
   getCreditPressure,
   getPreviousDateKey,
-  getSalesStreak,
   getSignedPercentChange,
   getTopSellingItem,
   summarizeSales,
@@ -815,8 +814,6 @@ export function Dashboard() {
     [daySummary.revenue, previousDaySummary.revenue],
   );
 
-  const salesStreak = useMemo(() => getSalesStreak(sales), [sales]);
-
   const dayTopProduct = useMemo(() => getTopSellingItem(daySales), [daySales]);
 
   const urgentStockInsight = useMemo(() => {
@@ -965,22 +962,6 @@ export function Dashboard() {
         : language === "mr"
           ? "आज छान विक्री झाली"
           : "Good sales recorded today";
-  const streakText =
-    salesStreak > 0
-      ? language === "mr"
-        ? `${salesStreak} दिवस सतत विक्री`
-        : `${salesStreak} days continuous sales`
-      : language === "mr"
-        ? "आजची विक्री अजून सुरू नाही"
-        : "No sales streak yet";
-  const streakSubtext =
-    daySummary.transactions > 0
-      ? language === "mr"
-        ? `${daySummary.transactions} व्यवहार झाले`
-        : `${daySummary.transactions} transactions done`
-      : language === "mr"
-        ? "पहिली विक्री जोडा"
-        : "Add the first sale";
   const stockUnit = urgentStockInsight.lowestStockItem
     ? units.find(
         (unit) => unit.id === urgentStockInsight.lowestStockItem?.unitId,
@@ -1981,9 +1962,9 @@ export function Dashboard() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6 pb-24 pt-2 sm:pb-10 sm:pt-4">
+    <div className="mx-auto flex max-w-5xl flex-col gap-6 pb-24 pt-2 sm:pb-10 sm:pt-4">
       {/* ─── Header ─── */}
-      <div className="rounded-2xl border border-border/70 bg-card/70 p-4 shadow-sm backdrop-blur sm:p-5">
+      <div className="order-1 rounded-2xl border border-border/70 bg-card/70 p-4 shadow-sm backdrop-blur sm:p-5">
         <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
           {t("home")}
         </h1>
@@ -1993,7 +1974,7 @@ export function Dashboard() {
       </div>
 
       {/* ─── Top 4 Summary Cards ─── */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="order-2 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Card className="border border-green-200 bg-green-50/70 shadow-sm dark:border-green-900/50 dark:bg-green-950/20">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
@@ -2030,13 +2011,15 @@ export function Dashboard() {
 
         <Card className="border-2">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">🔥 Streak</CardTitle>
-            <Clock className="h-4 w-4 text-orange-600" />
+            <CardTitle className="text-sm font-medium">Bills today</CardTitle>
+            <ShoppingBag className="h-4 w-4 text-blue-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-xl font-bold leading-tight">{streakText}</div>
+            <div className="text-2xl font-bold leading-tight">
+              {daySummary.transactions}
+            </div>
             <p className="mt-1 text-xs text-muted-foreground">
-              {streakSubtext}
+              {daySummary.transactions === 1 ? "sale recorded" : "sales recorded"}
             </p>
             <p
               className={`mt-1 text-xs font-semibold ${
@@ -2121,7 +2104,7 @@ export function Dashboard() {
       </div>
 
       {weeklySummary.show && (
-        <Card className="border border-blue-200 bg-blue-50/70 shadow-sm dark:border-blue-900/50 dark:bg-blue-950/20">
+        <Card className="order-3 border border-blue-200 bg-blue-50/70 shadow-sm dark:border-blue-900/50 dark:bg-blue-950/20">
           <CardHeader className="pb-2">
             <CardTitle className="text-base">
               {language === "mr" ? "या आठवड्यात" : "This week"}
@@ -2175,7 +2158,7 @@ export function Dashboard() {
       {/* ═══════════════════════════════════════════════════════ */}
       {/* ─── DAILY SALES TIMELINE (new section) ─── */}
       {/* ═══════════════════════════════════════════════════════ */}
-      <section className="space-y-3">
+      <section className="order-4 space-y-3">
         {/* Date navigation header */}
         <div className="flex items-center justify-between gap-2">
           <Button
@@ -2493,7 +2476,7 @@ export function Dashboard() {
       </section>
 
       {/* ─── Reports Section (Updated) ─── */}
-      <section className="space-y-3">
+      <section className="order-7 space-y-3">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-2">
             <div className="flex h-9 w-9 items-center justify-center rounded-md border border-amber-200 bg-amber-50 text-amber-700">
@@ -2679,17 +2662,19 @@ export function Dashboard() {
       </section>
 
       {/* ─── Brand Comparison Section ─── */}
-      <BrandComparison
-        showOnlyTop5={true}
-        selectedReportType={selectedReportType}
-        setSelectedReportType={setSelectedReportType}
-        selectedMonth={selectedMonth}
-        setSelectedMonth={setSelectedMonth}
-      />
+      <div className="order-8">
+        <BrandComparison
+          showOnlyTop5={true}
+          selectedReportType={selectedReportType}
+          setSelectedReportType={setSelectedReportType}
+          selectedMonth={selectedMonth}
+          setSelectedMonth={setSelectedMonth}
+        />
+      </div>
 
       {/* ─── Highest Udhar Customer ─── */}
       {highestUdharCustomer && (
-        <section className="space-y-3">
+        <section className="order-9 space-y-3">
           <h2 className="text-xl font-bold">{t("highest_udhar")}</h2>
           <Card
             className="border-2 cursor-pointer hover:border-orange-400 transition-all"
@@ -2725,7 +2710,7 @@ export function Dashboard() {
 
       {/* ─── High Margin Items (unchanged) ─── */}
       {topMarginItems.length > 0 && (
-        <section className="space-y-3">
+        <section className="order-10 space-y-3">
           <h2 className="text-xl font-bold">{t("high_margin_items")}</h2>
           <div className="grid gap-2">
             {topMarginItems.map((item, index) => (
@@ -2756,7 +2741,7 @@ export function Dashboard() {
 
       {/* ─── Stock Needed (IMPROVED) ─── */}
       {lowStockItems.length > 0 && (
-        <section className="space-y-3">
+        <section className="order-5 space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <AlertTriangle className="w-5 h-5 text-red-600" />
@@ -2882,7 +2867,7 @@ export function Dashboard() {
 
       {/* ─── Expiry Alerts ─── */}
       {(expiredItems.length > 0 || expiringItems.length > 0) && (
-        <section className="space-y-3">
+        <section className="order-6 space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <AlertTriangle className="w-5 h-5 text-orange-600" />

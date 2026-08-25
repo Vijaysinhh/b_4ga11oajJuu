@@ -13,7 +13,6 @@ import { useLanguage } from "@/providers/language-provider";
 import { cn } from "@/lib/utils";
 import {
   Package,
-  PackagePlus,
   Settings,
   Home,
   ShoppingCart,
@@ -194,11 +193,6 @@ export function Navigation() {
       }
       if (canViewItems) {
         workerItems.push({ href: "/items", icon: Package, label: t("stock") });
-        workerItems.push({
-          href: "/new-stock",
-          icon: PackagePlus,
-          label: "New Stock",
-        });
       }
       if (canViewUdhari) {
         workerItems.push({ href: "/udhari", icon: Users, label: t("udhari") });
@@ -210,7 +204,6 @@ export function Navigation() {
     return [
       { href: "/dashboard", icon: Home, label: t("home") },
       { href: "/items", icon: Package, label: t("stock") },
-      { href: "/new-stock", icon: PackagePlus, label: "New Stock" },
       { href: "/udhari", icon: Users, label: t("udhari") },
       { href: "/staff", icon: Users, label: "Staff" },
     ];
