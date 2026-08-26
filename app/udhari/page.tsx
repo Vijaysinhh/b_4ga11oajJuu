@@ -529,25 +529,25 @@ export default function UdhariPage() {
 
   return (
     <div className="mx-auto max-w-4xl space-y-6 pb-24 sm:pb-10">
-      <div className="rounded-2xl border border-border/70 bg-card/80 p-4 shadow-sm backdrop-blur sm:p-5">
+      <div className="rounded-3xl border border-slate-200/80 bg-card p-5 shadow-[0_8px_24px_rgba(15,23,42,0.05)] sm:p-6">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+            <h1 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
               {t("udhari")}
             </h1>
           </div>
-          <Button onClick={openAddCustomerDialog} className="h-10 gap-2">
+          <Button onClick={openAddCustomerDialog} className="h-11 gap-2 rounded-xl shadow-[0_5px_14px_rgba(79,70,229,0.22)] transition-all duration-150 hover:-translate-y-px hover:shadow-[0_8px_18px_rgba(79,70,229,0.28)] active:scale-[0.98]">
             <Plus className="h-4 w-4" />
             {t("add_customer")}
           </Button>
         </div>
       </div>
 
-      <div className="rounded-2xl border border-orange-200 bg-orange-50/80 p-5 shadow-sm sm:p-6">
+      <div className="rounded-3xl border border-orange-200/80 bg-gradient-to-br from-orange-50 to-white p-5 shadow-[0_8px_22px_rgba(249,115,22,0.08)] sm:p-6">
         <p className="text-sm font-semibold text-orange-900">
           {language === "mr" ? "एकूण बाकी" : "Total pending"}
         </p>
-        <p className="mt-1 text-4xl font-bold tracking-tight text-orange-950 sm:text-5xl">
+        <p className="mt-1 text-4xl font-semibold tabular-nums tracking-tight text-orange-950 sm:text-5xl">
           ₹{formatMoney(totalPending)}
         </p>
         <p className="mt-2 text-sm text-orange-800">
@@ -558,7 +558,7 @@ export default function UdhariPage() {
       </div>
 
       <div>
-        <h2 className="text-lg font-bold">{t("customers")}</h2>
+        <h2 className="text-lg font-semibold tracking-tight">{t("customers")}</h2>
       </div>
 
       {customers.length === 0 ? (
@@ -574,7 +574,7 @@ export default function UdhariPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-3 [content-visibility:auto] [contain-intrinsic-size:auto_720px]">
           {sortedCustomers.map((customer) => {
             const customerEntries = getCustomerEntries(customer.id!).slice(
               0,
@@ -599,7 +599,7 @@ export default function UdhariPage() {
               <Card
                 key={customer.id}
                 id={`udhari-customer-${customer.id}`}
-                className={`overflow-hidden border shadow-sm transition-all ${
+                className={`overflow-hidden rounded-2xl border border-slate-200/80 bg-card shadow-[0_4px_16px_rgba(15,23,42,0.045)] transition-[transform,box-shadow,border-color] duration-200 hover:-translate-y-0.5 hover:border-orange-200 hover:shadow-[0_10px_24px_rgba(249,115,22,0.10)] ${
                   focusedCustomerId === customer.id
                     ? "border-orange-400 bg-orange-50 ring-2 ring-orange-200"
                     : ""
@@ -608,7 +608,7 @@ export default function UdhariPage() {
                 <CardContent className="p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <h2 className="truncate text-base font-bold">
+                      <h2 className="truncate text-base font-semibold tracking-tight">
                         {customer.name}
                       </h2>
                       {customer.phone && (
@@ -619,7 +619,7 @@ export default function UdhariPage() {
                       )}
                     </div>
                     <div className="text-right">
-                      <p className="text-2xl font-bold text-orange-700">
+                      <p className="text-2xl font-semibold tabular-nums text-orange-700">
                         ₹{formatMoney(customer.balance)}
                       </p>
                     </div>

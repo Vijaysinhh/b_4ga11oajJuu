@@ -171,9 +171,9 @@ export default function StaffManagementPage() {
       />
 
       {/* Add New Staff */}
-      <Card className="mb-8">
+      <Card className="mb-8 rounded-3xl border border-slate-200/80 bg-card shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
+          <CardTitle className="flex items-center gap-2 font-semibold tracking-tight">
             <Plus className="w-5 h-5" />
             Add New Staff Member
           </CardTitle>
@@ -181,24 +181,26 @@ export default function StaffManagementPage() {
         <CardContent>
           <div className="flex flex-col sm:flex-row gap-4">
             <div className="flex-1">
-              <label className="block text-sm font-medium mb-2">Username</label>
+              <label className="mb-2 block text-sm font-medium">Username</label>
               <Input 
                 placeholder="Enter username"
                 value={newUsername}
                 onChange={(e) => setNewUsername(e.target.value)}
+                className="rounded-xl border-slate-200 transition-all duration-200 focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100"
               />
             </div>
             <div className="flex-1">
-              <label className="block text-sm font-medium mb-2">Password</label>
+              <label className="mb-2 block text-sm font-medium">Password</label>
               <Input 
                 type="password"
                 placeholder="Enter password"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
+                className="rounded-xl border-slate-200 transition-all duration-200 focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100"
               />
             </div>
             <div className="flex items-end">
-              <Button onClick={handleAddStaff} className="w-full sm:w-auto">
+              <Button onClick={handleAddStaff} className="h-11 w-full rounded-xl shadow-[0_5px_14px_rgba(79,70,229,0.22)] transition-all duration-150 hover:-translate-y-px hover:shadow-[0_8px_18px_rgba(79,70,229,0.28)] active:scale-[0.98] sm:w-auto">
                 Add Staff
               </Button>
             </div>
@@ -207,7 +209,7 @@ export default function StaffManagementPage() {
       </Card>
 
       {/* Staff List */}
-      <div className="space-y-6">
+      <div className="space-y-4 [content-visibility:auto] [contain-intrinsic-size:auto_700px]">
         {isLoading ? (
           <div className="text-center py-12">
             <p className="text-muted-foreground">Loading staff...</p>
@@ -221,9 +223,9 @@ export default function StaffManagementPage() {
           </Card>
         ) : (
           staff.map((staffMember) => (
-            <Card key={staffMember.id}>
+            <Card key={staffMember.id} className="rounded-2xl border border-slate-200/80 bg-card shadow-[0_4px_16px_rgba(15,23,42,0.045)] transition-[transform,box-shadow,border-color] duration-200 hover:-translate-y-0.5 hover:border-indigo-200 hover:shadow-[0_10px_24px_rgba(79,70,229,0.10)]">
               <CardHeader className="flex flex-row items-center justify-between">
-                <CardTitle className="flex items-center gap-2">
+                <CardTitle className="flex items-center gap-2 font-semibold tracking-tight">
                   <Shield className="w-5 h-5 text-primary" />
                   {staffMember.username}
                 </CardTitle>
@@ -231,6 +233,7 @@ export default function StaffManagementPage() {
                   <Button 
                     variant="secondary" 
                     size="sm"
+                    className="rounded-xl transition-all duration-150 hover:-translate-y-px active:scale-[0.97]"
                     onClick={() => handleOpenEditDialog(staffMember)}
                   >
                     <Edit2 className="w-4 h-4 mr-2" />
@@ -239,6 +242,7 @@ export default function StaffManagementPage() {
                   <Button 
                     variant="destructive" 
                     size="sm"
+                    className="rounded-xl transition-all duration-150 hover:-translate-y-px active:scale-[0.97]"
                     onClick={() => handleRemoveStaff(staffMember.id)}
                   >
                     <Trash2 className="w-4 h-4 mr-2" />

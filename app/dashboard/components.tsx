@@ -547,6 +547,10 @@ export function Dashboard() {
   const [expandedSaleId, setExpandedSaleId] = useState<number | null>(null);
   const [editingSale, setEditingSale] = useState<any | null>(null);
   const [deleteSaleId, setDeleteSaleId] = useState<number | null>(null);
+  const [showDayActivity, setShowDayActivity] = useState(false);
+  const [activeInsight, setActiveInsight] = useState<
+    "reports" | "brands" | "udhari" | "margin" | null
+  >(null);
 
   // --- Report Selection State ---
   const [selectedReportType, setSelectedReportType] = useState<
@@ -1968,13 +1972,22 @@ export function Dashboard() {
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-6 pb-24 pt-2 sm:pb-10 sm:pt-4">
       {/* ─── Header ─── */}
-      <div className="order-1 rounded-3xl border border-slate-200/80 bg-card p-5 shadow-[0_8px_24px_rgba(15,23,42,0.05)] sm:p-6">
-        <h1 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
-          {t("home")}
-        </h1>
-        <p className="mt-1 text-sm leading-6 text-muted-foreground">
-          {currentShop?.shopName || "Shop"}
-        </p>
+      <div className="order-1 flex items-center justify-between gap-4 rounded-3xl border border-slate-200/80 bg-card p-5 shadow-[0_8px_24px_rgba(15,23,42,0.05)] sm:p-6">
+        <div className="min-w-0">
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
+            {t("home")}
+          </h1>
+          <p className="mt-1 truncate text-sm leading-6 text-muted-foreground">
+            {currentShop?.shopName || "Shop"}
+          </p>
+        </div>
+        <Button
+          onClick={() => router.push("/sales")}
+          className="shrink-0 rounded-xl bg-indigo-600 px-4 shadow-sm transition-all hover:bg-indigo-700 hover:shadow-md active:scale-[0.97]"
+        >
+          <ShoppingBag className="mr-2 h-4 w-4" />
+          {language === "mr" ? "नवीन विक्री" : "New sale"}
+        </Button>
       </div>
 
       {/* ─── Top 4 Summary Cards ─── */}
@@ -2108,7 +2121,7 @@ export function Dashboard() {
       </div>
 
       {weeklySummary.show && (
-        <Card className="order-3 border border-blue-200 bg-blue-50/70 shadow-sm dark:border-blue-900/50 dark:bg-blue-950/20">
+        <Card className="order-4 border border-blue-200 bg-blue-50/70 shadow-sm dark:border-blue-900/50 dark:bg-blue-950/20">
           <CardHeader className="pb-2">
             <CardTitle className="text-base">
               {language === "mr" ? "या आठवड्यात" : "This week"}
@@ -2159,10 +2172,47 @@ export function Dashboard() {
         </Card>
       )}
 
+      <section className="order-3 rounded-2xl border border-slate-200/80 bg-card p-3 shadow-[0_4px_16px_rgba(15,23,42,0.04)]">
+        <div className="mb-2 flex items-center justify-between px-1">
+          <h2 className="text-sm font-semibold tracking-tight">
+            {language === "mr" ? "आजची कामे" : "Today’s tasks"}
+          </h2>
+          <span className="text-xs text-muted-foreground">
+            {language === "mr" ? "एका टॅपमध्ये करा" : "Finish in one tap"}
+          </span>
+        </div>
+        <div className="grid grid-cols-3 gap-2">
+          <button
+            type="button"
+            onClick={() => router.push(itemFocusHref(undefined, "lowStock"))}
+            className="rounded-xl border border-red-100 bg-red-50 p-2.5 text-left transition-all hover:-translate-y-px hover:shadow-sm active:scale-[0.98]"
+          >
+            <span className="block text-lg font-semibold tabular-nums text-red-700">{lowStockItems.length}</span>
+            <span className="block text-xs font-medium text-red-800">{language === "mr" ? "पुन्हा मागवा" : "Reorder"}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => router.push(itemFocusHref(undefined, urgentStockInsight.targetFilter))}
+            className="rounded-xl border border-amber-100 bg-amber-50 p-2.5 text-left transition-all hover:-translate-y-px hover:shadow-sm active:scale-[0.98]"
+          >
+            <span className="block text-lg font-semibold tabular-nums text-amber-700">{expiredItems.length + expiringItems.length}</span>
+            <span className="block text-xs font-medium text-amber-800">{language === "mr" ? "एक्सपायरी" : "Expiry"}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => router.push(customerFocusHref(urgentUdhari?.customer.id))}
+            className="rounded-xl border border-orange-100 bg-orange-50 p-2.5 text-left transition-all hover:-translate-y-px hover:shadow-sm active:scale-[0.98]"
+          >
+            <span className="block text-lg font-semibold tabular-nums text-orange-700">{udhariPressures.length}</span>
+            <span className="block text-xs font-medium text-orange-800">{language === "mr" ? "उधारी वसूल" : "Collect udhari"}</span>
+          </button>
+        </div>
+      </section>
+
       {/* ═══════════════════════════════════════════════════════ */}
       {/* ─── DAILY SALES TIMELINE (new section) ─── */}
       {/* ═══════════════════════════════════════════════════════ */}
-      <section className="order-4 space-y-3 [content-visibility:auto] [contain-intrinsic-size:auto_650px]">
+      <section className="order-7 space-y-3 [content-visibility:auto] [contain-intrinsic-size:auto_650px]">
         {/* Date navigation header */}
         <div className="flex items-center justify-between gap-2">
           <Button
@@ -2199,6 +2249,25 @@ export function Dashboard() {
             <ChevronRight className="h-5 w-5" />
           </Button>
         </div>
+
+        <button
+          type="button"
+          onClick={() => setShowDayActivity((visible) => !visible)}
+          className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-left transition-all hover:border-indigo-200 hover:bg-indigo-50/50 active:scale-[0.99]"
+        >
+          <span>
+            <span className="block text-sm font-semibold">
+              {language === "mr" ? "दिवसाची विक्री" : "Sales activity"}
+            </span>
+            <span className="block text-xs text-muted-foreground">
+              {daySales.length} {language === "mr" ? "बिले" : daySales.length === 1 ? "bill" : "bills"} · ₹{formatMoney(daySummary.revenue)}
+            </span>
+          </span>
+          {showDayActivity ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+        </button>
+
+        {showDayActivity && (
+          <div className="space-y-3 animate-in fade-in-0 slide-in-from-top-1 duration-200">
 
         {/* Day summary bar */}
         {daySales.length > 0 && (
@@ -2477,10 +2546,31 @@ export function Dashboard() {
             );
           })}
         </div>
+          </div>
+        )}
       </section>
 
       {/* ─── Reports Section (Updated) ─── */}
-      <section className="order-7 space-y-3 [content-visibility:auto] [contain-intrinsic-size:auto_720px]">
+      <section className="order-8 rounded-2xl border border-slate-200/80 bg-card p-3 shadow-[0_4px_16px_rgba(15,23,42,0.04)]">
+        <div className="mb-2 px-1">
+          <h2 className="text-sm font-semibold tracking-tight">{language === "mr" ? "तपशीलवार माहिती" : "Insights"}</h2>
+          <p className="mt-0.5 text-xs text-muted-foreground">{language === "mr" ? "हवे तेव्हाच उघडा" : "Open only what you need"}</p>
+        </div>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {([
+            ["reports", language === "mr" ? "विक्री रिपोर्ट" : "Sales report", BarChart3],
+            ["brands", language === "mr" ? "ब्रँड तुलना" : "Brands", Package],
+            ["udhari", language === "mr" ? "उधारी" : "Udhari", WalletCards],
+            ["margin", language === "mr" ? "नफा मार्जिन" : "Margin", TrendingUp],
+          ] as const).map(([key, label, Icon]) => (
+            <button key={key} type="button" onClick={() => setActiveInsight((current) => current === key ? null : key)} className={`flex items-center gap-2 rounded-xl border px-3 py-2.5 text-left text-xs font-semibold transition-all active:scale-[0.98] ${activeInsight === key ? "border-indigo-200 bg-indigo-50 text-indigo-800 shadow-sm" : "border-slate-200 bg-white text-slate-700 hover:border-indigo-200 hover:bg-slate-50"}`}>
+              <Icon className="h-4 w-4 shrink-0" /><span className="truncate">{label}</span>
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <section className="order-9 space-y-3 [content-visibility:auto] [contain-intrinsic-size:auto_720px] animate-in fade-in-0 slide-in-from-top-1 duration-200">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-2">
             <div className="flex h-9 w-9 items-center justify-center rounded-md border border-amber-200 bg-amber-50 text-amber-700">
@@ -2666,7 +2756,8 @@ export function Dashboard() {
       </section>
 
       {/* ─── Brand Comparison Section ─── */}
-      <div className="order-8 [content-visibility:auto] [contain-intrinsic-size:auto_500px]">
+      {activeInsight === "brands" && (
+      <div className="order-9 [content-visibility:auto] [contain-intrinsic-size:auto_500px] animate-in fade-in-0 slide-in-from-top-1 duration-200">
         <BrandComparison
           showOnlyTop5={true}
           selectedReportType={selectedReportType}
@@ -2675,9 +2766,10 @@ export function Dashboard() {
           setSelectedMonth={setSelectedMonth}
         />
       </div>
+      )}
 
       {/* ─── Highest Udhar Customer ─── */}
-      {highestUdharCustomer && (
+      {activeInsight === "udhari" && highestUdharCustomer && (
         <section className="order-9 space-y-3 [content-visibility:auto] [contain-intrinsic-size:auto_280px]">
           <h2 className="text-xl font-bold">{t("highest_udhar")}</h2>
           <Card
@@ -2713,7 +2805,7 @@ export function Dashboard() {
       )}
 
       {/* ─── High Margin Items (unchanged) ─── */}
-      {topMarginItems.length > 0 && (
+      {activeInsight === "margin" && topMarginItems.length > 0 && (
         <section className="order-10 space-y-3 [content-visibility:auto] [contain-intrinsic-size:auto_450px]">
           <h2 className="text-xl font-bold">{t("high_margin_items")}</h2>
           <div className="grid gap-2">

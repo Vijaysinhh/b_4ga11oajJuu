@@ -467,13 +467,13 @@ function MetricCard({
   footnote?: React.ReactNode;
 }) {
   return (
-    <Card className={cn("gap-3 border-2 py-3.5", metricToneClasses(tone))}>
+    <Card className={cn("gap-3 rounded-2xl border py-3.5 shadow-[0_4px_16px_rgba(15,23,42,0.045)] transition-[transform,box-shadow,border-color] duration-200 hover:-translate-y-0.5 hover:shadow-[0_10px_24px_rgba(79,70,229,0.09)]", metricToneClasses(tone))}>
       <CardContent className="space-y-1.5 px-3 sm:px-4">
         <div className="flex items-center justify-between gap-2">
-          <p className="text-[11px] sm:text-xs font-semibold uppercase tracking-wide opacity-75">{label}</p>
+          <p className="text-[11px] sm:text-xs font-medium tracking-normal opacity-75">{label}</p>
           <Icon className="h-4 w-4 opacity-65" />
         </div>
-        <div className="text-xl sm:text-2xl font-bold tracking-tight leading-tight break-all">{value}</div>
+        <div className="text-xl sm:text-2xl font-semibold tracking-tight leading-tight tabular-nums break-all">{value}</div>
         <p className="text-[11px] sm:text-xs opacity-75 leading-snug">{note}</p>
         {footnote ? <div className="pt-1">{footnote}</div> : null}
       </CardContent>
@@ -594,9 +594,9 @@ function ListCard({
   children: React.ReactNode;
 }) {
   return (
-    <Card className="border-border/70 bg-card/80 shadow-sm">
+    <Card className="rounded-2xl border-border/70 bg-card shadow-[0_4px_16px_rgba(15,23,42,0.045)]">
       <CardHeader>
-        <CardTitle>{title}</CardTitle>
+        <CardTitle className="font-semibold tracking-tight">{title}</CardTitle>
         {description ? <CardDescription>{description}</CardDescription> : null}
       </CardHeader>
       <CardContent className="space-y-3">{children}</CardContent>
