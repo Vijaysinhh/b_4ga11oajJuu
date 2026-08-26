@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import { useLanguage } from "@/providers/language-provider";
 import {
   useItems as useSupabaseItems,
@@ -9,7 +10,6 @@ import {
   usePriceTiers,
 } from "@/hooks/use-supabase";
 import { useAuth } from "@/providers/auth-provider";
-import { PriceTierManager } from "@/components/price-tier-manager";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -51,6 +51,14 @@ import {
   parseWholeNumberInput,
 } from "@/lib/number-format";
 
+const PriceTierManager = dynamic(
+  () => import("@/components/price-tier-manager").then((module) => module.PriceTierManager),
+  {
+    ssr: false,
+    loading: () => <div className="rounded-2xl border bg-muted/10 p-4 text-sm text-muted-foreground">Loading price variants...</div>,
+  },
+);
+
 interface ItemFormData {
   name: string;
   nameMarathi: string;
@@ -64,6 +72,8 @@ interface ItemFormData {
   sellPrice: number;
   lowStockLimit: number;
 }
+
+type ReorderLine = { name: string; quantity: number; unit: string };
 
 const categoryMarathiLabels: Record<string, string> = {
   Grocery: "किराणा",
@@ -150,10 +160,16 @@ export function ItemsManagement() {
   const [selectedStockStatus, setSelectedStockStatus] = useState<string | null>(
     null,
   ); // null = All, 'lowStock', 'inStock', 'outOfStock'
+  const [reorderMode, setReorderMode] = useState(false);
+  const [adjustingItemIds, setAdjustingItemIds] = useState<Set<number>>(new Set());
+  const [optimisticQuantities, setOptimisticQuantities] = useState<Map<number, number>>(new Map());
+  const pendingQuantityUpdates = useRef(new Map<number, Promise<void>>());
+  const pendingQuantityTargets = useRef(new Map<number, number>());
   const [sortBy, setSortBy] = useState<string>("name-asc"); // 'name-asc', 'qty-asc', 'qty-desc', 'expiry-asc', 'margin-desc'
   const [activeTab, setActiveTab] = useState("basic");
   const [showProductDetails, setShowProductDetails] = useState(true);
   const [showExpiryPicker, setShowExpiryPicker] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [selectedItems, setSelectedItems] = useState<Set<number>>(new Set());
   const [focusedItemId, setFocusedItemId] = useState<number | null>(null);
 
@@ -188,6 +204,26 @@ export function ItemsManagement() {
       a.label.localeCompare(b.label),
     );
   }, [items, language]);
+
+  // Card rendering is the hot path on this page. Index related collections once
+  // instead of repeatedly scanning them for every visible product.
+  const categoryNamesById = useMemo(
+    () => new Map(categories.map((category) => [category.id, category.name])),
+    [categories],
+  );
+  const unitNamesById = useMemo(
+    () => new Map(units.map((unit) => [unit.id, unit.shortForm || unit.name])),
+    [units],
+  );
+  const priceTiersByItemId = useMemo(() => {
+    const tiers = new Map<number, typeof priceTiers>();
+    for (const tier of priceTiers) {
+      const itemTiers = tiers.get(tier.itemId) || [];
+      itemTiers.push(tier);
+      tiers.set(tier.itemId, itemTiers);
+    }
+    return tiers;
+  }, [priceTiers]);
 
   const clearFieldError = (field: keyof ItemFormData) => {
     setFormErrors((prev) => {
@@ -294,7 +330,10 @@ export function ItemsManagement() {
         else if (selectedStockStatus === "inStock") matchesStock = isInStock;
       }
 
-      return matchesCategory && matchesBrand && matchesExpiry && matchesStock;
+      const matchesReorder =
+        !reorderMode || Number(item.quantity || 0) <= Number(item.lowStockLimit || 0);
+
+      return matchesCategory && matchesBrand && matchesExpiry && matchesStock && matchesReorder;
     });
 
     // Sorting
@@ -341,6 +380,7 @@ export function ItemsManagement() {
     selectedBrand,
     selectedExpiryStatus,
     selectedStockStatus,
+    reorderMode,
     sortBy,
   ]);
 
@@ -413,7 +453,7 @@ export function ItemsManagement() {
   };
 
   type RenderEntry =
-    | { kind: "groupHeader"; key: string; brand: string; count: number; reorderCount: number; totalStockValue: number }
+    | { kind: "groupHeader"; key: string; brand: string; count: number; reorderCount: number; totalStockValue: number; reorderLines: ReorderLine[] }
     | { kind: "item"; item: (typeof filteredItems)[number]; groupKey?: string };
 
   const renderList: RenderEntry[] = useMemo(() => {
@@ -438,10 +478,21 @@ export function ItemsManagement() {
         (sum, item) => sum + Number(item.quantity || 0) * Number(item.buyPrice || 0),
         0,
       );
-      return { groupKey, groupItems, brand, reorderCount, totalStockValue };
+      const reorderLines = groupItems
+        .filter((item) => Number(item.quantity || 0) <= Number(item.lowStockLimit || 0))
+        .map((item) => {
+          const lowLimit = Number(item.lowStockLimit || 0);
+          const target = Math.max(lowLimit * 2, 1);
+          return {
+            name: (language === "mr" ? item.nameMarathi || item.name : item.name || item.nameMarathi) || (language === "mr" ? "वस्तू" : "Item"),
+            quantity: Math.max(target - Number(item.quantity || 0), 1),
+            unit: unitNamesById.get(item.unitId) || "",
+          };
+        });
+      return { groupKey, groupItems, brand, reorderCount, totalStockValue, reorderLines };
     }).sort((a, b) => b.reorderCount - a.reorderCount || a.brand.localeCompare(b.brand));
 
-    for (const { groupKey, groupItems, brand, reorderCount, totalStockValue } of groupSummaries) {
+    for (const { groupKey, groupItems, brand, reorderCount, totalStockValue, reorderLines } of groupSummaries) {
       if (groupItems.length === 0) continue;
       list.push({
         kind: "groupHeader",
@@ -450,6 +501,7 @@ export function ItemsManagement() {
         count: groupItems.length,
         reorderCount,
         totalStockValue,
+        reorderLines,
       });
       for (const gi of groupItems) {
         list.push({ kind: "item", item: gi, groupKey });
@@ -461,7 +513,7 @@ export function ItemsManagement() {
     }
 
     return list;
-  }, [groupedItems, language]);
+  }, [groupedItems, language, unitNamesById]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -591,6 +643,7 @@ export function ItemsManagement() {
     const { name, nameMarathi, expiryDate } = formData;
 
     try {
+      setIsSaving(true);
       const expiryDateIso = expiryDate
         ? new Date(`${expiryDate}T23:59:59`).toISOString()
         : null;
@@ -670,6 +723,8 @@ export function ItemsManagement() {
           ? `Error saving item: ${message}`
           : "Error saving item. Please try again.",
       );
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -733,17 +788,74 @@ export function ItemsManagement() {
     setSelectedBrand(null);
     setSelectedExpiryStatus(null);
     setSelectedStockStatus(null);
+    setReorderMode(false);
     setSortBy("name-asc");
   };
 
+  const openStockTask = (task: "reorder" | "out" | "expiry") => {
+    clearFilters();
+    if (task === "reorder") setReorderMode(true);
+    if (task === "out") setSelectedStockStatus("outOfStock");
+    if (task === "expiry") setSelectedExpiryStatus("expiring");
+  };
+
+  const adjustStockQuickly = async (item: (typeof items)[number], change: number) => {
+    if (!item.id) return;
+    const currentQuantity = pendingQuantityTargets.current.get(item.id) ?? Number(item.quantity || 0);
+    const quantity = Math.max(0, currentQuantity + change);
+    if (quantity === currentQuantity) return;
+    pendingQuantityTargets.current.set(item.id, quantity);
+    setOptimisticQuantities((previous) => new Map(previous).set(item.id!, quantity));
+    setAdjustingItemIds((previous) => new Set(previous).add(item.id!));
+    const previousRequest = pendingQuantityUpdates.current.get(item.id) || Promise.resolve();
+    let request: Promise<void>;
+    request = previousRequest
+      .then(() => updateItem(item.id!, { quantity }))
+      .catch((error) => {
+        console.error("[Stock] Quick quantity update failed:", error);
+        toast.error(language === "mr" ? "स्टॉक बदलता आला नाही" : "Could not update stock");
+        setOptimisticQuantities((previous) => {
+          const next = new Map(previous);
+          next.delete(item.id!);
+          return next;
+        });
+      })
+      .finally(() => {
+        if (pendingQuantityUpdates.current.get(item.id!) !== request) return;
+        pendingQuantityUpdates.current.delete(item.id!);
+        pendingQuantityTargets.current.delete(item.id!);
+        setAdjustingItemIds((previous) => {
+          const next = new Set(previous);
+          next.delete(item.id!);
+          return next;
+        });
+        setOptimisticQuantities((previous) => {
+          const next = new Map(previous);
+          next.delete(item.id!);
+          return next;
+        });
+      });
+    pendingQuantityUpdates.current.set(item.id, request);
+  };
+
   const getCategoryName = (id: number) => {
-    const category = categories.find((c) => c.id === id);
-    return category?.name || "Unknown";
+    return categoryNamesById.get(id) || "Unknown";
   };
 
   const getUnitName = (id: number) => {
-    const unit = units.find((u) => u.id === id);
-    return unit?.shortForm || unit?.name || "N/A";
+    return unitNamesById.get(id) || "N/A";
+  };
+
+  const copyReorderList = async (brand: string, lines: ReorderLine[]) => {
+    const title = language === "mr" ? `${brand} मागणी यादी` : `${brand} reorder list`;
+    const text = [title, ...lines.map((line) => `• ${line.name}: ${formatWholeNumber(line.quantity)} ${line.unit}`)].join("\n");
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success(language === "mr" ? "मागणी यादी कॉपी झाली" : "Reorder list copied");
+    } catch (error) {
+      console.error("[Stock] Unable to copy reorder list:", error);
+      toast.error(language === "mr" ? "यादी कॉपी करता आली नाही" : "Could not copy reorder list");
+    }
   };
 
   const calculateMargin = (buyPrice: number, sellPrice: number): number => {
@@ -797,6 +909,49 @@ export function ItemsManagement() {
         </div>
       </div>
 
+      <section className="rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50 to-white p-4 shadow-sm">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-bold text-indigo-950">
+              {language === "mr" ? "आजची स्टॉक कामे" : "Today’s stock tasks"}
+            </p>
+            <p className="mt-0.5 text-xs text-indigo-700">
+              {outOfStockCount + lowStockCount === 0
+                ? language === "mr" ? "आजचा स्टॉक तपास पूर्ण ✓" : "Stock check complete for today ✓"
+                : language === "mr" ? "आधी तातडीच्या वस्तू तपासा" : "Start with the urgent products"}
+            </p>
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            variant={reorderMode ? "default" : "outline"}
+            onClick={() => {
+              if (reorderMode) setReorderMode(false);
+              else openStockTask("reorder");
+            }}
+            className="shrink-0"
+          >
+            {reorderMode
+              ? language === "mr" ? "सर्व दाखवा" : "Show all"
+              : language === "mr" ? "ऑर्डर मोड" : "Reorder mode"}
+          </Button>
+        </div>
+        <div className="mt-3 grid grid-cols-3 gap-2">
+          <button type="button" onClick={() => openStockTask("reorder")} className="rounded-xl border border-amber-200 bg-white px-2 py-2 text-left shadow-sm transition-all duration-150 hover:-translate-y-px hover:bg-amber-50 hover:shadow active:scale-[0.97]">
+            <span className="block text-lg font-bold text-amber-700">{outOfStockCount + lowStockCount}</span>
+            <span className="block text-[11px] font-semibold text-amber-900">{language === "mr" ? "मागवायच्या" : "Reorder"}</span>
+          </button>
+          <button type="button" onClick={() => openStockTask("out")} className="rounded-xl border border-red-200 bg-white px-2 py-2 text-left shadow-sm transition-all duration-150 hover:-translate-y-px hover:bg-red-50 hover:shadow active:scale-[0.97]">
+            <span className="block text-lg font-bold text-red-700">{outOfStockCount}</span>
+            <span className="block text-[11px] font-semibold text-red-900">{language === "mr" ? "संपला" : "Out"}</span>
+          </button>
+          <button type="button" onClick={() => openStockTask("expiry")} className="rounded-xl border border-orange-200 bg-white px-2 py-2 text-left shadow-sm transition-all duration-150 hover:-translate-y-px hover:bg-orange-50 hover:shadow active:scale-[0.97]">
+            <span className="block text-lg font-bold text-orange-700">{expiringSoonCount}</span>
+            <span className="block text-[11px] font-semibold text-orange-900">{language === "mr" ? "लवकर एक्सपायर" : "Near expiry"}</span>
+          </button>
+        </div>
+      </section>
+
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="text-sm text-muted-foreground">
           {filteredItems.length} {t("products")}
@@ -805,18 +960,18 @@ export function ItemsManagement() {
           <DialogTrigger asChild>
             <Button
               onClick={() => handleOpenDialog()}
-              className="h-12 w-full gap-2 rounded-xl text-base font-bold sm:w-auto"
+              className="h-12 w-full gap-2 rounded-xl text-base font-bold shadow-[0_5px_14px_rgba(79,70,229,0.22)] transition-all duration-150 hover:-translate-y-px hover:shadow-[0_8px_18px_rgba(79,70,229,0.3)] active:scale-[0.98] sm:w-auto"
             >
               <Plus className="w-4 h-4" />
               {stockCopy.addItem}
             </Button>
           </DialogTrigger>
-          <DialogContent className="inset-0 h-[100dvh] w-full max-w-none translate-x-0 translate-y-0 overflow-x-hidden overflow-y-auto rounded-none border-0 p-4 pt-12 sm:inset-auto sm:top-[50%] sm:left-[50%] sm:h-auto sm:w-full sm:max-w-lg sm:max-h-[90vh] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-lg sm:border sm:p-6">
-            <DialogHeader>
-              <DialogTitle>
+          <DialogContent className="!inset-0 !left-0 !top-0 !h-[100dvh] !w-full !max-w-none !translate-x-0 !translate-y-0 transform-gpu overflow-x-hidden overflow-y-auto overscroll-contain rounded-none border-0 bg-gradient-to-b from-indigo-50/60 via-background to-background p-4 pt-12 shadow-2xl [backface-visibility:hidden] [contain:layout_paint] [scrollbar-gutter:stable] data-[state=open]:slide-in-from-bottom-4 data-[state=closed]:slide-out-to-bottom-4 sm:!inset-auto sm:!left-1/2 sm:!top-1/2 sm:!h-auto sm:!max-h-[90vh] sm:!w-full sm:!max-w-lg sm:!-translate-x-1/2 sm:!-translate-y-1/2 sm:rounded-3xl sm:border sm:border-indigo-100 sm:p-6 sm:data-[state=open]:zoom-in-95 sm:data-[state=closed]:zoom-out-95">
+            <DialogHeader className="rounded-2xl border border-indigo-100/80 bg-white/80 p-4 shadow-sm backdrop-blur">
+              <DialogTitle className="text-xl tracking-tight">
                 {editingId ? stockCopy.editItem : isCloneMode ? stockCopy.duplicate : stockCopy.addItem}
               </DialogTitle>
-              <DialogDescription>
+              <DialogDescription className="mt-1 text-sm">
                 {isCloneMode
                   ? stockCopy.duplicateHint
                   : stockCopy.details}
@@ -828,18 +983,18 @@ export function ItemsManagement() {
               onValueChange={setActiveTab}
               className="w-full"
             >
-              <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="basic">{stockCopy.basicInfo}</TabsTrigger>
+              <TabsList className="grid h-12 w-full grid-cols-2 rounded-2xl bg-indigo-50 p-1">
+                <TabsTrigger value="basic" className="rounded-xl font-semibold transition-all duration-200 data-[state=active]:bg-white data-[state=active]:text-indigo-700 data-[state=active]:shadow-sm">{stockCopy.basicInfo}</TabsTrigger>
                 <TabsTrigger value="pricing" disabled={!editingId}>
                   {stockCopy.priceVariants}
                 </TabsTrigger>
               </TabsList>
 
-              <TabsContent value="basic" className="space-y-5 mt-4">
+              <TabsContent value="basic" className="mt-4 space-y-5 animate-in fade-in-0 slide-in-from-bottom-2 duration-200">
                 <div className="mx-auto max-w-lg">
-                  <div className="rounded-3xl border bg-card p-5 shadow-sm">
+                  <div className="rounded-3xl border border-slate-200/80 bg-card p-5 shadow-[0_12px_30px_rgba(15,23,42,0.06)]">
                     <div className="flex items-start gap-4">
-                      <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                      <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-100 to-violet-50 text-primary shadow-inner">
                         <Package className="h-7 w-7" />
                       </span>
                       <div className="min-w-0">
@@ -863,7 +1018,7 @@ export function ItemsManagement() {
                       </div>
                     </div>
 
-                    <div className="mt-6 space-y-4 rounded-2xl border bg-muted/30 p-4">
+                    <div className="mt-6 space-y-4 rounded-2xl border border-slate-200/80 bg-gradient-to-br from-slate-50 to-white p-4 shadow-inner">
                       <p className="text-sm font-bold">{stockCopy.details}</p>
                       <label className="block text-sm font-semibold">
                         {language === "mr" ? "वस्तूचे नाव" : "Item name"}{" "}
@@ -884,7 +1039,7 @@ export function ItemsManagement() {
                               language === "mr" ? "nameMarathi" : "name",
                             );
                           }}
-                          className="mt-1.5"
+                          className="mt-1.5 rounded-xl border-slate-200 bg-white transition-all duration-200 focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100"
                           placeholder={
                             language === "mr"
                               ? "उदा. आंघोळीचा साबण"
@@ -907,7 +1062,7 @@ export function ItemsManagement() {
                                 event.target.value,
                             })
                           }
-                          className="mt-1.5"
+                          className="mt-1.5 rounded-xl border-slate-200 bg-white transition-all duration-200 focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100"
                           placeholder={
                             language === "mr" ? "उदा. संतूर" : "e.g. Santoor"
                           }
@@ -925,7 +1080,7 @@ export function ItemsManagement() {
                               })
                             }
                           >
-                            <SelectTrigger className="mt-1.5 min-w-0">
+                            <SelectTrigger className="mt-1.5 min-w-0 rounded-xl border-slate-200 bg-white transition-colors focus:border-indigo-400">
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
@@ -955,7 +1110,7 @@ export function ItemsManagement() {
                               })
                             }
                           >
-                            <SelectTrigger className="mt-1.5 min-w-0">
+                            <SelectTrigger className="mt-1.5 min-w-0 rounded-xl border-slate-200 bg-white transition-colors focus:border-indigo-400">
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
@@ -982,13 +1137,13 @@ export function ItemsManagement() {
                           {stockCopy.currentStock}
                         </span>
                       </div>
-                      <div className="mt-3 flex items-center justify-between rounded-2xl border bg-muted/70 p-2">
+                      <div className="mt-3 flex items-center justify-between rounded-2xl border border-indigo-100 bg-gradient-to-r from-indigo-50/80 via-white to-violet-50/70 p-2 shadow-inner">
                         <Button
                           type="button"
                           variant="ghost"
                           size="icon"
                           aria-label={stockCopy.decrease}
-                          className="h-11 w-11 rounded-xl bg-background shadow-sm"
+                          className="h-11 w-11 touch-manipulation rounded-xl border border-slate-200 bg-white shadow-sm transition-all duration-100 hover:-translate-y-px hover:shadow active:scale-90"
                           onClick={() =>
                             setFormData((value) => ({
                               ...value,
@@ -998,7 +1153,7 @@ export function ItemsManagement() {
                         >
                           <Minus className="h-5 w-5" />
                         </Button>
-                        <span className="text-2xl font-bold tabular-nums">
+                        <span key={formData.quantity} className="rounded-xl bg-white px-4 py-2 text-2xl font-bold tabular-nums text-indigo-800 shadow-sm animate-in zoom-in-95 duration-150">
                           {formatWholeNumber(formData.quantity)}{" "}
                           <span className="text-sm font-medium text-muted-foreground">
                             {getUnitName(formData.unitId)}
@@ -1009,7 +1164,7 @@ export function ItemsManagement() {
                           variant="ghost"
                           size="icon"
                           aria-label={stockCopy.increase}
-                          className="h-11 w-11 rounded-xl bg-primary text-primary-foreground shadow-sm hover:bg-primary/90 hover:text-primary-foreground"
+                          className="h-11 w-11 touch-manipulation rounded-xl bg-primary text-primary-foreground shadow-[0_4px_10px_rgba(79,70,229,0.28)] transition-all duration-100 hover:-translate-y-px hover:bg-primary/90 hover:shadow-[0_7px_15px_rgba(79,70,229,0.32)] hover:text-primary-foreground active:scale-90"
                           onClick={() =>
                             setFormData((value) => ({
                               ...value,
@@ -1022,7 +1177,7 @@ export function ItemsManagement() {
                       </div>
                     </section>
 
-                    <section className="mt-7 border-t pt-6">
+                    <section className="mt-7 border-t border-slate-100 pt-6">
                       <p className="text-sm font-bold">{stockCopy.price}</p>
                       <div className="mt-3 grid grid-cols-2 gap-3">
                         <label className="min-w-0 text-xs font-semibold sm:text-sm">
@@ -1044,7 +1199,7 @@ export function ItemsManagement() {
                                 });
                                 clearFieldError("buyPrice");
                               }}
-                              className="min-w-0 pl-7 text-base"
+                              className="min-w-0 rounded-xl border-slate-200 bg-white pl-7 text-base transition-all duration-200 focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100"
                               placeholder="0"
                             />
                           </div>
@@ -1068,14 +1223,14 @@ export function ItemsManagement() {
                                 });
                                 clearFieldError("sellPrice");
                               }}
-                              className="min-w-0 pl-7 text-base"
+                              className="min-w-0 rounded-xl border-slate-200 bg-white pl-7 text-base transition-all duration-200 focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100"
                               placeholder="0"
                             />
                           </div>
                         </label>
                       </div>
                       {formData.buyPrice > 0 && formData.sellPrice > 0 && (
-                        <div className="mt-3 grid grid-cols-2 gap-2 rounded-xl bg-emerald-50 p-3 text-emerald-800">
+                        <div className="mt-3 grid animate-in fade-in-0 slide-in-from-top-1 grid-cols-2 gap-2 rounded-2xl border border-emerald-100 bg-gradient-to-br from-emerald-50 to-white p-3 text-emerald-800 duration-200">
                           <div className="min-w-0 rounded-lg bg-white/70 px-3 py-2">
                             <p className="text-xs font-medium text-emerald-700">
                               {stockCopy.profitPerItem}
@@ -1108,12 +1263,12 @@ export function ItemsManagement() {
                       )}
                     </section>
 
-                    <section className="mt-7 border-t pt-6">
+                    <section className="mt-7 border-t border-slate-100 pt-6">
                       <p className="text-sm font-bold">{stockCopy.expiry}</p>
                       <div className="mt-3 grid grid-cols-2 gap-2">
                         <Button
                           type="button"
-                          className="min-w-0 px-2 text-xs sm:text-sm"
+                          className="min-w-0 rounded-xl px-2 text-xs transition-all duration-150 active:scale-[0.97] sm:text-sm"
                           variant={!showExpiryPicker ? "default" : "outline"}
                           onClick={() => {
                             setShowExpiryPicker(false);
@@ -1127,7 +1282,7 @@ export function ItemsManagement() {
                         </Button>
                         <Button
                           type="button"
-                          className="min-w-0 px-2 text-xs sm:text-sm"
+                          className="min-w-0 rounded-xl px-2 text-xs transition-all duration-150 active:scale-[0.97] sm:text-sm"
                           variant={showExpiryPicker ? "default" : "outline"}
                           onClick={() => setShowExpiryPicker(true)}
                         >
@@ -1135,7 +1290,7 @@ export function ItemsManagement() {
                         </Button>
                       </div>
                       {showExpiryPicker && (
-                        <div className="mt-3 space-y-3">
+                        <div className="mt-3 space-y-3 animate-in fade-in-0 slide-in-from-top-1 duration-200">
                           <div className="grid grid-cols-3 gap-2">
                             <Button
                               type="button"
@@ -1176,7 +1331,7 @@ export function ItemsManagement() {
                       )}
                     </section>
 
-                    <section className="mt-7 border-t pt-6">
+                    <section className="mt-7 border-t border-slate-100 pt-6">
                       <label className="block text-sm font-bold">
                         {stockCopy.lowStockLimit}
                         <div className="mt-2 flex items-center gap-2">
@@ -1666,7 +1821,7 @@ export function ItemsManagement() {
                 */}
               </TabsContent>
 
-              <TabsContent value="pricing" className="mt-4">
+              <TabsContent value="pricing" className="mt-4 animate-in fade-in-0 slide-in-from-bottom-2 duration-200">
                 {editingId && (
                   <PriceTierManager
                     itemId={editingId}
@@ -1687,12 +1842,12 @@ export function ItemsManagement() {
                 )}
               </TabsContent>
             </Tabs>
-            <DialogFooter className="sticky bottom-0 -mx-4 mt-5 gap-2 border-t bg-background/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6">
+            <DialogFooter className="sticky bottom-0 -mx-4 mt-5 gap-2 border-t border-indigo-100 bg-white/95 px-4 py-3 shadow-[0_-8px_20px_rgba(15,23,42,0.04)] backdrop-blur sm:-mx-6 sm:px-6">
               {activeTab === "pricing" ? (
                 <Button
                   type="button"
                   onClick={resetForm}
-                  className="h-12 w-full rounded-xl text-base font-bold"
+                  className="h-12 w-full rounded-xl text-base font-bold shadow-[0_5px_14px_rgba(79,70,229,0.22)] transition-all duration-150 hover:-translate-y-px hover:shadow-[0_8px_18px_rgba(79,70,229,0.28)] active:scale-[0.98]"
                 >
                   {stockCopy.done}
                 </Button>
@@ -1702,16 +1857,19 @@ export function ItemsManagement() {
                     type="button"
                     variant="outline"
                     onClick={resetForm}
-                    className="h-12"
+                    className="h-12 rounded-xl border-slate-200 transition-all duration-150 hover:-translate-y-px hover:bg-slate-50 active:scale-[0.98]"
                   >
                     {stockCopy.cancel}
                   </Button>
                   <Button
                     type="button"
                     onClick={handleSave}
-                    className="h-12 flex-1 rounded-xl text-base font-bold"
+                    disabled={isSaving}
+                    className="h-12 flex-1 rounded-xl text-base font-bold shadow-[0_5px_14px_rgba(79,70,229,0.24)] transition-all duration-150 hover:-translate-y-px hover:shadow-[0_8px_18px_rgba(79,70,229,0.3)] active:scale-[0.98] disabled:translate-y-0 disabled:opacity-70"
                   >
-                    {editingId
+                    {isSaving
+                      ? language === "mr" ? "जतन होत आहे..." : "Saving..."
+                      : editingId
                       ? stockCopy.update
                       : isCloneMode
                         ? language === "mr"
@@ -1839,6 +1997,7 @@ export function ItemsManagement() {
               selectedBrand === null &&
               selectedExpiryStatus === null &&
               selectedStockStatus === null &&
+              !reorderMode &&
               sortBy === "name-asc"
             }
           >
@@ -1850,6 +2009,7 @@ export function ItemsManagement() {
           selectedBrand ||
           selectedExpiryStatus ||
           selectedStockStatus ||
+          reorderMode ||
           sortBy !== "name-asc") && (
           <div className="hidden">
             {selectedCategoryId !== null && (
@@ -1925,14 +2085,16 @@ export function ItemsManagement() {
             if (entry.kind === "groupHeader") {
               const isCollapsed = collapsedGroups.has(entry.key);
               return (
-                <button
+                <div
                   key={`gh-${entry.key}-${listIndex}`}
-                  type="button"
-                  onClick={() => toggleGroup(entry.key)}
-                  className="flex items-center justify-between gap-3 rounded-2xl border border-indigo-200 bg-indigo-50/60 p-3 text-left shadow-sm hover:bg-indigo-100/70"
+                  className="group flex items-center justify-between gap-3 rounded-2xl border border-indigo-200/80 bg-gradient-to-r from-indigo-50 via-white to-indigo-50/70 p-3 text-left shadow-[0_4px_14px_rgba(79,70,229,0.08)] transition-all duration-200 hover:-translate-y-0.5 hover:border-indigo-300 hover:shadow-[0_10px_22px_rgba(79,70,229,0.13)]"
                 >
-                  <div className="min-w-0 flex items-center gap-3">
-                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-100 text-indigo-700">
+                  <button
+                    type="button"
+                    onClick={() => toggleGroup(entry.key)}
+                    className="min-w-0 flex flex-1 items-center gap-3 rounded-xl text-left transition-transform duration-150 active:scale-[0.99]"
+                  >
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-100 text-indigo-700 shadow-inner transition-transform duration-200 group-hover:scale-105">
                       {isCollapsed ? (
                         <ChevronRight className="h-5 w-5" />
                       ) : (
@@ -1947,22 +2109,32 @@ export function ItemsManagement() {
                         {entry.count} {language === "mr" ? "वस्तू" : "products"} · {language === "mr" ? "स्टॉक" : "Stock"} ₹{formatMoney(entry.totalStockValue)}
                       </p>
                     </div>
-                  </div>
+                  </button>
                   {entry.reorderCount > 0 && (
-                    <span className="shrink-0 rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-bold text-amber-800">
-                      {entry.reorderCount} {language === "mr" ? "पुन्हा मागवायच्या" : "to reorder"}
-                    </span>
+                    <div className="flex shrink-0 flex-col items-end gap-1.5">
+                      <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-bold text-amber-800">
+                        {entry.reorderCount} {language === "mr" ? "पुन्हा मागवायच्या" : "to reorder"}
+                      </span>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-7 border-indigo-200 bg-white px-2 text-[11px] text-indigo-800 hover:bg-indigo-100"
+                        onClick={() => copyReorderList(entry.brand, entry.reorderLines)}
+                      >
+                        {language === "mr" ? "यादी कॉपी" : "Copy list"}
+                      </Button>
+                    </div>
                   )}
-                </button>
+                </div>
               );
             }
             if (entry.groupKey && collapsedGroups.has(entry.groupKey)) {
               return null;
             }
             const item = entry.item;
-            const itemPriceTiers = priceTiers.filter(
-              (tier) => tier.itemId === item.id,
-            );
+            const displayedQuantity = optimisticQuantities.get(item.id || 0) ?? item.quantity;
+            const itemPriceTiers = priceTiersByItemId.get(item.id || 0) || [];
             const isSelected = selectedItems.has(item.id || 0);
             const todayStart = new Date();
             todayStart.setHours(0, 0, 0, 0);
@@ -2020,23 +2192,34 @@ export function ItemsManagement() {
                     : `₹${formatMoney(itemStockValue)} stock near expiry`
                   : "";
 
-            // Calculate days left
-            let daysLeftText = "";
+            let expiryPeriodText = "";
             if (expiryStart && expiryStatus) {
               if (expiryStatus === "expired") {
                 const daysAgo = Math.floor(
                   (todayStart.getTime() - expiryStart.getTime()) /
                     (1000 * 60 * 60 * 24),
                 );
-                daysLeftText = ` (${daysAgo} day${daysAgo !== 1 ? "s" : ""} ago)`;
+                expiryPeriodText = language === "mr"
+                  ? `${formatWholeNumber(daysAgo)} दिवसांपूर्वी कालबाह्य`
+                  : `Expired ${daysAgo} day${daysAgo !== 1 ? "s" : ""} ago`;
               } else if (expiryStatus === "expiring") {
                 const daysLeft = Math.ceil(
                   (expiryStart.getTime() - todayStart.getTime()) /
                     (1000 * 60 * 60 * 24),
                 );
-                daysLeftText = ` (${daysLeft} day${daysLeft !== 1 ? "s" : ""} left)`;
+                expiryPeriodText = language === "mr"
+                  ? `${formatWholeNumber(daysLeft)} दिवसांत कालबाह्य`
+                  : `${daysLeft} day${daysLeft !== 1 ? "s" : ""} to expire`;
               }
             }
+            const lastStockUpdate = item.updatedAt
+              ? new Date(item.updatedAt).toLocaleString(language === "mr" ? "mr-IN" : "en-IN", {
+                  day: "numeric",
+                  month: "short",
+                  hour: "numeric",
+                  minute: "2-digit",
+                })
+              : null;
 
             return (
               <div
@@ -2051,20 +2234,20 @@ export function ItemsManagement() {
                 />
                 <Card
                   id={`stock-item-${item.id}`}
-                  className={`flex-1 overflow-hidden transition-all ${
-                    isSelected ? "border-blue-300 bg-blue-50" : ""
+                  className={`group flex-1 overflow-hidden rounded-2xl border-slate-200/80 bg-gradient-to-br from-card via-card to-slate-50/70 shadow-[0_2px_10px_rgba(15,23,42,0.035)] transition-[transform,box-shadow,border-color,background-color] duration-200 ease-out will-change-transform hover:-translate-y-0.5 hover:border-indigo-200 hover:shadow-[0_12px_26px_rgba(79,70,229,0.10)] active:translate-y-0 [content-visibility:auto] [contain-intrinsic-size:auto_230px] ${
+                    isSelected ? "border-blue-300 bg-blue-50 shadow-[0_10px_24px_rgba(37,99,235,0.12)]" : ""
                   } ${
                     focusedItemId === item.id
-                      ? "ring-4 ring-orange-300 border-orange-400 bg-orange-50"
-                      : ""
+                      ? "ring-4 ring-orange-300 border-orange-400 bg-orange-50 shadow-[0_12px_28px_rgba(249,115,22,0.16)]"
+                    : ""
                   }`}
                 >
-                  <CardContent className="p-4">
-                    <div className="space-y-2">
+                  <CardContent className="p-4 sm:p-4.5">
+                    <div className="space-y-2.5">
                       {/* Item Name and Category */}
                       <div className="flex items-start justify-between">
                         <div className="min-w-0 flex-1">
-                          <h3 className="font-bold text-base">
+                          <h3 className="font-bold text-base tracking-tight">
                             {primaryItemName}
                           </h3>
                           {showSecondaryItemName && (
@@ -2073,7 +2256,7 @@ export function ItemsManagement() {
                             </p>
                           )}
                           <div className="mt-2 flex flex-wrap gap-2">
-                            <span className="rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-700">
+                            <span className="rounded-full border border-slate-200 bg-slate-100/80 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-700">
                               {getCategoryName(item.categoryId)}
                             </span>
                             {primaryBrandName && (
@@ -2082,15 +2265,15 @@ export function ItemsManagement() {
                               </span>
                             )}
                             {item.quantity === 0 ? (
-                              <span className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-700">
+                              <span className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-700 shadow-sm">
                                 Out of stock
                               </span>
                             ) : isLowStock ? (
-                              <span className="rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-[11px] font-semibold text-orange-700">
+                              <span className="rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-[11px] font-semibold text-orange-700 shadow-sm">
                                 Low stock
                               </span>
                             ) : (
-                              <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
+                              <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 shadow-sm">
                                 In stock
                               </span>
                             )}
@@ -2105,16 +2288,11 @@ export function ItemsManagement() {
                                     : "text-xs text-muted-foreground"
                               }
                             >
-                              Expiry:{" "}
+                              {language === "mr" ? "कालबाह्यता:" : "Expiry:"}{" "}
                               {expiryStart.toLocaleDateString(
                                 language === "mr" ? "mr-IN" : "en-IN",
                               )}
-                              {expiryStatus === "expired"
-                                ? " (Expired)"
-                                : expiryStatus === "expiring"
-                                  ? " (Near Expiry)"
-                                  : ""}
-                              {daysLeftText}
+                              {expiryPeriodText && ` · ${expiryPeriodText}`}
                             </p>
                           )}
                           {expiryUrgencyText && (
@@ -2128,11 +2306,39 @@ export function ItemsManagement() {
                               ⚠️ {expiryUrgencyText}
                             </p>
                           )}
+                          {lastStockUpdate && (
+                            <p className="mt-1 text-[11px] text-muted-foreground">
+                              {language === "mr" ? "शेवटचा स्टॉक बदल:" : "Last stock update:"} {lastStockUpdate}
+                            </p>
+                          )}
                         </div>
                         <div className="text-right">
-                          <p className="text-sm font-semibold text-blue-600">
-                            {formatWholeNumber(item.quantity)} {itemUnitName}
+                          <p className="rounded-lg bg-indigo-50 px-2 py-1 text-sm font-bold tabular-nums text-indigo-700">
+                            <span className="inline-block animate-in zoom-in-95 duration-150">{formatWholeNumber(displayedQuantity)}</span> {itemUnitName}
                           </p>
+                          <div className="mt-1 flex items-center justify-end gap-1">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="icon"
+                              className="h-8 w-8 rounded-xl border-slate-200 bg-white shadow-sm transition-all duration-150 hover:-translate-y-px hover:border-slate-300 hover:bg-slate-50 hover:shadow active:scale-90"
+                              aria-label={language === "mr" ? "एक प्रमाण कमी करा" : "Decrease stock by one"}
+                              disabled={displayedQuantity <= 0}
+                              onClick={() => adjustStockQuickly(item, -1)}
+                            >
+                              <Minus className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="icon"
+                              className="h-8 w-8 rounded-xl border-primary/25 bg-primary text-primary-foreground shadow-[0_3px_8px_rgba(79,70,229,0.25)] transition-all duration-150 hover:-translate-y-px hover:bg-primary/90 hover:shadow-[0_6px_14px_rgba(79,70,229,0.30)] active:scale-90"
+                              aria-label={language === "mr" ? "एक प्रमाण जोडा" : "Add one to stock"}
+                              onClick={() => adjustStockQuickly(item, 1)}
+                            >
+                              <Plus className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
                           {isLowStock && (
                             <p
                               className={`text-xs font-bold ${
@@ -2148,8 +2354,8 @@ export function ItemsManagement() {
                       </div>
 
                       {/* Default Prices */}
-                      <div className="grid grid-cols-3 gap-2 text-xs">
-                        <div>
+                      <div className="grid grid-cols-3 gap-2 rounded-xl border border-slate-100 bg-slate-50/70 p-2.5 text-xs">
+                        <div className="min-w-0">
                           <span className="text-muted-foreground">
                             {t("buy")}:
                           </span>
@@ -2157,7 +2363,7 @@ export function ItemsManagement() {
                             Rs. {formatMoney(item.buyPrice)}
                           </p>
                         </div>
-                        <div>
+                        <div className="min-w-0 border-x border-slate-200 px-2">
                           <span className="text-muted-foreground">
                             {t("sell")}:
                           </span>
@@ -2165,7 +2371,7 @@ export function ItemsManagement() {
                             Rs. {formatMoney(item.sellPrice)}
                           </p>
                         </div>
-                        <div>
+                        <div className="min-w-0 pl-1">
                           <span className="text-muted-foreground">
                             {t("margin")}:
                           </span>
@@ -2214,12 +2420,12 @@ export function ItemsManagement() {
                       </div>
 
                       {/* Action Buttons */}
-                      <div className="flex gap-2 pt-2">
+                      <div className="flex gap-2 border-t border-slate-100 pt-3">
                         <Button
                           variant="outline"
                           size="sm"
                           onClick={() => handleOpenDialog(item)}
-                          className="flex-1 gap-1 h-8"
+                          className="h-9 flex-1 gap-1 rounded-xl border-slate-200 bg-white text-xs shadow-sm transition-all duration-150 hover:-translate-y-px hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700 hover:shadow active:scale-[0.97]"
                         >
                           <Edit2 className="w-3 h-3" />
                           {t("edit")}
@@ -2228,7 +2434,7 @@ export function ItemsManagement() {
                           variant="outline"
                           size="sm"
                           onClick={() => handleCloneItem(item)}
-                          className="flex-1 gap-1 h-8 border-indigo-200 text-indigo-700 hover:bg-indigo-50 hover:text-indigo-700"
+                          className="h-9 flex-1 gap-1 rounded-xl border-indigo-200 bg-indigo-50/50 text-xs text-indigo-700 shadow-sm transition-all duration-150 hover:-translate-y-px hover:bg-indigo-100 hover:text-indigo-800 hover:shadow active:scale-[0.97]"
                         >
                           <Copy className="w-3 h-3" />
                           {language === "mr" ? "प्रत" : "Clone"}
@@ -2244,7 +2450,7 @@ export function ItemsManagement() {
                               variant="destructive"
                               size="sm"
                               onClick={() => setDeleteId(item.id || null)}
-                              className="flex-1 gap-1 h-8"
+                              className="h-9 flex-1 gap-1 rounded-xl text-xs shadow-sm transition-all duration-150 hover:-translate-y-px hover:shadow active:scale-[0.97]"
                             >
                               <Trash2 className="w-3 h-3" />
                               {t("delete")}

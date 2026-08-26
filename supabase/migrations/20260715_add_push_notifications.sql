@@ -25,15 +25,20 @@ CREATE INDEX IF NOT EXISTS idx_push_notification_deliveries_shop_id
 ALTER TABLE public.push_subscriptions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.push_notification_deliveries ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Allow all operations on push subscriptions"
+  ON public.push_subscriptions;
+
 CREATE POLICY "Allow all operations on push subscriptions"
   ON public.push_subscriptions
   FOR ALL
   USING (true)
   WITH CHECK (true);
 
+DROP POLICY IF EXISTS "Allow all operations on push notification deliveries"
+  ON public.push_notification_deliveries;
+
 CREATE POLICY "Allow all operations on push notification deliveries"
   ON public.push_notification_deliveries
   FOR ALL
   USING (true)
   WITH CHECK (true);
-
