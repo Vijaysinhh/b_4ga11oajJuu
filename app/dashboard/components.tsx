@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
 import { useAuth } from "@/providers/auth-provider";
 import { useLanguage } from "@/providers/language-provider";
 import {
@@ -79,7 +80,10 @@ import {
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import { BrandComparison } from "@/app/brand-comparison/components";
+const BrandComparison = dynamic(
+  () => import("@/app/brand-comparison/components").then((module) => module.BrandComparison),
+  { ssr: false, loading: () => <div className="h-48 rounded-2xl border bg-card" /> },
+);
 
 type ReportKey = "today" | "month" | "sixMonths" | "year";
 
@@ -1964,20 +1968,20 @@ export function Dashboard() {
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-6 pb-24 pt-2 sm:pb-10 sm:pt-4">
       {/* ─── Header ─── */}
-      <div className="order-1 rounded-2xl border border-border/70 bg-card/70 p-4 shadow-sm backdrop-blur sm:p-5">
-        <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+      <div className="order-1 rounded-3xl border border-slate-200/80 bg-card p-5 shadow-[0_8px_24px_rgba(15,23,42,0.05)] sm:p-6">
+        <h1 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
           {t("home")}
         </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
+        <p className="mt-1 text-sm leading-6 text-muted-foreground">
           {currentShop?.shopName || "Shop"}
         </p>
       </div>
 
       {/* ─── Top 4 Summary Cards ─── */}
       <div className="order-2 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Card className="border border-green-200 bg-green-50/70 shadow-sm dark:border-green-900/50 dark:bg-green-950/20">
+        <Card className="border border-emerald-200/80 bg-gradient-to-br from-emerald-50 to-white shadow-[0_4px_16px_rgba(16,185,129,0.07)] transition-[transform,box-shadow,border-color] duration-200 hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow-[0_10px_24px_rgba(16,185,129,0.12)] dark:border-green-900/50 dark:bg-green-950/20">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
+            <CardTitle className="text-sm font-medium tracking-tight">
               🟢 Today's Profit
             </CardTitle>
             <TrendingUp className="h-4 w-4 text-green-600" />
@@ -1985,14 +1989,14 @@ export function Dashboard() {
           <CardContent>
             <div className="space-y-2">
               <div className="flex items-baseline justify-between">
-                <span className="text-xs text-muted-foreground">Sales:</span>
-                <span className="text-lg font-bold text-blue-700 dark:text-blue-300">
+                <span className="text-xs font-medium text-muted-foreground">Sales:</span>
+                <span className="text-lg font-semibold tabular-nums text-blue-700 dark:text-blue-300">
                   ₹{formatMoney(daySummary.revenue)}
                 </span>
               </div>
               <div className="flex items-baseline justify-between">
-                <span className="text-xs text-muted-foreground">Profit:</span>
-                <span className="text-lg font-bold text-green-800 dark:text-green-300">
+                <span className="text-xs font-medium text-muted-foreground">Profit:</span>
+                <span className="text-lg font-semibold tabular-nums text-green-800 dark:text-green-300">
                   ₹{formatMoney(daySummary.profit)}
                 </span>
               </div>
@@ -2009,13 +2013,13 @@ export function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card className="border-2">
+        <Card className="border border-slate-200/80 bg-card shadow-[0_4px_16px_rgba(15,23,42,0.045)] transition-[transform,box-shadow,border-color] duration-200 hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-[0_10px_24px_rgba(37,99,235,0.10)]">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Bills today</CardTitle>
             <ShoppingBag className="h-4 w-4 text-blue-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold leading-tight">
+            <div className="text-2xl font-semibold tabular-nums leading-tight">
               {daySummary.transactions}
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
@@ -2034,7 +2038,7 @@ export function Dashboard() {
         </Card>
 
         <Card
-          className="cursor-pointer border border-orange-200 bg-orange-50/70 shadow-sm transition hover:border-orange-400 dark:border-orange-900/50 dark:bg-orange-950/20"
+          className="cursor-pointer border border-orange-200/80 bg-gradient-to-br from-orange-50 to-white shadow-[0_4px_16px_rgba(249,115,22,0.08)] transition-[transform,box-shadow,border-color] duration-200 hover:-translate-y-0.5 hover:border-orange-300 hover:shadow-[0_10px_24px_rgba(249,115,22,0.14)] active:scale-[0.99] dark:border-orange-900/50 dark:bg-orange-950/20"
           onClick={() =>
             router.push(
               itemFocusHref(
@@ -2062,7 +2066,7 @@ export function Dashboard() {
             <AlertTriangle className="h-4 w-4 text-orange-600" />
           </CardHeader>
           <CardContent>
-            <div className="line-clamp-2 text-lg font-bold leading-tight text-orange-900 dark:text-orange-200">
+            <div className="line-clamp-2 text-lg font-semibold leading-6 text-orange-900 dark:text-orange-200">
               {stockRiskTitle}
             </div>
             <p className="mt-2 text-xs text-orange-800/80 dark:text-orange-200/80">
@@ -2072,7 +2076,7 @@ export function Dashboard() {
         </Card>
 
         <Card
-          className="cursor-pointer border shadow-sm transition hover:border-orange-400"
+          className="cursor-pointer border border-slate-200/80 bg-card shadow-[0_4px_16px_rgba(15,23,42,0.045)] transition-[transform,box-shadow,border-color] duration-200 hover:-translate-y-0.5 hover:border-orange-300 hover:shadow-[0_10px_24px_rgba(249,115,22,0.10)] active:scale-[0.99]"
           onClick={() =>
             router.push(customerFocusHref(urgentUdhari?.customer.id))
           }
@@ -2090,7 +2094,7 @@ export function Dashboard() {
             <WalletCards className="h-4 w-4 text-orange-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-xl font-bold">{udhariRiskLabel}</div>
+            <div className="text-xl font-semibold tabular-nums">{udhariRiskLabel}</div>
             <p className="mt-1 text-xs text-muted-foreground">
               {udhariSubtext}
             </p>
@@ -2158,19 +2162,19 @@ export function Dashboard() {
       {/* ═══════════════════════════════════════════════════════ */}
       {/* ─── DAILY SALES TIMELINE (new section) ─── */}
       {/* ═══════════════════════════════════════════════════════ */}
-      <section className="order-4 space-y-3">
+      <section className="order-4 space-y-3 [content-visibility:auto] [contain-intrinsic-size:auto_650px]">
         {/* Date navigation header */}
         <div className="flex items-center justify-between gap-2">
           <Button
             variant="ghost"
             size="icon"
             onClick={goToPreviousDay}
-            className="h-9 w-9 shrink-0"
+            className="h-10 w-10 shrink-0 rounded-xl border border-slate-200 bg-white shadow-sm transition-all duration-150 hover:-translate-y-px hover:shadow active:scale-90"
           >
             <ChevronLeft className="h-5 w-5" />
           </Button>
           <div className="text-center">
-            <h2 className="text-lg font-bold leading-tight">
+            <h2 className="text-lg font-semibold leading-tight tracking-tight">
               {formatDateLabel(selectedDate, language)}
             </h2>
             <p className="text-xs text-muted-foreground">
@@ -2190,7 +2194,7 @@ export function Dashboard() {
             size="icon"
             onClick={goToNextDay}
             disabled={isToday}
-            className="h-9 w-9 shrink-0"
+            className="h-10 w-10 shrink-0 rounded-xl border border-slate-200 bg-white shadow-sm transition-all duration-150 hover:-translate-y-px hover:shadow active:scale-90"
           >
             <ChevronRight className="h-5 w-5" />
           </Button>
@@ -2279,7 +2283,7 @@ export function Dashboard() {
             return (
               <Card
                 key={sale.id ?? index}
-                className={`overflow-hidden border shadow-sm transition-all duration-200 ${
+              className={`overflow-hidden rounded-2xl border border-slate-200/80 bg-card shadow-[0_3px_14px_rgba(15,23,42,0.04)] transition-[transform,box-shadow,border-color] duration-200 hover:border-indigo-200 hover:shadow-[0_8px_20px_rgba(79,70,229,0.08)] ${
                   isUdhar ? "border-orange-200 dark:border-orange-800/50" : ""
                 }`}
               >
@@ -2290,14 +2294,14 @@ export function Dashboard() {
                     onClick={() =>
                       setExpandedSaleId(isExpanded ? null : (sale.id ?? null))
                     }
-                    className="flex items-center gap-2.5 min-w-0 flex-1 text-left transition-colors hover:bg-muted/40 -mx-3 -my-3 px-3 py-3"
+                    className="-mx-3 -my-3 flex min-w-0 flex-1 items-center gap-2.5 rounded-xl px-3 py-3 text-left transition-colors duration-150 hover:bg-slate-50 active:bg-slate-100"
                   >
                     <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-bold text-muted-foreground">
                       <Clock className="h-3.5 w-3.5" />
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <span className="text-sm font-semibold">
+                        <span className="text-sm font-semibold tabular-nums">
                           {formatTime(sale.timestamp)}
                         </span>
                         <span
@@ -2338,7 +2342,7 @@ export function Dashboard() {
                       <Trash2 className="h-4 w-4" />
                     </Button>
                     <div className="text-right">
-                      <p className="text-sm font-bold">
+                      <p className="text-sm font-semibold tabular-nums">
                         ₹{formatMoney(sale.subtotal)}
                       </p>
                       <p className="text-[11px] font-medium text-green-600 dark:text-green-400">
@@ -2476,7 +2480,7 @@ export function Dashboard() {
       </section>
 
       {/* ─── Reports Section (Updated) ─── */}
-      <section className="order-7 space-y-3">
+      <section className="order-7 space-y-3 [content-visibility:auto] [contain-intrinsic-size:auto_720px]">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-2">
             <div className="flex h-9 w-9 items-center justify-center rounded-md border border-amber-200 bg-amber-50 text-amber-700">
@@ -2662,7 +2666,7 @@ export function Dashboard() {
       </section>
 
       {/* ─── Brand Comparison Section ─── */}
-      <div className="order-8">
+      <div className="order-8 [content-visibility:auto] [contain-intrinsic-size:auto_500px]">
         <BrandComparison
           showOnlyTop5={true}
           selectedReportType={selectedReportType}
@@ -2674,7 +2678,7 @@ export function Dashboard() {
 
       {/* ─── Highest Udhar Customer ─── */}
       {highestUdharCustomer && (
-        <section className="order-9 space-y-3">
+        <section className="order-9 space-y-3 [content-visibility:auto] [contain-intrinsic-size:auto_280px]">
           <h2 className="text-xl font-bold">{t("highest_udhar")}</h2>
           <Card
             className="border-2 cursor-pointer hover:border-orange-400 transition-all"
@@ -2710,7 +2714,7 @@ export function Dashboard() {
 
       {/* ─── High Margin Items (unchanged) ─── */}
       {topMarginItems.length > 0 && (
-        <section className="order-10 space-y-3">
+        <section className="order-10 space-y-3 [content-visibility:auto] [contain-intrinsic-size:auto_450px]">
           <h2 className="text-xl font-bold">{t("high_margin_items")}</h2>
           <div className="grid gap-2">
             {topMarginItems.map((item, index) => (
@@ -2741,7 +2745,7 @@ export function Dashboard() {
 
       {/* ─── Stock Needed (IMPROVED) ─── */}
       {lowStockItems.length > 0 && (
-        <section className="order-5 space-y-3">
+        <section className="order-5 space-y-3 [content-visibility:auto] [contain-intrinsic-size:auto_500px]">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <AlertTriangle className="w-5 h-5 text-red-600" />

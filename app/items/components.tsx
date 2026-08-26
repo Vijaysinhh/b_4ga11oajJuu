@@ -880,30 +880,30 @@ export function ItemsManagement() {
   return (
     <div className="mx-auto max-w-5xl space-y-6 pb-24 pt-2 sm:pb-10 sm:pt-4">
       <div className="rounded-3xl border border-border/70 bg-card p-5 shadow-sm">
-        <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
+        <h1 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
           {t("items")}
         </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
+        <p className="mt-1 text-sm leading-6 text-muted-foreground">
           {items.length} products in your shop
         </p>
       </div>
 
       <div className="grid grid-cols-3 gap-3">
         <div className="rounded-2xl border bg-card p-3 shadow-sm">
-          <p className="text-xs text-muted-foreground">{stockCopy.stockValue}</p>
-          <p className="mt-1 truncate text-base font-bold text-primary">
+          <p className="text-xs font-medium leading-5 text-muted-foreground">{stockCopy.stockValue}</p>
+          <p className="mt-1 truncate text-lg font-semibold tabular-nums text-primary">
             ₹{formatMoney(totalStockValue)}
           </p>
         </div>
         <div className="rounded-2xl border bg-card p-3 shadow-sm">
-          <p className="text-xs text-muted-foreground">{language === "mr" ? "कमी स्टॉक" : "Low stock"}</p>
-          <p className="mt-1 text-xl font-bold text-orange-700">
+          <p className="text-xs font-medium leading-5 text-muted-foreground">{language === "mr" ? "कमी स्टॉक" : "Low stock"}</p>
+          <p className="mt-1 text-xl font-semibold tabular-nums text-orange-700">
             {lowStockCount}
           </p>
         </div>
         <div className="rounded-2xl border bg-card p-3 shadow-sm">
-          <p className="text-xs text-muted-foreground">{language === "mr" ? "स्टॉक संपला" : "Out of stock"}</p>
-          <p className="mt-1 text-xl font-bold text-red-700">
+          <p className="text-xs font-medium leading-5 text-muted-foreground">{language === "mr" ? "स्टॉक संपला" : "Out of stock"}</p>
+          <p className="mt-1 text-xl font-semibold tabular-nums text-red-700">
             {outOfStockCount}
           </p>
         </div>
@@ -912,10 +912,10 @@ export function ItemsManagement() {
       <section className="rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50 to-white p-4 shadow-sm">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <p className="text-sm font-bold text-indigo-950">
+            <p className="text-base font-semibold tracking-tight text-indigo-950">
               {language === "mr" ? "आजची स्टॉक कामे" : "Today’s stock tasks"}
             </p>
-            <p className="mt-0.5 text-xs text-indigo-700">
+            <p className="mt-0.5 text-xs leading-5 text-indigo-700">
               {outOfStockCount + lowStockCount === 0
                 ? language === "mr" ? "आजचा स्टॉक तपास पूर्ण ✓" : "Stock check complete for today ✓"
                 : language === "mr" ? "आधी तातडीच्या वस्तू तपासा" : "Start with the urgent products"}
@@ -966,8 +966,8 @@ export function ItemsManagement() {
               {stockCopy.addItem}
             </Button>
           </DialogTrigger>
-          <DialogContent className="!inset-0 !left-0 !top-0 !h-[100dvh] !w-full !max-w-none !translate-x-0 !translate-y-0 transform-gpu overflow-x-hidden overflow-y-auto overscroll-contain rounded-none border-0 bg-gradient-to-b from-indigo-50/60 via-background to-background p-4 pt-12 shadow-2xl [backface-visibility:hidden] [contain:layout_paint] [scrollbar-gutter:stable] data-[state=open]:slide-in-from-bottom-4 data-[state=closed]:slide-out-to-bottom-4 sm:!inset-auto sm:!left-1/2 sm:!top-1/2 sm:!h-auto sm:!max-h-[90vh] sm:!w-full sm:!max-w-lg sm:!-translate-x-1/2 sm:!-translate-y-1/2 sm:rounded-3xl sm:border sm:border-indigo-100 sm:p-6 sm:data-[state=open]:zoom-in-95 sm:data-[state=closed]:zoom-out-95">
-            <DialogHeader className="rounded-2xl border border-indigo-100/80 bg-white/80 p-4 shadow-sm backdrop-blur">
+          <DialogContent className="!inset-0 !left-0 !top-0 !h-[100dvh] !w-full !max-w-none !translate-x-0 !translate-y-0 transform-gpu overflow-x-hidden overflow-y-auto overscroll-contain rounded-none border-0 bg-background p-4 pt-12 shadow-2xl [backface-visibility:hidden] [contain:layout_paint] [scrollbar-gutter:stable] data-[state=open]:slide-in-from-bottom-4 data-[state=closed]:slide-out-to-bottom-4 data-[state=open]:zoom-in-100 data-[state=closed]:zoom-out-100 sm:!inset-auto sm:!left-1/2 sm:!top-1/2 sm:!h-auto sm:!max-h-[90vh] sm:!w-full sm:!max-w-lg sm:!-translate-x-1/2 sm:!-translate-y-1/2 sm:rounded-3xl sm:border sm:border-indigo-100 sm:p-6 sm:data-[state=open]:slide-in-from-bottom-2 sm:data-[state=closed]:slide-out-to-bottom-2">
+            <DialogHeader className="rounded-2xl border border-indigo-100/80 bg-white p-4 shadow-sm">
               <DialogTitle className="text-xl tracking-tight">
                 {editingId ? stockCopy.editItem : isCloneMode ? stockCopy.duplicate : stockCopy.addItem}
               </DialogTitle>
@@ -990,7 +990,7 @@ export function ItemsManagement() {
                 </TabsTrigger>
               </TabsList>
 
-              <TabsContent value="basic" className="mt-4 space-y-5 animate-in fade-in-0 slide-in-from-bottom-2 duration-200">
+              <TabsContent value="basic" className="mt-4 space-y-5">
                 <div className="mx-auto max-w-lg">
                   <div className="rounded-3xl border border-slate-200/80 bg-card p-5 shadow-[0_12px_30px_rgba(15,23,42,0.06)]">
                     <div className="flex items-start gap-4">
@@ -1018,7 +1018,7 @@ export function ItemsManagement() {
                       </div>
                     </div>
 
-                    <div className="mt-6 space-y-4 rounded-2xl border border-slate-200/80 bg-gradient-to-br from-slate-50 to-white p-4 shadow-inner">
+                    <div className="mt-6 space-y-4 rounded-2xl border border-slate-200/80 bg-slate-50 p-4">
                       <p className="text-sm font-bold">{stockCopy.details}</p>
                       <label className="block text-sm font-semibold">
                         {language === "mr" ? "वस्तूचे नाव" : "Item name"}{" "}
@@ -1230,7 +1230,7 @@ export function ItemsManagement() {
                         </label>
                       </div>
                       {formData.buyPrice > 0 && formData.sellPrice > 0 && (
-                        <div className="mt-3 grid animate-in fade-in-0 slide-in-from-top-1 grid-cols-2 gap-2 rounded-2xl border border-emerald-100 bg-gradient-to-br from-emerald-50 to-white p-3 text-emerald-800 duration-200">
+                        <div className="mt-3 grid grid-cols-2 gap-2 rounded-2xl border border-emerald-100 bg-emerald-50 p-3 text-emerald-800">
                           <div className="min-w-0 rounded-lg bg-white/70 px-3 py-2">
                             <p className="text-xs font-medium text-emerald-700">
                               {stockCopy.profitPerItem}
@@ -1290,7 +1290,7 @@ export function ItemsManagement() {
                         </Button>
                       </div>
                       {showExpiryPicker && (
-                        <div className="mt-3 space-y-3 animate-in fade-in-0 slide-in-from-top-1 duration-200">
+                        <div className="mt-3 space-y-3">
                           <div className="grid grid-cols-3 gap-2">
                             <Button
                               type="button"
@@ -1821,7 +1821,7 @@ export function ItemsManagement() {
                 */}
               </TabsContent>
 
-              <TabsContent value="pricing" className="mt-4 animate-in fade-in-0 slide-in-from-bottom-2 duration-200">
+              <TabsContent value="pricing" className="mt-4">
                 {editingId && (
                   <PriceTierManager
                     itemId={editingId}
@@ -1842,7 +1842,7 @@ export function ItemsManagement() {
                 )}
               </TabsContent>
             </Tabs>
-            <DialogFooter className="sticky bottom-0 -mx-4 mt-5 gap-2 border-t border-indigo-100 bg-white/95 px-4 py-3 shadow-[0_-8px_20px_rgba(15,23,42,0.04)] backdrop-blur sm:-mx-6 sm:px-6">
+            <DialogFooter className="sticky bottom-0 -mx-4 mt-5 gap-2 border-t border-indigo-100 bg-white px-4 py-3 shadow-[0_-8px_20px_rgba(15,23,42,0.04)] sm:-mx-6 sm:px-6">
               {activeTab === "pricing" ? (
                 <Button
                   type="button"
@@ -2247,34 +2247,34 @@ export function ItemsManagement() {
                       {/* Item Name and Category */}
                       <div className="flex items-start justify-between">
                         <div className="min-w-0 flex-1">
-                          <h3 className="font-bold text-base tracking-tight">
+                          <h3 className="text-[15px] font-semibold leading-6 tracking-tight text-slate-900">
                             {primaryItemName}
                           </h3>
                           {showSecondaryItemName && (
-                            <p className="text-sm font-medium text-muted-foreground">
+                            <p className="text-sm leading-5 text-muted-foreground">
                               {secondaryItemName}
                             </p>
                           )}
                           <div className="mt-2 flex flex-wrap gap-2">
-                            <span className="rounded-full border border-slate-200 bg-slate-100/80 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-700">
+                            <span className="rounded-full border border-slate-200 bg-slate-100/80 px-2 py-0.5 text-xs font-medium tracking-normal text-slate-700">
                               {getCategoryName(item.categoryId)}
                             </span>
                             {primaryBrandName && (
-                              <span className="rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700">
+                              <span className="rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">
                                 {primaryBrandName}
                               </span>
                             )}
                             {item.quantity === 0 ? (
-                              <span className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-700 shadow-sm">
-                                Out of stock
+                              <span className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700 shadow-sm">
+                                {language === "mr" ? "स्टॉक संपला" : "Out of stock"}
                               </span>
                             ) : isLowStock ? (
-                              <span className="rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-[11px] font-semibold text-orange-700 shadow-sm">
-                                Low stock
+                              <span className="rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-xs font-medium text-orange-700 shadow-sm">
+                                {language === "mr" ? "कमी स्टॉक" : "Low stock"}
                               </span>
                             ) : (
-                              <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 shadow-sm">
-                                In stock
+                              <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 shadow-sm">
+                                {language === "mr" ? "स्टॉक उपलब्ध" : "In stock"}
                               </span>
                             )}
                           </div>
@@ -2307,13 +2307,13 @@ export function ItemsManagement() {
                             </p>
                           )}
                           {lastStockUpdate && (
-                            <p className="mt-1 text-[11px] text-muted-foreground">
+                            <p className="mt-1 text-xs leading-5 text-muted-foreground">
                               {language === "mr" ? "शेवटचा स्टॉक बदल:" : "Last stock update:"} {lastStockUpdate}
                             </p>
                           )}
                         </div>
                         <div className="text-right">
-                          <p className="rounded-lg bg-indigo-50 px-2 py-1 text-sm font-bold tabular-nums text-indigo-700">
+                          <p className="rounded-lg bg-indigo-50 px-2 py-1 text-base font-semibold tabular-nums text-indigo-700">
                             <span className="inline-block animate-in zoom-in-95 duration-150">{formatWholeNumber(displayedQuantity)}</span> {itemUnitName}
                           </p>
                           <div className="mt-1 flex items-center justify-end gap-1">
@@ -2341,7 +2341,7 @@ export function ItemsManagement() {
                           </div>
                           {isLowStock && (
                             <p
-                              className={`text-xs font-bold ${
+                              className={`mt-1 text-xs font-semibold leading-5 ${
                                 item.quantity <= 0
                                   ? "text-red-600"
                                   : "text-orange-600"

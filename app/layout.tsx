@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist, Geist_Mono, Noto_Sans_Devanagari } from "next/font/google";
 import { Analytics } from "@vercel/analytics/react";
 import { AuthProvider } from "@/providers/auth-provider";
 import { LanguageProvider } from "@/providers/language-provider";
@@ -13,8 +13,13 @@ import { Toaster } from "@/components/ui/toaster";
 import { SubscriptionCheck } from "@/components/SubscriptionCheck";
 import "./globals.css";
 
-const _geist = Geist({ subsets: ["latin"] });
-const _geistMono = Geist_Mono({ subsets: ["latin"] });
+const geist = Geist({ subsets: ["latin"], variable: "--font-geist" });
+const geistMono = Geist_Mono({ subsets: ["latin"], variable: "--font-geist-mono" });
+const notoDevanagari = Noto_Sans_Devanagari({
+  subsets: ["devanagari"],
+  variable: "--font-devanagari",
+  weight: ["400", "500", "600", "700"],
+});
 
 export const metadata: Metadata = {
   title: "Dukan - Inventory Manager",
@@ -56,7 +61,7 @@ export default function RootLayout({
   return (
     <html lang="mr" suppressHydrationWarning>
       <head />
-      <body className="font-sans antialiased bg-background overflow-x-hidden m-0 p-0" suppressHydrationWarning>
+      <body className={`${geist.variable} ${geistMono.variable} ${notoDevanagari.variable} font-sans antialiased bg-background overflow-x-hidden m-0 p-0`} suppressHydrationWarning>
         <ErrorBoundary>
           <ThemeProvider
             attribute="class"
