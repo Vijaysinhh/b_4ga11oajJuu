@@ -66,6 +66,15 @@ export async function claimPushDelivery(shopId: number, dedupeKey: string, kind:
   });
   if (!error) return true;
   if ((error as { code?: string }).code === '23505') return false;
+  // Delivery logging is optional. A project that has not yet received the
+  // push-notification migration must still be able to create the alert and
+  // send the push notification; it simply cannot deduplicate this request.
+  if ((error as { code?: string }).code === 'PGRST205') {
+    console.warn(
+      '[Push] Delivery deduplication is unavailable. Apply supabase/migrations/20260715_add_push_notifications.sql.',
+    );
+    return true;
+  }
   throw error;
 }
 
@@ -96,4 +105,3 @@ export async function sendPushToShop(shopId: number, payload: PushPayload) {
 
   return { configured: true, sent };
 }
-

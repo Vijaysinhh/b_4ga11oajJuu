@@ -3,14 +3,39 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { createClient } from '@/lib/supabase';
 import { useAuth } from '@/providers/auth-provider';
+import type { PriceTier } from '@/lib/db';
 
 export function useRealtimePriceTiers(itemId: number | null) {
   const { user } = useAuth();
   const supabase = createClient();
-  const [priceTiers, setPriceTiers] = useState<any[]>([]);
+  const [priceTiers, setPriceTiers] = useState<PriceTier[]>([]);
   const [loading, setLoading] = useState(true);
   const [isConnected, setIsConnected] = useState(false);
   const subscriptionRef = useRef<any>(null);
+
+  const mapPriceTierRow = useCallback((row: any): PriceTier => {
+    const createdAt = row?.created_at
+      ? new Date(row.created_at).getTime()
+      : typeof row?.createdAt === 'number'
+        ? row.createdAt
+        : Date.now();
+
+    const updatedAt = row?.updated_at
+      ? new Date(row.updated_at).getTime()
+      : typeof row?.updatedAt === 'number'
+        ? row.updatedAt
+        : createdAt;
+
+    return {
+      id: row?.id != null ? Number(row.id) : undefined,
+      itemId: row?.item_id != null ? Number(row.item_id) : Number(row?.itemId || 0),
+      quantity: row?.quantity != null ? Number(row.quantity) : 0,
+      unitId: row?.unit_id != null ? Number(row.unit_id) : Number(row?.unitId || 0),
+      price: row?.price != null ? Number(row.price) : 0,
+      createdAt,
+      updatedAt,
+    };
+  }, []);
 
   // Fetch initial price tiers
   const fetchPriceTiers = useCallback(async () => {
@@ -28,14 +53,14 @@ export function useRealtimePriceTiers(itemId: number | null) {
         .order('quantity', { ascending: true });
 
       if (error) throw error;
-      setPriceTiers(data || []);
+      setPriceTiers((data || []).map(mapPriceTierRow));
     } catch (err) {
       console.error('[v0] Error fetching price tiers:', err);
       setPriceTiers([]);
     } finally {
       setLoading(false);
     }
-  }, [user, itemId]);
+  }, [user, itemId, supabase, mapPriceTierRow]);
 
   // Set up real-time subscription
   useEffect(() => {
@@ -59,13 +84,16 @@ export function useRealtimePriceTiers(itemId: number | null) {
           setIsConnected(true);
 
           if (payload.eventType === 'INSERT') {
-            setPriceTiers(prev => [...prev, payload.new]);
+            setPriceTiers((prev) => [...prev, mapPriceTierRow(payload.new)]);
           } else if (payload.eventType === 'UPDATE') {
-            setPriceTiers(prev =>
-              prev.map(tier => (tier.id === payload.new.id ? payload.new : tier))
-            );
+            setPriceTiers((prev) => {
+              const next = mapPriceTierRow(payload.new);
+              return prev.map((tier) => (tier.id === next.id ? next : tier));
+            });
           } else if (payload.eventType === 'DELETE') {
-            setPriceTiers(prev => prev.filter(tier => tier.id !== payload.old.id));
+            const deletedId = payload?.old?.id != null ? Number(payload.old.id) : null;
+            if (deletedId == null) return;
+            setPriceTiers((prev) => prev.filter((tier) => tier.id !== deletedId));
           }
         }
       )
@@ -79,7 +107,7 @@ export function useRealtimePriceTiers(itemId: number | null) {
     return () => {
       subscription.unsubscribe();
     };
-  }, [user, itemId, fetchPriceTiers]);
+  }, [user, itemId, fetchPriceTiers, supabase, mapPriceTierRow]);
 
   return {
     priceTiers,

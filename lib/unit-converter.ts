@@ -30,6 +30,8 @@ const UNIT_ALIASES: Record<string, string> = {
   litre: 'l',
   liters: 'l',
   litres: 'l',
+  ltr: 'l',
+  ltrs: 'l',
   milliliter: 'ml',
   millilitre: 'ml',
   milliliters: 'ml',

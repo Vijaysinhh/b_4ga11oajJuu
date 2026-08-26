@@ -15,7 +15,6 @@ interface PriceTierManagerProps {
   priceTiers: PriceTier[];
   units: Unit[];
   wholesaleCost: number;
-  wholesaleQty: number;
   wholesaleUnitId: number;
   onAdd: (tier: Omit<PriceTier, 'id' | 'createdAt' | 'updatedAt'>) => void;
   onDelete: (tierId: number) => void;
@@ -25,7 +24,6 @@ export function PriceTierManager({
   itemId,
   units,
   wholesaleCost,
-  wholesaleQty,
   wholesaleUnitId,
   onAdd,
   onDelete,
@@ -44,7 +42,7 @@ export function PriceTierManager({
   };
 
   const getMetrics = (price: number, quantity: number, tierUnitId: number) => {
-    if (!wholesaleCost || !wholesaleQty) {
+    if (!Number.isFinite(wholesaleCost) || wholesaleCost <= 0) {
       return { cost: 0, profit: 0, margin: 0, markup: 0 };
     }
 

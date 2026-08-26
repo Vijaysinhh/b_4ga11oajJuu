@@ -808,3 +808,22 @@ BEGIN
     WITH CHECK (true);
   END IF;
 END $$;
+
+-- ============================================
+-- IDEMPOTENT COLUMN MIGRATIONS (for existing DBs)
+-- ============================================
+
+-- sale_items: ensure all newer columns exist
+ALTER TABLE sale_items ADD COLUMN IF NOT EXISTS display_quantity VARCHAR(255);
+ALTER TABLE sale_items ADD COLUMN IF NOT EXISTS unit_short_form VARCHAR(50);
+ALTER TABLE sale_items ADD COLUMN IF NOT EXISTS price_tier_id BIGINT;
+ALTER TABLE sale_items ADD COLUMN IF NOT EXISTS pack_count NUMERIC;
+ALTER TABLE sale_items ADD COLUMN IF NOT EXISTS price_tier_quantity NUMERIC;
+ALTER TABLE sale_items ADD COLUMN IF NOT EXISTS price_tier_unit_short_form VARCHAR(50);
+
+-- sales: ensure all newer columns exist
+ALTER TABLE sales ADD COLUMN IF NOT EXISTS total_quantity_items NUMERIC;
+ALTER TABLE sales ADD COLUMN IF NOT EXISTS profit_margin_percent NUMERIC;
+ALTER TABLE sales ADD COLUMN IF NOT EXISTS credit_customer_id BIGINT;
+ALTER TABLE sales ADD COLUMN IF NOT EXISTS credit_customer_name VARCHAR(255);
+ALTER TABLE sales ADD COLUMN IF NOT EXISTS notes TEXT;

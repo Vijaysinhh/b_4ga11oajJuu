@@ -127,6 +127,21 @@ export function SalesItemSearch({
       .slice(0, 10);
   }, [searchTerm, items]);
 
+  const filteredWithTierSummary = useMemo(() => {
+    return filteredItems.map((item) => {
+      const tiers = priceTiers.filter((t) => t.itemId === item.id);
+      const tierSummaries: Array<{ price: number; label: string }> = [];
+      for (const tier of tiers.slice(0, 3)) {
+        const unit = units.find((u) => u.id === tier.unitId);
+        tierSummaries.push({
+          price: tier.price,
+          label: `${formatWholeNumber(tier.quantity)}${unit?.shortForm ? " " + unit.shortForm : ""}`,
+        });
+      }
+      return { item, tierSummaries, tierCount: tiers.length };
+    });
+  }, [filteredItems, priceTiers, units]);
+
   const itemPriceTiers = useMemo(() => {
     if (!selectedItem) return [];
     return priceTiers.filter((tier) => tier.itemId === selectedItem.id);
@@ -292,50 +307,149 @@ export function SalesItemSearch({
 
       {searchTerm && filteredItems.length > 0 && !selectedItem && (
         <div className="overflow-hidden rounded-lg border">
-          {filteredItems.map((item) => (
-            <button
-              key={item.id}
-              onClick={() => handleItemSelect(item)}
-              className="h-auto min-h-12 w-full border-b p-3 text-left last:border-b-0 hover:bg-gray-100 sm:p-2"
-            >
-              <div className="text-sm font-semibold">
-                {(() => {
-                  const baseName =
-                    language === "mr" && item.nameMarathi ? item.nameMarathi : item.name;
-                  const brandName =
-                    language === "mr" && item.brandMarathi ? item.brandMarathi : item.brand;
-                  return brandName ? `${baseName} (${brandName})` : baseName;
-                })()}
-              </div>
-              <div className="text-xs text-gray-600">
-                {t("stock")}: {formatNumber(item.quantity)}
-                {units.find((u) => u.id === item.unitId)?.shortForm}
-              </div>
-            </button>
-          ))}
+          {filteredWithTierSummary.map(({ item, tierSummaries, tierCount }) => {
+            const unitShort = units.find((u) => u.id === item.unitId)?.shortForm || "unit";
+            const remaining = getRemainingStock(item);
+            const profitPer = Math.max(0, Number(item.sellPrice || 0) - Number(item.buyPrice || 0));
+            const marginPct =
+              Number(item.sellPrice || 0) > 0
+                ? (profitPer / Number(item.sellPrice || 0)) * 100
+                : 0;
+            const lowStock = remaining <= Number(item.lowStockLimit || 0);
+            const outOfStock = remaining <= 0;
+            return (
+              <button
+                key={item.id}
+                onClick={() => !outOfStock && handleItemSelect(item)}
+                disabled={outOfStock}
+                className={`h-auto w-full border-b p-3 text-left last:border-b-0 sm:p-3 ${
+                  outOfStock
+                    ? "cursor-not-allowed bg-gray-50/70 opacity-50"
+                    : "hover:bg-blue-50/70"
+                }`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="truncate text-sm font-semibold text-gray-900">
+                        {(() => {
+                          const baseName =
+                            language === "mr" && item.nameMarathi
+                              ? item.nameMarathi
+                              : item.name;
+                          const brandName =
+                            language === "mr" && item.brandMarathi
+                              ? item.brandMarathi
+                              : item.brand;
+                          return brandName ? `${baseName} (${brandName})` : baseName;
+                        })()}
+                      </span>
+                      {marginPct >= 0 && (
+                        <span
+                          className={`inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                            marginPct >= 20
+                              ? "bg-emerald-100 text-emerald-800"
+                              : marginPct >= 10
+                                ? "bg-green-100 text-green-800"
+                                : "bg-yellow-100 text-yellow-800"
+                          }`}
+                        >
+                          {marginPct.toFixed(0)}% margin
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-gray-600">
+                      <span className={lowStock ? "font-semibold text-orange-700" : ""}>
+                        {t("stock")}: {formatWholeNumber(remaining)} {unitShort}
+                        {lowStock && !outOfStock && " · low"}
+                        {outOfStock && " · out"}
+                      </span>
+                      {tierSummaries.length > 0 && (
+                        <span className="text-indigo-700">
+                          {language === "mr" ? "पॅक" : "packs"}:{" "}
+                          {tierSummaries
+                            .map(
+                              (t) =>
+                                `₹${formatMoney(t.price)}/${t.label}`,
+                            )
+                            .join(" · ")}
+                          {tierCount > tierSummaries.length && ` +${tierCount - tierSummaries.length}`}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <div className="text-base font-extrabold text-blue-700 leading-tight">
+                      ₹{formatMoney(item.sellPrice)}
+                      <span className="ml-0.5 text-[11px] font-medium text-gray-500">
+                        /{unitShort}
+                      </span>
+                    </div>
+                    <div className="mt-0.5 text-[10px] font-medium text-gray-500">
+                      {t("buy")}: ₹{formatMoney(item.buyPrice)} ·{" "}
+                      <span className={profitPer > 0 ? "text-green-700 font-semibold" : "text-gray-500"}>
+                        +₹{formatMoney(profitPer)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </button>
+            );
+          })}
         </div>
       )}
 
       {selectedItem && (
         <Card className="border-blue-200 bg-blue-50 p-3">
-          <div className="mb-2 flex items-start justify-between">
-            <div>
-              <div className="text-sm font-bold">
-                {(() => {
-                  const baseName =
-                    language === "mr" && selectedItem.nameMarathi
-                      ? selectedItem.nameMarathi
-                      : selectedItem.name;
-                  const brandName =
-                    language === "mr" && selectedItem.brandMarathi
-                      ? selectedItem.brandMarathi
-                      : selectedItem.brand;
-                  return brandName ? `${baseName} (${brandName})` : baseName;
-                })()}
+          <div className="mb-3 flex items-start justify-between gap-2">
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="text-sm font-bold truncate">
+                  {(() => {
+                    const baseName =
+                      language === "mr" && selectedItem.nameMarathi
+                        ? selectedItem.nameMarathi
+                        : selectedItem.name;
+                    const brandName =
+                      language === "mr" && selectedItem.brandMarathi
+                        ? selectedItem.brandMarathi
+                        : selectedItem.brand;
+                    return brandName ? `${baseName} (${brandName})` : baseName;
+                  })()}
+                </div>
               </div>
-              <div className="text-xs text-gray-600">
-                {t("stock")}: {formatNumber(getRemainingStock(selectedItem))}
-                {units.find((u) => u.id === selectedItem.unitId)?.shortForm}
+              <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-gray-600">
+                <span>
+                  {t("stock")}: {formatWholeNumber(getRemainingStock(selectedItem))}{" "}
+                  {units.find((u) => u.id === selectedItem.unitId)?.shortForm}
+                </span>
+                <span className="font-semibold text-blue-700">
+                  {t("selling")}: ₹{formatMoney(selectedItem.sellPrice)}/
+                  {units.find((u) => u.id === selectedItem.unitId)?.shortForm}
+                </span>
+                <span>
+                  {t("buy")}: ₹{formatMoney(selectedItem.buyPrice)}
+                </span>
+                {(() => {
+                  const ppu = Number(selectedItem.sellPrice || 0) - Number(selectedItem.buyPrice || 0);
+                  const mp =
+                    Number(selectedItem.sellPrice || 0) > 0
+                      ? (ppu / Number(selectedItem.sellPrice || 0)) * 100
+                      : 0;
+                  return (
+                    <span
+                      className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                        mp >= 20
+                          ? "bg-emerald-100 text-emerald-800"
+                          : mp >= 10
+                            ? "bg-green-100 text-green-800"
+                            : "bg-yellow-100 text-yellow-800"
+                      }`}
+                    >
+                      +₹{formatMoney(Math.max(0, ppu))} · {mp.toFixed(0)}%
+                    </span>
+                  );
+                })()}
               </div>
             </div>
             <button

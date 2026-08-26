@@ -227,7 +227,22 @@ export function SalesTransaction() {
       resetSale();
       window.dispatchEvent(new Event("refresh-dukan-data"));
     } catch (error) {
-      console.error("Error completing sale:", error);
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : typeof error === "string"
+            ? error
+            : JSON.stringify(error, null, 2);
+      console.group("%cSale completion error", "color: #dc2626; font-weight: bold");
+      console.error("Error value:");
+      console.dir(error, { depth: null });
+      console.error("Error message:", errorMessage);
+      if (error instanceof Error && error.cause) {
+        console.error("Error cause:");
+        console.dir(error.cause, { depth: null });
+      }
+      console.trace("Error thrown at:");
+      console.groupEnd();
       const persistedSaleId = Number(createdSaleId ?? 0);
       if (persistedSaleId > 0) {
         try {
@@ -236,17 +251,31 @@ export function SalesTransaction() {
             language === "mr"
               ? "विक्री पूर्ण होऊ शकली नाही, त्यामुळे अर्धवट नोंद काढून टाकण्यात आली."
               : "The sale could not be completed cleanly, so the partial entry was rolled back.",
+            {
+              description: errorMessage.slice(0, 160),
+            },
           );
         } catch (rollbackError) {
-          console.error("Error rolling back sale:", rollbackError);
+          const rollbackMsg =
+            rollbackError instanceof Error
+              ? rollbackError.message
+              : String(rollbackError);
+          console.group("%cSale rollback ALSO failed", "color: #b91c1c; font-weight: bold");
+          console.error("Rollback error:", rollbackError);
+          console.groupEnd();
           toast.error(
             language === "mr"
               ? "विक्री पूर्ण होऊ शकली नाही आणि रोलबॅकही अपयशी ठरला."
               : "The sale could not be completed and rollback may be incomplete.",
+            {
+              description: `${errorMessage.slice(0, 100)} · Rollback: ${rollbackMsg.slice(0, 60)}`,
+            },
           );
         }
       } else {
-        toast.error(t("error"));
+        toast.error(language === "mr" ? "विक्री जोडता आली नाही" : "Could not complete sale", {
+          description: errorMessage.slice(0, 220),
+        });
       }
     } finally {
       setIsProcessing(false);

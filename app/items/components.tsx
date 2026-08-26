@@ -42,8 +42,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Trash2, Edit2, Plus, Minus, Search, Package } from "lucide-react";
-import { HelpTooltip, LabelWithTooltip } from "@/components/help-tooltip";
+import { Trash2, Edit2, Plus, Minus, Package, Copy, ChevronDown, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   formatMoney,
@@ -78,6 +77,33 @@ const categoryMarathiLabels: Record<string, string> = {
 
 export function ItemsManagement() {
   const { t, language } = useLanguage();
+  const stockCopy = language === "mr"
+    ? {
+        addItem: "वस्तू जोडा", editItem: "वस्तू संपादित करा", duplicate: "प्रत बनवा — नवीन किंमत प्रकार",
+        duplicateHint: "नवीन किंमत प्रकारासाठी खालील खरेदी किंमत, विक्री किंमत किंवा प्रमाण बदला.",
+        details: "वस्तूची माहिती", basicInfo: "मूलभूत माहिती", priceVariants: "किंमत प्रकार",
+        ready: "स्टॉकमध्ये जोडण्यासाठी तयार", category: "श्रेणी", unit: "एकक",
+        quantity: "किती प्रमाण आहे?", currentStock: "सध्याचा स्टॉक", decrease: "प्रमाण कमी करा", increase: "प्रमाण वाढवा",
+        price: "किंमत", buyingPrice: "खरेदी किंमत", sellingPrice: "विक्री किंमत",
+        profitPerItem: "प्रति वस्तू नफा", profitMargin: "नफा मार्जिन", expiry: "कालबाह्यता",
+        noExpiry: "कालबाह्यता नाही", addExpiry: "कालबाह्यता तारीख जोडा", today: "आज",
+        lowStockLimit: "कमी स्टॉक सूचना मर्यादा", noAlert: "0 म्हणजे सूचना नाही",
+        stockValue: "स्टॉक मूल्य", done: "पूर्ण", saveFirst: "किंमत प्रकार व्यवस्थापित करण्यासाठी आधी वस्तू जतन करा.",
+        update: "वस्तू अपडेट करा", cancel: "रद्द करा",
+      }
+    : {
+        addItem: "Add Item", editItem: "Edit Item", duplicate: "Duplicate — New Price Variant",
+        duplicateHint: "Change buying price, selling price, or quantity below to create a new variant.",
+        details: "Product details", basicInfo: "Basic Info", priceVariants: "Price Variants",
+        ready: "Ready to add to stock", category: "Category", unit: "Unit",
+        quantity: "How many do you have?", currentStock: "Current stock", decrease: "Decrease quantity", increase: "Increase quantity",
+        price: "Price", buyingPrice: "Buying price", sellingPrice: "Selling price",
+        profitPerItem: "Profit per item", profitMargin: "Profit margin", expiry: "Expiry",
+        noExpiry: "No expiry", addExpiry: "Add expiry date", today: "Today",
+        lowStockLimit: "Low stock alert limit", noAlert: "0 means no alert",
+        stockValue: "Stock value", done: "Done", saveFirst: "Save the item first to manage price variants.",
+        update: "Update Item", cancel: "Cancel",
+      };
   const { currentShopId } = useAuth();
   const { items, addItem, updateItem, deleteItem } =
     useSupabaseItems(currentShopId);
@@ -112,10 +138,12 @@ export function ItemsManagement() {
   const [isOpen, setIsOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [deleteId, setDeleteId] = useState<number | null>(null);
-  const [searchTerm, setSearchTerm] = useState("");
+  const [isCloneMode, setIsCloneMode] = useState(false);
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(
     null,
   );
+  const [selectedBrand, setSelectedBrand] = useState<string | null>(null);
   const [selectedExpiryStatus, setSelectedExpiryStatus] = useState<
     string | null
   >(null); // null = All, 'expired', 'expiring', 'notExpiring', 'hasExpiry', 'noExpiry'
@@ -145,6 +173,21 @@ export function ItemsManagement() {
   const [formErrors, setFormErrors] = useState<
     Partial<Record<keyof ItemFormData, string>>
   >({});
+
+  const brandOptions = useMemo(() => {
+    const brands = new Map<string, string>();
+    for (const item of items) {
+      const key = (item.brand || item.brandMarathi || "").trim().toLocaleLowerCase();
+      if (!key) continue;
+      brands.set(
+        key,
+        language === "mr" ? item.brandMarathi || item.brand : item.brand || item.brandMarathi,
+      );
+    }
+    return Array.from(brands, ([value, label]) => ({ value, label })).sort((a, b) =>
+      a.label.localeCompare(b.label),
+    );
+  }, [items, language]);
 
   const clearFieldError = (field: keyof ItemFormData) => {
     setFormErrors((prev) => {
@@ -207,17 +250,13 @@ export function ItemsManagement() {
     today.setHours(0, 0, 0, 0);
 
     let result = items.filter((item) => {
-      // Search filter
-      const searchLower = searchTerm.toLowerCase();
-      const matchesSearch =
-        item.name?.toLowerCase().includes(searchLower) ||
-        false ||
-        item.nameMarathi?.toLowerCase().includes(searchLower) ||
-        false;
-
       // Category filter
       const matchesCategory =
         selectedCategoryId === null || item.categoryId === selectedCategoryId;
+
+      const matchesBrand =
+        selectedBrand === null ||
+        (item.brand || item.brandMarathi || "").trim().toLocaleLowerCase() === selectedBrand;
 
       // Expiry status filter
       let matchesExpiry = true;
@@ -255,7 +294,7 @@ export function ItemsManagement() {
         else if (selectedStockStatus === "inStock") matchesStock = isInStock;
       }
 
-      return matchesSearch && matchesCategory && matchesExpiry && matchesStock;
+      return matchesCategory && matchesBrand && matchesExpiry && matchesStock;
     });
 
     // Sorting
@@ -298,8 +337,8 @@ export function ItemsManagement() {
     return result;
   }, [
     items,
-    searchTerm,
     selectedCategoryId,
+    selectedBrand,
     selectedExpiryStatus,
     selectedStockStatus,
     sortBy,
@@ -342,6 +381,88 @@ export function ItemsManagement() {
     }).length;
   }, [items]);
 
+  const groupedItems = useMemo(() => {
+    const groups = new Map<string, Array<(typeof filteredItems)[number]>>();
+    const standalone: Array<(typeof filteredItems)[number]> = [];
+
+    for (const item of filteredItems) {
+      // Brand is intentionally distinct from category: it is the useful unit
+      // for a supplier/order list, while category remains the product filter.
+      const brandKey = (item.brand || item.brandMarathi || "")
+        .trim()
+        .toLocaleLowerCase();
+      if (!brandKey) {
+        standalone.push(item);
+        continue;
+      }
+      const groupKey = `brand:${brandKey}`;
+      if (!groups.has(groupKey)) groups.set(groupKey, []);
+      groups.get(groupKey)!.push(item);
+    }
+
+    return { groups: Array.from(groups.entries()), standalone };
+  }, [filteredItems]);
+
+  const toggleGroup = (key: string) => {
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  type RenderEntry =
+    | { kind: "groupHeader"; key: string; brand: string; count: number; reorderCount: number; totalStockValue: number }
+    | { kind: "item"; item: (typeof filteredItems)[number]; groupKey?: string };
+
+  const renderList: RenderEntry[] = useMemo(() => {
+    const list: RenderEntry[] = [];
+    const groupSummaries = groupedItems.groups.map(([groupKey, itemsInBrand]) => {
+      const groupItems = [...itemsInBrand].sort((a, b) => {
+        const urgency = (item: (typeof filteredItems)[number]) =>
+          Number(item.quantity || 0) <= 0
+            ? 0
+            : Number(item.quantity || 0) <= Number(item.lowStockLimit || 0)
+              ? 1
+              : 2;
+        return urgency(a) - urgency(b);
+      });
+      const first = groupItems[0];
+      const brand =
+        (language === "mr" ? first.brandMarathi || first.brand : first.brand || first.brandMarathi) || "";
+      const reorderCount = groupItems.filter(
+        (item) => Number(item.quantity || 0) <= Number(item.lowStockLimit || 0),
+      ).length;
+      const totalStockValue = groupItems.reduce(
+        (sum, item) => sum + Number(item.quantity || 0) * Number(item.buyPrice || 0),
+        0,
+      );
+      return { groupKey, groupItems, brand, reorderCount, totalStockValue };
+    }).sort((a, b) => b.reorderCount - a.reorderCount || a.brand.localeCompare(b.brand));
+
+    for (const { groupKey, groupItems, brand, reorderCount, totalStockValue } of groupSummaries) {
+      if (groupItems.length === 0) continue;
+      list.push({
+        kind: "groupHeader",
+        key: groupKey,
+        brand: String(brand),
+        count: groupItems.length,
+        reorderCount,
+        totalStockValue,
+      });
+      for (const gi of groupItems) {
+        list.push({ kind: "item", item: gi, groupKey });
+      }
+    }
+
+    for (const item of groupedItems.standalone) {
+      list.push({ kind: "item", item });
+    }
+
+    return list;
+  }, [groupedItems, language]);
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const itemId = Number(params.get("focusItemId"));
@@ -350,8 +471,8 @@ export function ItemsManagement() {
     if (!Number.isFinite(itemId) || itemId <= 0) return;
 
     setFocusedItemId(itemId);
-    setSearchTerm("");
     setSelectedCategoryId(null);
+    setSelectedBrand(null);
 
     if (filter === "lowStock") {
       setSelectedStockStatus("lowStock");
@@ -381,12 +502,17 @@ export function ItemsManagement() {
     };
   }, [filteredItems, focusedItemId]);
 
-  const handleOpenDialog = (item?: (typeof items)[0]) => {
+  const handleOpenDialog = (item?: (typeof items)[0], cloneMode = false) => {
     setActiveTab("basic");
     setShowProductDetails(!item);
     setShowExpiryPicker(Boolean(item?.expiryDate));
+    setIsCloneMode(cloneMode);
     if (item) {
-      setEditingId(item.id || null);
+      if (cloneMode) {
+        setEditingId(null);
+      } else {
+        setEditingId(item.id || null);
+      }
       setFormData({
         name: item.name,
         nameMarathi: item.nameMarathi || "",
@@ -419,6 +545,13 @@ export function ItemsManagement() {
     setIsOpen(true);
   };
 
+  const handleCloneItem = (item: (typeof items)[0]) => {
+    handleOpenDialog(item, true);
+    const cloneName =
+      language === "mr" ? item.nameMarathi || item.name : item.name || item.nameMarathi;
+    toast.success(`Duplicating ${cloneName}… change buy/sell/qty and save.`);
+  };
+
   const resetForm = () => {
     setActiveTab("basic");
     setFormData({
@@ -435,6 +568,7 @@ export function ItemsManagement() {
       lowStockLimit: 0,
     });
     setEditingId(null);
+    setIsCloneMode(false);
     setShowProductDetails(true);
     setShowExpiryPicker(false);
     setIsOpen(false);
@@ -508,9 +642,19 @@ export function ItemsManagement() {
         }
         toast.success(
           language === "mr"
-            ? `${savedName} stock मध्ये जोडले`
-            : `${savedName} added to stock`,
-          { description: lowStockDescription },
+            ? isCloneMode
+              ? `${savedName} नवीन किंमत रूपात जोडले`
+              : `${savedName} stock मध्ये जोडले`
+            : isCloneMode
+              ? `${savedName} — new price variant saved`
+              : `${savedName} added to stock`,
+          {
+            description: isCloneMode
+              ? language === "mr"
+                ? "क्लोन केलेले वस्तू आता स्वतंत्र आहे"
+                : "Cloned variant is now independent"
+              : lowStockDescription,
+          },
         );
       }
       resetForm();
@@ -585,8 +729,8 @@ export function ItemsManagement() {
   };
 
   const clearFilters = () => {
-    setSearchTerm("");
     setSelectedCategoryId(null);
+    setSelectedBrand(null);
     setSelectedExpiryStatus(null);
     setSelectedStockStatus(null);
     setSortBy("name-asc");
@@ -634,19 +778,19 @@ export function ItemsManagement() {
 
       <div className="grid grid-cols-3 gap-3">
         <div className="rounded-2xl border bg-card p-3 shadow-sm">
-          <p className="text-xs text-muted-foreground">Stock value</p>
+          <p className="text-xs text-muted-foreground">{stockCopy.stockValue}</p>
           <p className="mt-1 truncate text-base font-bold text-primary">
             ₹{formatMoney(totalStockValue)}
           </p>
         </div>
         <div className="rounded-2xl border bg-card p-3 shadow-sm">
-          <p className="text-xs text-muted-foreground">Low stock</p>
+          <p className="text-xs text-muted-foreground">{language === "mr" ? "कमी स्टॉक" : "Low stock"}</p>
           <p className="mt-1 text-xl font-bold text-orange-700">
             {lowStockCount}
           </p>
         </div>
         <div className="rounded-2xl border bg-card p-3 shadow-sm">
-          <p className="text-xs text-muted-foreground">Out of stock</p>
+          <p className="text-xs text-muted-foreground">{language === "mr" ? "स्टॉक संपला" : "Out of stock"}</p>
           <p className="mt-1 text-xl font-bold text-red-700">
             {outOfStockCount}
           </p>
@@ -664,15 +808,19 @@ export function ItemsManagement() {
               className="h-12 w-full gap-2 rounded-xl text-base font-bold sm:w-auto"
             >
               <Plus className="w-4 h-4" />
-              Add Item
+              {stockCopy.addItem}
             </Button>
           </DialogTrigger>
           <DialogContent className="inset-0 h-[100dvh] w-full max-w-none translate-x-0 translate-y-0 overflow-x-hidden overflow-y-auto rounded-none border-0 p-4 pt-12 sm:inset-auto sm:top-[50%] sm:left-[50%] sm:h-auto sm:w-full sm:max-w-lg sm:max-h-[90vh] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-lg sm:border sm:p-6">
             <DialogHeader>
               <DialogTitle>
-                {editingId ? "Edit Item" : "Add New Item"}
+                {editingId ? stockCopy.editItem : isCloneMode ? stockCopy.duplicate : stockCopy.addItem}
               </DialogTitle>
-              <DialogDescription>Fill in the details below</DialogDescription>
+              <DialogDescription>
+                {isCloneMode
+                  ? stockCopy.duplicateHint
+                  : stockCopy.details}
+              </DialogDescription>
             </DialogHeader>
 
             <Tabs
@@ -681,9 +829,9 @@ export function ItemsManagement() {
               className="w-full"
             >
               <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="basic">Basic Info</TabsTrigger>
+                <TabsTrigger value="basic">{stockCopy.basicInfo}</TabsTrigger>
                 <TabsTrigger value="pricing" disabled={!editingId}>
-                  Price Variants
+                  {stockCopy.priceVariants}
                 </TabsTrigger>
               </TabsList>
 
@@ -707,7 +855,7 @@ export function ItemsManagement() {
                         <p className="mt-1 text-sm text-muted-foreground">
                           {language === "mr"
                             ? "स्टॉकमध्ये जोडण्यासाठी तयार"
-                            : "Ready to add to stock"}
+                            : stockCopy.ready}
                         </p>
                         <p className="mt-2 text-xs font-semibold text-primary">
                           {getUnitName(formData.unitId)}
@@ -716,7 +864,7 @@ export function ItemsManagement() {
                     </div>
 
                     <div className="mt-6 space-y-4 rounded-2xl border bg-muted/30 p-4">
-                      <p className="text-sm font-bold">Product details</p>
+                      <p className="text-sm font-bold">{stockCopy.details}</p>
                       <label className="block text-sm font-semibold">
                         {language === "mr" ? "वस्तूचे नाव" : "Item name"}{" "}
                         <span className="text-destructive">*</span>
@@ -767,7 +915,7 @@ export function ItemsManagement() {
                       </label>
                       <div className="grid grid-cols-2 gap-3">
                         <label className="min-w-0 text-xs font-semibold sm:text-sm">
-                          Category
+                          {stockCopy.category}
                           <Select
                             value={formData.categoryId.toString()}
                             onValueChange={(value) =>
@@ -797,7 +945,7 @@ export function ItemsManagement() {
                           </Select>
                         </label>
                         <label className="min-w-0 text-xs font-semibold sm:text-sm">
-                          Unit
+                          {stockCopy.unit}
                           <Select
                             value={formData.unitId.toString()}
                             onValueChange={(value) =>
@@ -828,10 +976,10 @@ export function ItemsManagement() {
                     <section className="mt-7">
                       <div className="flex items-center justify-between">
                         <p className="text-sm font-bold">
-                          How many do you have?
+                          {stockCopy.quantity}
                         </p>
                         <span className="text-xs font-medium text-muted-foreground">
-                          Current stock
+                          {stockCopy.currentStock}
                         </span>
                       </div>
                       <div className="mt-3 flex items-center justify-between rounded-2xl border bg-muted/70 p-2">
@@ -839,7 +987,7 @@ export function ItemsManagement() {
                           type="button"
                           variant="ghost"
                           size="icon"
-                          aria-label="Decrease quantity"
+                          aria-label={stockCopy.decrease}
                           className="h-11 w-11 rounded-xl bg-background shadow-sm"
                           onClick={() =>
                             setFormData((value) => ({
@@ -860,7 +1008,7 @@ export function ItemsManagement() {
                           type="button"
                           variant="ghost"
                           size="icon"
-                          aria-label="Increase quantity"
+                          aria-label={stockCopy.increase}
                           className="h-11 w-11 rounded-xl bg-primary text-primary-foreground shadow-sm hover:bg-primary/90 hover:text-primary-foreground"
                           onClick={() =>
                             setFormData((value) => ({
@@ -875,10 +1023,10 @@ export function ItemsManagement() {
                     </section>
 
                     <section className="mt-7 border-t pt-6">
-                      <p className="text-sm font-bold">Price</p>
+                      <p className="text-sm font-bold">{stockCopy.price}</p>
                       <div className="mt-3 grid grid-cols-2 gap-3">
                         <label className="min-w-0 text-xs font-semibold sm:text-sm">
-                          Buying price{" "}
+                          {stockCopy.buyingPrice}{" "}
                           <span className="text-destructive">*</span>
                           <div className="relative mt-2">
                             <span className="absolute left-3 top-2.5 text-muted-foreground">
@@ -902,7 +1050,7 @@ export function ItemsManagement() {
                           </div>
                         </label>
                         <label className="min-w-0 text-xs font-semibold sm:text-sm">
-                          Selling price{" "}
+                          {stockCopy.sellingPrice}{" "}
                           <span className="text-destructive">*</span>
                           <div className="relative mt-2">
                             <span className="absolute left-3 top-2.5 text-muted-foreground">
@@ -930,7 +1078,7 @@ export function ItemsManagement() {
                         <div className="mt-3 grid grid-cols-2 gap-2 rounded-xl bg-emerald-50 p-3 text-emerald-800">
                           <div className="min-w-0 rounded-lg bg-white/70 px-3 py-2">
                             <p className="text-xs font-medium text-emerald-700">
-                              Profit per item
+                              {stockCopy.profitPerItem}
                             </p>
                             <p className="mt-0.5 text-base font-bold tabular-nums">
                               ₹
@@ -944,7 +1092,7 @@ export function ItemsManagement() {
                           </div>
                           <div className="min-w-0 rounded-lg bg-white/70 px-3 py-2">
                             <p className="text-xs font-medium text-emerald-700">
-                              Profit margin
+                              {stockCopy.profitMargin}
                             </p>
                             <p className="mt-0.5 text-base font-bold tabular-nums">
                               {formatPercent(
@@ -961,7 +1109,7 @@ export function ItemsManagement() {
                     </section>
 
                     <section className="mt-7 border-t pt-6">
-                      <p className="text-sm font-bold">Expiry</p>
+                      <p className="text-sm font-bold">{stockCopy.expiry}</p>
                       <div className="mt-3 grid grid-cols-2 gap-2">
                         <Button
                           type="button"
@@ -975,7 +1123,7 @@ export function ItemsManagement() {
                             }));
                           }}
                         >
-                          No expiry
+                          {stockCopy.noExpiry}
                         </Button>
                         <Button
                           type="button"
@@ -983,7 +1131,7 @@ export function ItemsManagement() {
                           variant={showExpiryPicker ? "default" : "outline"}
                           onClick={() => setShowExpiryPicker(true)}
                         >
-                          Add expiry date
+                          {stockCopy.addExpiry}
                         </Button>
                       </div>
                       {showExpiryPicker && (
@@ -995,7 +1143,7 @@ export function ItemsManagement() {
                               size="sm"
                               onClick={() => setExpiryInDays(0)}
                             >
-                              Today
+                              {stockCopy.today}
                             </Button>
                             <Button
                               type="button"
@@ -1030,7 +1178,7 @@ export function ItemsManagement() {
 
                     <section className="mt-7 border-t pt-6">
                       <label className="block text-sm font-bold">
-                        Low stock alert limit
+                        {stockCopy.lowStockLimit}
                         <div className="mt-2 flex items-center gap-2">
                           <Input
                             type="number"
@@ -1052,14 +1200,14 @@ export function ItemsManagement() {
                           </span>
                         </div>
                         <span className="mt-2 block text-xs font-normal text-muted-foreground">
-                          0 means no alert
+                          {stockCopy.noAlert}
                         </span>
                       </label>
                     </section>
                     <div className="mt-5 grid grid-cols-2 gap-3">
                       <div className="min-w-0 rounded-xl bg-muted p-3">
                         <p className="text-xs text-muted-foreground">
-                          Stock value
+                          {stockCopy.stockValue}
                         </p>
                         <p className="mt-1 truncate font-semibold">
                           ₹ {formatMoney(formData.quantity * formData.buyPrice)}
@@ -1067,7 +1215,7 @@ export function ItemsManagement() {
                       </div>
                       <div className="min-w-0 rounded-xl bg-muted p-3">
                         <p className="text-xs text-muted-foreground">
-                          Profit margin
+                          {stockCopy.profitMargin}
                         </p>
                         <p className="mt-1 font-semibold text-green-600">
                           {formData.buyPrice > 0
@@ -1527,7 +1675,6 @@ export function ItemsManagement() {
                     )}
                     units={units}
                     wholesaleCost={formData.buyPrice}
-                    wholesaleQty={formData.quantity}
                     wholesaleUnitId={formData.unitId}
                     onAdd={handleAddPriceTier}
                     onDelete={handleDeletePriceTier}
@@ -1535,7 +1682,7 @@ export function ItemsManagement() {
                 )}
                 {!editingId && (
                   <div className="rounded-2xl border border-border/70 bg-muted/10 p-4 text-sm text-muted-foreground">
-                    Save the item first to manage price variants.
+                    {stockCopy.saveFirst}
                   </div>
                 )}
               </TabsContent>
@@ -1547,7 +1694,7 @@ export function ItemsManagement() {
                   onClick={resetForm}
                   className="h-12 w-full rounded-xl text-base font-bold"
                 >
-                  Done
+                  {stockCopy.done}
                 </Button>
               ) : (
                 <>
@@ -1557,14 +1704,20 @@ export function ItemsManagement() {
                     onClick={resetForm}
                     className="h-12"
                   >
-                    Cancel
+                    {stockCopy.cancel}
                   </Button>
                   <Button
                     type="button"
                     onClick={handleSave}
                     className="h-12 flex-1 rounded-xl text-base font-bold"
                   >
-                    {editingId ? "Update Item" : "Add Item"}
+                    {editingId
+                      ? stockCopy.update
+                      : isCloneMode
+                        ? language === "mr"
+                          ? "नवीन रूपात जोडा"
+                          : "Save as New Variant"
+                        : stockCopy.addItem}
                   </Button>
                 </>
               )}
@@ -1574,18 +1727,6 @@ export function ItemsManagement() {
       </div>
 
       <div className="space-y-3">
-        <div className="flex gap-2">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input
-              placeholder={t("search_items")}
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10"
-            />
-          </div>
-        </div>
-
         <div className="flex gap-2 overflow-x-auto rounded-2xl border bg-card p-2 pb-2 shadow-sm">
           <button
             type="button"
@@ -1620,8 +1761,22 @@ export function ItemsManagement() {
           ))}
         </div>
 
-        <div className="hidden">
-          {/* Expiry Status Filter */}
+        <div className="grid grid-cols-2 gap-2">
+          <Select
+            value={selectedBrand || "all"}
+            onValueChange={(value) => setSelectedBrand(value === "all" ? null : value)}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder={language === "mr" ? "ब्रँड" : "Brand"} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">{language === "mr" ? "सर्व ब्रँड" : "All brands"}</SelectItem>
+              {brandOptions.map((brand) => (
+                <SelectItem key={brand.value} value={brand.value}>{brand.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
           <Select
             value={selectedExpiryStatus || "all"}
             onValueChange={(value) =>
@@ -1629,19 +1784,18 @@ export function ItemsManagement() {
             }
           >
             <SelectTrigger className="w-full">
-              <SelectValue placeholder="Expiry Status" />
+              <SelectValue placeholder={language === "mr" ? "कालबाह्यता" : "Expiry"} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All</SelectItem>
-              <SelectItem value="expired">Expired</SelectItem>
-              <SelectItem value="expiring">Near Expiry</SelectItem>
-              <SelectItem value="notExpiring">Not Expiring Soon</SelectItem>
-              <SelectItem value="hasExpiry">Has Expiry Date</SelectItem>
-              <SelectItem value="noExpiry">No Expiry Date</SelectItem>
+              <SelectItem value="all">{language === "mr" ? "सर्व कालबाह्यता" : "All expiry"}</SelectItem>
+              <SelectItem value="expired">{language === "mr" ? "कालबाह्य" : "Expired"}</SelectItem>
+              <SelectItem value="expiring">{language === "mr" ? "लवकर कालबाह्य" : "Near expiry"}</SelectItem>
+              <SelectItem value="notExpiring">{language === "mr" ? "लवकर कालबाह्य नाही" : "Not expiring soon"}</SelectItem>
+              <SelectItem value="hasExpiry">{language === "mr" ? "कालबाह्यता तारीख आहे" : "Has expiry date"}</SelectItem>
+              <SelectItem value="noExpiry">{language === "mr" ? "कालबाह्यता तारीख नाही" : "No expiry date"}</SelectItem>
             </SelectContent>
           </Select>
 
-          {/* Stock Status Filter */}
           <Select
             value={selectedStockStatus || "all"}
             onValueChange={(value) =>
@@ -1649,17 +1803,16 @@ export function ItemsManagement() {
             }
           >
             <SelectTrigger className="w-full">
-              <SelectValue placeholder="Stock Status" />
+              <SelectValue placeholder={language === "mr" ? "स्टॉक स्थिती" : "Stock status"} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All</SelectItem>
-              <SelectItem value="lowStock">Low Stock</SelectItem>
-              <SelectItem value="outOfStock">Out of Stock</SelectItem>
-              <SelectItem value="inStock">In Stock</SelectItem>
+              <SelectItem value="all">{language === "mr" ? "सर्व स्टॉक" : "All stock"}</SelectItem>
+              <SelectItem value="lowStock">{language === "mr" ? "कमी स्टॉक" : "Low stock"}</SelectItem>
+              <SelectItem value="outOfStock">{language === "mr" ? "स्टॉक संपला" : "Out of stock"}</SelectItem>
+              <SelectItem value="inStock">{language === "mr" ? "स्टॉक उपलब्ध" : "In stock"}</SelectItem>
             </SelectContent>
           </Select>
 
-          {/* Sort By */}
           <Select value={sortBy} onValueChange={(value) => setSortBy(value)}>
             <SelectTrigger className="w-full">
               <SelectValue placeholder="Sort By" />
@@ -1680,10 +1833,10 @@ export function ItemsManagement() {
             variant="outline"
             size="sm"
             onClick={clearFilters}
-            className="w-full"
+            className="col-span-2 w-full"
             disabled={
-              !searchTerm &&
               selectedCategoryId === null &&
+              selectedBrand === null &&
               selectedExpiryStatus === null &&
               selectedStockStatus === null &&
               sortBy === "name-asc"
@@ -1693,17 +1846,12 @@ export function ItemsManagement() {
           </Button>
         </div>
 
-        {(searchTerm ||
-          selectedCategoryId ||
+        {(selectedCategoryId ||
+          selectedBrand ||
           selectedExpiryStatus ||
           selectedStockStatus ||
           sortBy !== "name-asc") && (
           <div className="hidden">
-            {searchTerm && (
-              <span className="rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-sm text-slate-700">
-                Search: {searchTerm}
-              </span>
-            )}
             {selectedCategoryId !== null && (
               <span className="rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-sm text-slate-700">
                 Category: {getCategoryName(selectedCategoryId)}
@@ -1767,13 +1915,51 @@ export function ItemsManagement() {
         <Card className="border-dashed">
           <CardContent className="pt-8 pb-8 text-center">
             <p className="text-muted-foreground">
-              {searchTerm ? "No items found" : "No items added yet"}
+              {language === "mr" ? "कोणतीही वस्तू मिळाली नाही" : "No items found"}
             </p>
           </CardContent>
         </Card>
       ) : (
         <div className="grid grid-cols-1 gap-3">
-          {filteredItems.map((item) => {
+          {renderList.map((entry, listIndex) => {
+            if (entry.kind === "groupHeader") {
+              const isCollapsed = collapsedGroups.has(entry.key);
+              return (
+                <button
+                  key={`gh-${entry.key}-${listIndex}`}
+                  type="button"
+                  onClick={() => toggleGroup(entry.key)}
+                  className="flex items-center justify-between gap-3 rounded-2xl border border-indigo-200 bg-indigo-50/60 p-3 text-left shadow-sm hover:bg-indigo-100/70"
+                >
+                  <div className="min-w-0 flex items-center gap-3">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-100 text-indigo-700">
+                      {isCollapsed ? (
+                        <ChevronRight className="h-5 w-5" />
+                      ) : (
+                        <ChevronDown className="h-5 w-5" />
+                      )}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-bold text-indigo-900">
+                        {entry.brand}
+                      </p>
+                      <p className="truncate text-xs font-medium text-indigo-700">
+                        {entry.count} {language === "mr" ? "वस्तू" : "products"} · {language === "mr" ? "स्टॉक" : "Stock"} ₹{formatMoney(entry.totalStockValue)}
+                      </p>
+                    </div>
+                  </div>
+                  {entry.reorderCount > 0 && (
+                    <span className="shrink-0 rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-bold text-amber-800">
+                      {entry.reorderCount} {language === "mr" ? "पुन्हा मागवायच्या" : "to reorder"}
+                    </span>
+                  )}
+                </button>
+              );
+            }
+            if (entry.groupKey && collapsedGroups.has(entry.groupKey)) {
+              return null;
+            }
+            const item = entry.item;
             const itemPriceTiers = priceTiers.filter(
               (tier) => tier.itemId === item.id,
             );
@@ -2037,6 +2223,15 @@ export function ItemsManagement() {
                         >
                           <Edit2 className="w-3 h-3" />
                           {t("edit")}
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleCloneItem(item)}
+                          className="flex-1 gap-1 h-8 border-indigo-200 text-indigo-700 hover:bg-indigo-50 hover:text-indigo-700"
+                        >
+                          <Copy className="w-3 h-3" />
+                          {language === "mr" ? "प्रत" : "Clone"}
                         </Button>
                         <AlertDialog
                           open={deleteId === item.id}

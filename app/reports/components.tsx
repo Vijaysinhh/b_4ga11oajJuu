@@ -1,17 +1,27 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
+  AlertTriangle,
+  ArrowRight,
   BadgeIndianRupee,
   BarChart3,
   Boxes,
+  Calendar,
   CreditCard,
+  Clock,
+  Download,
   Printer,
   Scale,
+  TrendingDown,
   TrendingUp,
+  Wallet,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { useAuth } from "@/providers/auth-provider";
 import { useLanguage } from "@/providers/language-provider";
 import {
@@ -39,6 +49,7 @@ import { cn, dateKey } from "@/lib/utils";
 type Period = "today" | "month" | "sixMonths" | "year" | "specificMonth";
 type Tone = "green" | "amber" | "red" | "blue" | "purple" | "slate";
 export type ReportSection = "overview" | "sales" | "stock" | "udhari";
+type CopyText = (typeof copy)["en"] | (typeof copy)["mr"];
 
 const copy = {
   en: {
@@ -120,6 +131,36 @@ const copy = {
     lossBreakdownHint: "Find the products responsible for realized stock loss.",
     marginLeak: "High sales, low profit",
     marginLeakHint: "These products bring revenue but weaken your margin.",
+    period: "Period",
+    chooseMonth: "Choose month",
+    chooseDate: "Choose date",
+    quickStats: "Quick look",
+    allBills: "All bills",
+    noBills: "No bills yet in this period.",
+    currentStock: "Current stock (today)",
+    pendingNow: "Pending right now",
+    notPeriod: "Not period-based",
+    moneyIn: "Money in",
+    moneyInNote: "Cash + online + partial",
+    bestDay: "Best day",
+    weakestDay: "Quietest day",
+    peakHour: "Peak hour",
+    weekdayMix: "Weekday mix",
+    daysCover: "Stock cover",
+    daysCoverNote: "Days inventory may last at this period's sales pace",
+    restockCount: "Need restock",
+    viewSection: "Open section",
+    exportCsv: "Export CSV",
+    showMore: "Show all bills",
+    showLess: "Show fewer",
+    billsShown: "Showing",
+    thisPeriod: "This period",
+    snapshot: "Shop snapshot",
+    hourlySales: "Hourly sales",
+    monthlyTrend: "Monthly trend",
+    netCollection: "Collected vs given",
+    stillPending: "Still sitting expired",
+    periodLoss: "Written off this period",
   },
   mr: {
     title: "व्यवसाय अहवाल",
@@ -200,6 +241,36 @@ const copy = {
     lossBreakdownHint: "झालेला स्टॉक तोटा कोणत्या वस्तूंमुळे झाला ते पहा.",
     marginLeak: "जास्त विक्री, कमी नफा",
     marginLeakHint: "या वस्तू विक्री आणतात पण मार्जिन कमी करतात.",
+    period: "कालावधी",
+    chooseMonth: "महिना निवडा",
+    chooseDate: "दिनांक निवडा",
+    quickStats: "झटपट आढावा",
+    allBills: "सर्व बिले",
+    noBills: "या कालावधीसाठी अजून बिले नाहीत.",
+    currentStock: "सध्याचा स्टॉक (आज)",
+    pendingNow: "सध्या बाकी",
+    notPeriod: "कालावधी आधारित नाही",
+    moneyIn: "आलेले पैसे",
+    moneyInNote: "रोख + ऑनलाइन + अंशतः",
+    bestDay: "सर्वोत्तम दिवस",
+    weakestDay: "शांत दिवस",
+    peakHour: "सर्वाधिक विक्री तास",
+    weekdayMix: "आठवड्यातील वाटा",
+    daysCover: "स्टॉक किती दिवस पुरेल",
+    daysCoverNote: "या कालावधीच्या विक्री वेगाने स्टॉक किती दिवस चालेल",
+    restockCount: "स्टॉक भरायचे",
+    viewSection: "विभाग उघडा",
+    exportCsv: "CSV काढा",
+    showMore: "सगळी बिले दाखवा",
+    showLess: "कमी दाखवा",
+    billsShown: "दाखवत आहे",
+    thisPeriod: "हा कालावधी",
+    snapshot: "दुकान झलक",
+    hourlySales: "तासानुसार विक्री",
+    monthlyTrend: "महिन्यानुसार ट्रेंड",
+    netCollection: "वसुली विरुद्ध दिलेली उधारी",
+    stillPending: "अजून कालबाह्य स्टॉक",
+    periodLoss: "या कालावधीत लिहून काढलेले",
   },
 } as const;
 
@@ -239,6 +310,38 @@ function getPeriodStart(
   return start;
 }
 
+function getPeriodEnd(
+  period: Period,
+  selectedDate: string,
+  selectedMonth: string,
+) {
+  if (period === "specificMonth" && selectedMonth) {
+    const [year, month] = selectedMonth.split("-").map(Number);
+    const lastDay = new Date(year, month, 0);
+    const today = new Date();
+    today.setHours(23, 59, 59, 999);
+    return lastDay.getTime() > today.getTime() ? today : lastDay;
+  }
+  const end = selectedDate
+    ? new Date(`${selectedDate}T23:59:59`)
+    : new Date();
+  end.setHours(23, 59, 59, 999);
+  return end;
+}
+
+function periodDayCount(
+  period: Period,
+  selectedDate: string,
+  selectedMonth: string,
+) {
+  const start = getPeriodStart(period, selectedDate, selectedMonth);
+  const end = getPeriodEnd(period, selectedDate, selectedMonth);
+  return Math.max(
+    1,
+    Math.round((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000)) + 1,
+  );
+}
+
 function inPeriod(
   date: string | undefined,
   period: Period,
@@ -253,6 +356,57 @@ function inPeriod(
   const saleDate = new Date(`${date}T12:00:00`);
   if (Number.isNaN(saleDate.getTime())) return false;
   return saleDate >= getPeriodStart(period, selectedDate, selectedMonth);
+}
+
+function inPeriodTimestamp(
+  timestamp: number | undefined,
+  period: Period,
+  selectedDate: string,
+  selectedMonth: string,
+) {
+  if (!timestamp) return false;
+  return inPeriod(dateKey(new Date(timestamp)), period, selectedDate, selectedMonth);
+}
+
+function paymentLabel(
+  method: string | undefined,
+  t: CopyText,
+  language: "en" | "mr",
+) {
+  const value = String(method || "").toLowerCase();
+  if (value === "udhar" || value === "udhari") return t.credit;
+  if (value === "cash") return t.cash;
+  if (value === "partial") return t.partial;
+  if (value === "card" || value === "upi" || value === "online") {
+    return textFor(language, "Online", "ऑनलाइन");
+  }
+  return method || "—";
+}
+
+function weekdayLabel(date: string, language: "en" | "mr") {
+  const day = new Date(`${date}T12:00:00`).getDay();
+  const en = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const mr = ["रवि", "सोम", "मंगळ", "बुध", "गुरु", "शुक्र", "शनि"];
+  return language === "mr" ? mr[day] : en[day];
+}
+
+function downloadCsv(filename: string, rows: string[][]) {
+  const csv = rows
+    .map((row) =>
+      row
+        .map((cell) => `"${String(cell ?? "").replace(/"/g, '""')}"`)
+        .join(","),
+    )
+    .join("\n");
+  const blob = new Blob(["\uFEFF" + csv], {
+    type: "text/csv;charset=utf-8;",
+  });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
 function getPreviousPeriodSales(
@@ -303,24 +457,130 @@ function MetricCard({
   note,
   tone,
   icon: Icon,
+  footnote,
 }: {
   label: string;
   value: string;
   note: string;
   tone: Tone;
   icon: typeof BadgeIndianRupee;
+  footnote?: React.ReactNode;
 }) {
   return (
-    <Card className={cn("gap-3 border-2 py-4", metricToneClasses(tone))}>
-      <CardContent className="space-y-2 px-4">
+    <Card className={cn("gap-3 border-2 py-3.5", metricToneClasses(tone))}>
+      <CardContent className="space-y-1.5 px-3 sm:px-4">
         <div className="flex items-center justify-between gap-2">
-          <p className="text-xs font-medium opacity-75">{label}</p>
-          <Icon className="h-4 w-4 opacity-70" />
+          <p className="text-[11px] sm:text-xs font-semibold uppercase tracking-wide opacity-75">{label}</p>
+          <Icon className="h-4 w-4 opacity-65" />
         </div>
-        <div className="text-2xl font-bold tracking-tight">{value}</div>
-        <p className="text-xs opacity-75">{note}</p>
+        <div className="text-xl sm:text-2xl font-bold tracking-tight leading-tight break-all">{value}</div>
+        <p className="text-[11px] sm:text-xs opacity-75 leading-snug">{note}</p>
+        {footnote ? <div className="pt-1">{footnote}</div> : null}
       </CardContent>
     </Card>
+  );
+}
+
+function PeriodSelector({
+  period,
+  selectedDate,
+  selectedMonth,
+  language,
+  t,
+  onNavigate,
+}: {
+  period: Period;
+  selectedDate: string;
+  selectedMonth: string;
+  language: "en" | "mr";
+  t: CopyText;
+  onNavigate: (params: Record<string, string>) => void;
+}) {
+  const searchParams = useSearchParams();
+  const currentQuery = searchParams.toString();
+  const buildHref = (params: Record<string, string>) => {
+    const sp = new URLSearchParams(currentQuery);
+    Object.entries(params).forEach(([k, v]) => sp.set(k, v));
+    const next = sp.toString();
+    return next ? `?${next}` : "";
+  };
+  const periodButtons: Array<[Period, string]> = [
+    ["today", t.today],
+    ["month", t.month],
+    ["sixMonths", t.sixMonths],
+    ["year", t.year],
+    ["specificMonth", t.specificMonth],
+  ];
+  return (
+    <div className="flex flex-col gap-2.5 rounded-2xl border bg-muted/30 p-2.5 sm:p-3">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-muted-foreground">
+          <Calendar className="h-3.5 w-3.5" />
+          {t.period}
+        </div>
+      </div>
+      <div className="flex gap-1 -mx-0.5 px-0.5 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {periodButtons.map(([key, label]) => {
+          const active = period === key;
+          return (
+            <Link
+              key={key}
+              href={buildHref({
+                period: key,
+                ...(key === "specificMonth" && !searchParams.get("month")
+                  ? { month: selectedMonth }
+                  : {}),
+              })}
+              className={cn(
+                "shrink-0 rounded-xl px-3 py-2 text-[12px] sm:text-sm font-semibold transition-all whitespace-nowrap",
+                active
+                  ? "bg-background text-foreground shadow ring-1 ring-border"
+                  : "text-muted-foreground hover:bg-background/70 hover:text-foreground",
+              )}
+              scroll={false}
+            >
+              {label}
+            </Link>
+          );
+        })}
+      </div>
+      {period === "specificMonth" ? (
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
+          <Label
+            htmlFor="rp-month"
+            className="text-[11px] font-medium text-muted-foreground sm:w-auto"
+          >
+            {t.chooseMonth}
+          </Label>
+          <Input
+            id="rp-month"
+            type="month"
+            value={selectedMonth}
+            onChange={(e) =>
+              onNavigate({ period: "specificMonth", month: e.target.value })
+            }
+            className="h-9 text-sm sm:max-w-[220px]"
+          />
+        </div>
+      ) : null}
+      {period === "today" ? (
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
+          <Label
+            htmlFor="rp-date"
+            className="text-[11px] font-medium text-muted-foreground sm:w-auto"
+          >
+            {t.chooseDate}
+          </Label>
+          <Input
+            id="rp-date"
+            type="date"
+            value={selectedDate}
+            onChange={(e) => onNavigate({ period: "today", date: e.target.value })}
+            className="h-9 text-sm sm:max-w-[220px]"
+          />
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -370,35 +630,23 @@ function PaymentPie({
   const onlineDeg = cashDeg + (online / total) * 360;
   const partialDeg = onlineDeg + (partial / total) * 360;
   return (
-    <div className="flex items-center gap-4 rounded-2xl border bg-card/80 p-4">
+    <div className="flex flex-col sm:flex-row items-center sm:items-start gap-3 sm:gap-4 rounded-2xl border bg-card/80 p-3 sm:p-4">
       <div
-        className="h-28 w-28 shrink-0 rounded-full border"
+        className="h-24 w-24 sm:h-28 sm:w-28 shrink-0 rounded-full border"
         style={{
           background: `conic-gradient(#16a34a 0deg ${cashDeg}deg, #2563eb ${cashDeg}deg ${onlineDeg}deg, #a855f7 ${onlineDeg}deg ${partialDeg}deg, #f97316 ${partialDeg}deg 360deg)`,
         }}
       />
-      <div className="grid flex-1 gap-2 text-sm">
+      <div className="grid flex-1 w-full gap-1.5 text-xs sm:text-sm">
         <div className="flex items-center justify-between gap-3">
           <span className="inline-flex items-center gap-2">
             <span className="h-2.5 w-2.5 rounded-full bg-green-600" />
             {labels.cash}
           </span>
-          <strong>
+          <strong className="tabular-nums">
             {money(cash)}{" "}
-            <span className="text-xs font-normal text-muted-foreground">
+            <span className="text-[10px] sm:text-xs font-normal text-muted-foreground">
               ({pct((cash / total) * 100)})
-            </span>
-          </strong>
-        </div>
-        <div className="flex items-center justify-between gap-3">
-          <span className="inline-flex items-center gap-2">
-            <span className="h-2.5 w-2.5 rounded-full bg-purple-500" />
-            {labels.partial}
-          </span>
-          <strong>
-            {money(partial)}{" "}
-            <span className="text-xs font-normal text-muted-foreground">
-              ({pct((partial / total) * 100)})
             </span>
           </strong>
         </div>
@@ -407,10 +655,22 @@ function PaymentPie({
             <span className="h-2.5 w-2.5 rounded-full bg-blue-600" />
             {labels.online}
           </span>
-          <strong>
+          <strong className="tabular-nums">
             {money(online)}{" "}
-            <span className="text-xs font-normal text-muted-foreground">
+            <span className="text-[10px] sm:text-xs font-normal text-muted-foreground">
               ({pct((online / total) * 100)})
+            </span>
+          </strong>
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <span className="inline-flex items-center gap-2">
+            <span className="h-2.5 w-2.5 rounded-full bg-purple-500" />
+            {labels.partial}
+          </span>
+          <strong className="tabular-nums">
+            {money(partial)}{" "}
+            <span className="text-[10px] sm:text-xs font-normal text-muted-foreground">
+              ({pct((partial / total) * 100)})
             </span>
           </strong>
         </div>
@@ -419,9 +679,9 @@ function PaymentPie({
             <span className="h-2.5 w-2.5 rounded-full bg-orange-500" />
             {labels.credit}
           </span>
-          <strong>
+          <strong className="tabular-nums">
             {money(credit)}{" "}
-            <span className="text-xs font-normal text-muted-foreground">
+            <span className="text-[10px] sm:text-xs font-normal text-muted-foreground">
               ({pct((credit / total) * 100)})
             </span>
           </strong>
@@ -439,7 +699,9 @@ export function ReportsDashboard({
   const { currentShopId, currentShop } = useAuth();
   const { language } = useLanguage();
   const searchParams = useSearchParams();
+  const router = useRouter();
   const t = copy[language];
+  const [showAllBills, setShowAllBills] = useState(false);
   const periodParam = searchParams.get("period") as Period | null;
   const period: Period =
     periodParam === "today" ||
@@ -468,6 +730,14 @@ export function ReportsDashboard({
     ["stock", textFor(language, "Stock", "स्टॉक")],
     ["udhari", textFor(language, "Udhari", "उधारी")],
   ];
+
+  const onNavigate = (params: Record<string, string>) => {
+    const sp = new URLSearchParams(searchParams.toString());
+    Object.entries(params).forEach(([k, v]) => sp.set(k, v));
+    const qs = sp.toString();
+    const sectionPart = section === "overview" ? "/reports" : `/reports/${section}`;
+    router.replace(`${sectionPart}${qs ? `?${qs}` : ""}`, { scroll: false });
+  };
 
   const { items, isLoading: itemsLoading } = useItems(currentShopId);
   const { categories, isLoading: categoriesLoading } =
@@ -545,10 +815,80 @@ export function ReportsDashboard({
       current.transactions += 1;
       dailySales.set(sale.date, current);
     });
-    const salesTrend = Array.from(dailySales.entries())
+    const dailyEntries = Array.from(dailySales.entries())
       .sort(([a], [b]) => a.localeCompare(b))
-      .slice(-14)
       .map(([date, values]) => ({ date, ...values }));
+    const useMonthlyTrend = period === "year" || period === "sixMonths";
+    const monthlySales = new Map<
+      string,
+      { revenue: number; profit: number; transactions: number }
+    >();
+    if (useMonthlyTrend) {
+      periodSales.forEach((sale: any) => {
+        const key = String(sale.date || "").slice(0, 7);
+        if (!key) return;
+        const current = monthlySales.get(key) || {
+          revenue: 0,
+          profit: 0,
+          transactions: 0,
+        };
+        current.revenue += safeNumber(sale.subtotal);
+        current.profit += safeNumber(sale.totalProfit);
+        current.transactions += 1;
+        monthlySales.set(key, current);
+      });
+    }
+    const salesTrend = useMonthlyTrend
+      ? Array.from(monthlySales.entries())
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([date, values]) => ({ date, ...values }))
+      : dailyEntries.slice(-14);
+    const bestDay = dailyEntries.reduce(
+      (best: any, day) =>
+        !best || day.revenue > best.revenue ? day : best,
+      null as null | { date: string; revenue: number; profit: number },
+    );
+    const weakestDay = dailyEntries
+      .filter((day) => day.revenue > 0)
+      .reduce(
+        (weakest: any, day) =>
+          !weakest || day.revenue < weakest.revenue ? day : weakest,
+        null as null | { date: string; revenue: number },
+      );
+    const hourlySales = Array.from({ length: 24 }, (_, hour) => ({
+      hour,
+      revenue: 0,
+      transactions: 0,
+    }));
+    if (period === "today") {
+      periodSales.forEach((sale: any) => {
+        const hour = new Date(sale.timestamp).getHours();
+        if (!Number.isFinite(hour)) return;
+        hourlySales[hour].revenue += safeNumber(sale.subtotal);
+        hourlySales[hour].transactions += 1;
+      });
+    }
+    const peakHour = hourlySales.reduce(
+      (peak, slot) => (slot.revenue > peak.revenue ? slot : peak),
+      hourlySales[0],
+    );
+    const weekdayMix = [0, 1, 2, 3, 4, 5, 6].map((day) => ({
+      day,
+      label: weekdayLabel(
+        `1970-01-${String(4 + day).padStart(2, "0")}`,
+        language,
+      ),
+      revenue: 0,
+    }));
+    dailyEntries.forEach((entry) => {
+      const day = new Date(`${entry.date}T12:00:00`).getDay();
+      if (Number.isFinite(day)) weekdayMix[day].revenue += entry.revenue;
+    });
+    weekdayMix.forEach((slot, index) => {
+      slot.label = (language === "mr"
+        ? ["रवि", "सोम", "मंगळ", "बुध", "गुरु", "शुक्र", "शनि"]
+        : ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"])[index];
+    });
     const amountByPayment = (methods: string[]) =>
       periodSales
         .filter((sale: any) => methods.includes(String(sale.paymentMethod)))
@@ -602,7 +942,15 @@ export function ReportsDashboard({
             safeNumber(batch.costPerUnit ?? batch.cost_per_unit),
         0,
       );
-    const stockMovement = stockHistory.reduce(
+    const periodStockHistory = stockHistory.filter((entry: any) =>
+      inPeriodTimestamp(
+        entry.createdAt,
+        period,
+        selectedDate,
+        selectedMonth,
+      ),
+    );
+    const stockMovement = periodStockHistory.reduce(
       (
         summary: {
           purchased: number;
@@ -634,19 +982,28 @@ export function ReportsDashboard({
       },
     );
     const onlineSales = amountByPayment(["card", "upi", "online"]);
-    const realizedLoss = badStockValue + stockMovement.damagedValue;
+    const moneyIn = cashSales + onlineSales + partialSales;
+    const realizedLoss = stockMovement.expiredValue + stockMovement.damagedValue;
+    const daysInPeriod = periodDayCount(period, selectedDate, selectedMonth);
+    const inventoryUnits = items.reduce(
+      (sum: number, item: any) => sum + Math.max(safeNumber(item.quantity), 0),
+      0,
+    );
+    const dailyUnitPace = unitsSold / daysInPeriod;
+    const daysCover =
+      dailyUnitPace > 0 ? inventoryUnits / dailyUnitPace : null;
     const previousPeriod = {
       revenue: previousRevenue,
       profit: previousProfit,
       margin:
         previousRevenue > 0 ? (previousProfit / previousRevenue) * 100 : 0,
     };
-    const percentChange = (current: number, previous: number) =>
-      previous === 0
-        ? current > 0
-          ? 100
-          : 0
-        : ((current - previous) / Math.abs(previous)) * 100;
+    const percentChange = (current: number, previous: number): number | null => {
+      if (previous === 0) return current === 0 ? 0 : null;
+      return ((current - previous) / Math.abs(previous)) * 100;
+    };
+    const absoluteChange = (current: number, previous: number) =>
+      current - previous;
     const agingBuckets = [
       { label: "0-15", amount: 0, customers: 0 },
       { label: "16-30", amount: 0, customers: 0 },
@@ -740,8 +1097,8 @@ export function ReportsDashboard({
         "expired",
       );
     });
-    stockHistory.forEach((entry: any) => {
-      if (entry.type !== "damage") return;
+    periodStockHistory.forEach((entry: any) => {
+      if (entry.type !== "damage" && entry.type !== "expiry") return;
       const quantity = Math.abs(safeNumber(entry.quantityChanged));
       addLoss(
         entry.itemId,
@@ -980,6 +1337,8 @@ export function ReportsDashboard({
         revenue: percentChange(revenue, previousRevenue),
         profit: percentChange(profit, previousProfit),
         margin: margin - previousPeriod.margin,
+        revenueDelta: absoluteChange(revenue, previousRevenue),
+        profitDelta: absoluteChange(profit, previousProfit),
         loss: realizedLoss,
       },
       realizedLoss,
@@ -1000,11 +1359,20 @@ export function ReportsDashboard({
       partialSales,
       creditSales,
       onlineSales,
+      moneyIn,
       totalStockValue,
       expiredProductCount,
       stockMovement,
       badStockValue,
       expiringStockValue,
+      daysCover,
+      daysInPeriod,
+      bestDay,
+      weakestDay,
+      peakHour,
+      weekdayMix,
+      hourlySales,
+      trendGranularity: useMonthlyTrend ? "month" : "day",
       lowStock,
       expiring,
       topSellers,
@@ -1042,6 +1410,24 @@ export function ReportsDashboard({
     batchesLoading ||
     stockHistoryLoading;
 
+  const visibleBills = showAllBills
+    ? report.billRegister
+    : report.billRegister.slice(0, 20);
+
+  const exportBills = () => {
+    downloadCsv(`bills-${periodLabel.replace(/\s+/g, "-")}.csv`, [
+      [t.bill, t.date, t.payment, t.customer, t.sales, t.profit],
+      ...report.billRegister.map((sale: any) => [
+        String(sale.id),
+        String(sale.date || ""),
+        paymentLabel(sale.paymentMethod, t, language),
+        String(sale.creditCustomerName || ""),
+        String(safeNumber(sale.subtotal)),
+        String(safeNumber(sale.totalProfit)),
+      ]),
+    ]);
+  };
+
   if (isLoading) {
     return (
       <PageContainer size="wide">
@@ -1064,183 +1450,124 @@ export function ReportsDashboard({
     <PageContainer size="wide">
       <PageHeader
         title={t.title}
-        description={`${currentShop?.shopName || "Dukan"} · ${periodLabel} · ${t.description}`}
+        description={`${currentShop?.shopName || "Dukan"} · ${periodLabel}`}
         actions={
-          <Button variant="outline" onClick={() => window.print()}>
+          <Button variant="outline" size="sm" onClick={() => window.print()}>
             <Printer className="h-4 w-4" />
-            {t.print}
+            <span className="hidden sm:inline ml-1.5">{t.print}</span>
           </Button>
         }
       />
 
-      <nav
-        className="flex gap-1 overflow-x-auto rounded-2xl border bg-muted/40 p-1"
-        aria-label={textFor(language, "Report sections", "अहवाल विभाग")}
-      >
-        {sectionLinks.map(([href, label]) => (
-          <Link
-            key={href}
-            href={`/reports/${href}${query ? `?${query}` : ""}`}
-            className={cn(
-              "shrink-0 rounded-xl px-4 py-2 text-sm font-semibold transition-all",
-              section === href
-                ? "bg-background text-foreground shadow-sm"
-                : "text-muted-foreground hover:bg-background/70 hover:text-foreground",
-            )}
-          >
-            {label}
-          </Link>
-        ))}
-      </nav>
+      <div className="space-y-3 print:hidden">
+        <nav
+          className="sticky top-[4.5rem] sm:top-3 z-20 flex gap-1 overflow-x-auto rounded-2xl border bg-muted/90 p-1 backdrop-blur [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          aria-label={textFor(language, "Report sections", "अहवाल विभाग")}
+        >
+          {sectionLinks.map(([href, label]) => (
+            <Link
+              key={href}
+              href={`/reports/${href === "overview" ? "" : href}${query ? `?${query}` : ""}`}
+              className={cn(
+                "shrink-0 rounded-xl px-3 sm:px-4 py-2 text-[13px] sm:text-sm font-semibold transition-all whitespace-nowrap",
+                section === href
+                  ? "bg-background text-foreground shadow-sm ring-1 ring-border"
+                  : "text-muted-foreground hover:bg-background/70 hover:text-foreground",
+              )}
+              scroll={false}
+            >
+              {label}
+            </Link>
+          ))}
+        </nav>
+
+        <PeriodSelector
+          period={period}
+          selectedDate={selectedDate}
+          selectedMonth={selectedMonth}
+          language={language}
+          t={t}
+          onNavigate={onNavigate}
+        />
+      </div>
 
       {section === "overview" && (
-        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <section className="grid gap-2.5 grid-cols-2 lg:grid-cols-4">
           <MetricCard
-            label={t.totalStock}
-            value={money(report.totalStockValue)}
-            note={`${formatNumber(items.length)} ${textFor(language, "items in inventory", "वस्तू स्टॉकमध्ये")}`}
-            tone="purple"
-            icon={Boxes}
-          />
-          <MetricCard
-            label={t.cashCredit}
-            value={`${money(report.cashSales)} / ${money(report.creditSales)}`}
-            note={`${t.cash} / ${t.credit}`}
-            tone={report.creditSales > report.cashSales ? "amber" : "green"}
-            icon={CreditCard}
+            label={t.sales}
+            value={money(report.revenue)}
+            note={`${formatNumber(report.transactionCount)} ${textFor(language, "bills", "बिले")} · ${periodLabel}`}
+            tone="blue"
+            icon={BadgeIndianRupee}
           />
           <MetricCard
             label={t.netProfit}
             value={money(report.profit)}
-            note={`${formatNumber(report.transactionCount)} ${textFor(language, "bills", "बिले")}`}
+            note={`${t.margin} ${pct(report.margin)}`}
             tone={report.profit >= 0 ? "green" : "red"}
             icon={TrendingUp}
           />
           <MetricCard
-            label={t.margin}
-            value={pct(report.margin)}
-            note={`${t.sales}: ${money(report.revenue)}`}
-            tone={
-              report.margin >= 15
-                ? "green"
-                : report.margin >= 8
-                  ? "amber"
-                  : "red"
-            }
-            icon={BadgeIndianRupee}
+            label={t.moneyIn}
+            value={money(report.moneyIn)}
+            note={`${t.credit} ${money(report.creditSales)}`}
+            tone={report.creditSales > report.moneyIn ? "amber" : "green"}
+            icon={Wallet}
           />
           <MetricCard
             label={t.averageBill}
             value={money(report.averageBill)}
-            note={`${formatNumber(report.transactionCount)} ${textFor(language, "bills", "बिले")}`}
-            tone="blue"
-            icon={BarChart3}
-          />
-          <MetricCard
-            label={t.unitsSold}
-            value={formatNumber(report.unitsSold)}
-            note={textFor(
-              language,
-              "Across sold items",
-              "विकलेल्या वस्तूंमधून",
-            )}
+            note={`${formatNumber(report.unitsSold)} ${t.unitsSold.toLowerCase()}`}
             tone="slate"
-            icon={Boxes}
+            icon={BarChart3}
           />
         </section>
       )}
 
       {section === "overview" && (
-        <section className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
-          <ListCard
-            title={textFor(language, "Overview", "आढावा")}
-            description={textFor(
-              language,
-              "The most important numbers for this selected report period.",
-              "निवडलेल्या कालावधीतील सर्वात महत्त्वाचे आकडे.",
-            )}
-          >
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="rounded-2xl bg-muted/40 p-4">
-                <p className="text-xs text-muted-foreground">{t.sales}</p>
-                <p className="mt-1 text-2xl font-bold">
-                  {money(report.revenue)}
-                </p>
-              </div>
-              <div className="rounded-2xl bg-muted/40 p-4">
-                <p className="text-xs text-muted-foreground">{t.profit}</p>
-                <p className="mt-1 text-2xl font-bold text-green-700">
-                  {money(report.profit)}
-                </p>
-              </div>
-              <div className="rounded-2xl bg-muted/40 p-4">
-                <p className="text-xs text-muted-foreground">{t.margin}</p>
-                <p className="mt-1 text-2xl font-bold">{pct(report.margin)}</p>
-              </div>
-              <div className="rounded-2xl bg-muted/40 p-4">
-                <p className="text-xs text-muted-foreground">{t.totalStock}</p>
-                <p className="mt-1 text-2xl font-bold">
-                  {money(report.totalStockValue)}
-                </p>
-              </div>
-              <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-red-950">
-                <p className="text-xs opacity-75">
-                  {textFor(language, "Bad stock value", "खराब स्टॉक मूल्य")}
-                </p>
-                <p className="mt-1 text-xl font-bold">
-                  {money(report.badStockValue)}
-                </p>
-              </div>
-              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-950">
-                <p className="text-xs opacity-75">
-                  {textFor(
-                    language,
-                    "Going-expiry value",
-                    "लवकर कालबाह्य मूल्य",
-                  )}
-                </p>
-                <p className="mt-1 text-xl font-bold">
-                  {money(report.expiringStockValue)}
-                </p>
-              </div>
-              <div className="rounded-2xl border border-red-300 bg-red-100 p-4 text-red-950 sm:col-span-2">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-wide opacity-70">
-                      {textFor(
-                        language,
-                        "Realized stock losses",
-                        "झालेला स्टॉक तोटा",
+        <section className="grid gap-3 md:gap-4 lg:grid-cols-[1fr_1fr]">
+          <ListCard title={t.comparison} description={`${t.comparison} · ${periodLabel}`}>
+            <div className="grid gap-2 grid-cols-3">
+              {[
+                [t.sales, report.changes.revenue],
+                [t.profit, report.changes.profit],
+                [t.margin, report.changes.margin],
+              ].map(([label, change]) => {
+                const isMargin = label === t.margin;
+                const positive = Number(change) >= 0;
+                return (
+                  <div
+                    key={String(label)}
+                    className="rounded-xl bg-muted/40 p-2.5 sm:p-3"
+                  >
+                    <div className="flex items-center gap-1 text-[10px] sm:text-xs text-muted-foreground">
+                      {positive && !isMargin ? (
+                        <TrendingUp className="h-3 w-3 text-emerald-600" />
+                      ) : !positive && !isMargin ? (
+                        <TrendingDown className="h-3 w-3 text-red-600" />
+                      ) : null}
+                      {label}
+                    </div>
+                    <div
+                      className={cn(
+                        "mt-1 text-lg sm:text-xl font-bold tabular-nums",
+                        positive ? "text-emerald-700" : "text-red-700",
                       )}
-                    </p>
-                    <p className="mt-1 text-2xl font-bold">
-                      {money(
-                        report.badStockValue +
-                          report.stockMovement.damagedValue,
-                      )}
-                    </p>
-                    <p className="mt-1 text-xs opacity-75">
-                      {t.expiredLoss} {money(report.badStockValue)} ·{" "}
-                      {t.damagedLoss} {money(report.stockMovement.damagedValue)}
-                    </p>
+                    >
+                      {positive ? "+" : ""}
+                      {formatNumber(Number(change))}
+                      <span className="text-[10px] sm:text-xs font-medium text-muted-foreground ml-0.5">
+                        {isMargin
+                          ? textFor(language, " pts", " गुण")
+                          : "%"}
+                      </span>
+                    </div>
                   </div>
-                  <Scale className="h-5 w-5 opacity-70" />
-                </div>
-                <div className="mt-3 flex flex-wrap gap-2 text-xs font-medium">
-                  <span className="rounded-full bg-white/70 px-3 py-1">
-                    {formatNumber(report.expiredProductCount)}{" "}
-                    {t.expiredProducts}
-                  </span>
-                  <span className="rounded-full bg-white/70 px-3 py-1">
-                    {formatNumber(report.stockMovement.expired)} {t.expired}
-                  </span>
-                  <span className="rounded-full bg-white/70 px-3 py-1">
-                    {formatNumber(report.stockMovement.damaged)} {t.damaged}
-                  </span>
-                </div>
-              </div>
+                );
+              })}
             </div>
           </ListCard>
+
           <ListCard title={t.paymentSplit} description={t.cashCredit}>
             <PaymentPie
               cash={report.cashSales}
@@ -1259,76 +1586,239 @@ export function ReportsDashboard({
       )}
 
       {section === "overview" && (
-        <section className="grid gap-4 lg:grid-cols-[1.3fr_0.7fr]">
-          <ListCard
-            title={t.comparison}
-            description={textFor(
-              language,
-              "See whether the selected period is moving in the right direction.",
-              "निवडलेला कालावधी योग्य दिशेने जात आहे का ते पहा.",
-            )}
+        <section className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
+          <Link
+            href={`/reports/sales${query ? `?${query}` : ""}`}
+            className="rounded-2xl border bg-card p-3 sm:p-4 hover:border-primary/40 transition-colors"
           >
-            <div className="grid gap-2 sm:grid-cols-3">
-              {[
-                [t.sales, report.changes.revenue, "blue"],
-                [t.profit, report.changes.profit, "green"],
-                [t.margin, report.changes.margin, "amber"],
-              ].map(([label, change, tone]) => (
-                <div key={String(label)} className="rounded-xl bg-muted/40 p-3">
-                  <div className="text-xs text-muted-foreground">{label}</div>
-                  <div
-                    className={cn(
-                      "mt-1 text-xl font-bold",
-                      Number(change) >= 0 ? "text-emerald-700" : "text-red-700",
-                    )}
-                  >
-                    {Number(change) >= 0 ? "+" : ""}
-                    {formatNumber(Number(change))}
-                    {label === t.margin ? " pts" : "%"}
-                  </div>
-                  <div className="text-[11px] text-muted-foreground">
-                    {t.comparison}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </ListCard>
-          <ListCard
-            title={t.insight}
-            description={textFor(
-              language,
-              "A concise explanation of the selected period.",
-              "निवडलेल्या कालावधीचे थोडक्यात स्पष्टीकरण.",
-            )}
-          >
-            <p className="text-sm leading-6 text-muted-foreground">
-              {report.revenue === 0
-                ? t.noData
-                : report.changes.profit < report.changes.revenue
-                  ? textFor(
-                      language,
-                      "Sales grew faster than profit, so review pricing and product mix.",
-                      "विक्री नफ्यापेक्षा वेगाने वाढली; किंमत आणि उत्पादन मिश्रण तपासा.",
-                    )
-                  : report.realizedLoss > 0
-                    ? textFor(
-                        language,
-                        `Realized stock loss is ${money(report.realizedLoss)}. Review expiry and damage records first.`,
-                        `झालेला स्टॉक तोटा ${money(report.realizedLoss)} आहे. आधी कालबाह्य आणि नुकसान नोंदी तपासा.`,
-                      )
-                    : textFor(
-                        language,
-                        "Profit is keeping pace with sales. Protect the products and categories driving the margin.",
-                        "नफा विक्रीसोबत चालला आहे. मार्जिन देणाऱ्या वस्तू आणि वर्गांचा साठा जपा.",
-                      )}
+            <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+              {t.topSellers}
             </p>
-          </ListCard>
+            <p className="mt-1 truncate text-base sm:text-lg font-semibold">
+              {report.topSellers[0]?.name || t.noData}
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {report.topSellers[0]
+                ? `${money(report.topSellers[0].revenue)} · ${formatNumber(report.topSellers[0].quantity)} ${t.quantity}`
+                : t.viewSection}
+            </p>
+            <span className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-primary">
+              {t.sales} <ArrowRight className="h-3 w-3" />
+            </span>
+          </Link>
+          <Link
+            href={`/reports/stock${query ? `?${query}` : ""}`}
+            className="rounded-2xl border bg-card p-3 sm:p-4 hover:border-primary/40 transition-colors"
+          >
+            <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+              {t.restockCount}
+            </p>
+            <p className="mt-1 text-base sm:text-lg font-semibold tabular-nums">
+              {formatNumber(report.lowStock.length)}
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {t.daysCover}:{" "}
+              {report.daysCover != null
+                ? `${formatNumber(report.daysCover)} ${t.days}`
+                : "—"}
+            </p>
+            <span className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-primary">
+              {t.stock} <ArrowRight className="h-3 w-3" />
+            </span>
+          </Link>
+          <Link
+            href={`/reports/udhari${query ? `?${query}` : ""}`}
+            className="rounded-2xl border bg-card p-3 sm:p-4 hover:border-primary/40 transition-colors"
+          >
+            <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+              {t.pendingNow}
+            </p>
+            <p className="mt-1 text-base sm:text-lg font-semibold tabular-nums">
+              {money(totalPending)}
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {t.collectionRate} {pct(report.collectionRate)}
+            </p>
+            <span className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-primary">
+              {t.udhariRecovery} <ArrowRight className="h-3 w-3" />
+            </span>
+          </Link>
+          <div className="rounded-2xl border bg-card p-3 sm:p-4">
+            <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+              {period === "today" ? t.peakHour : t.bestDay}
+            </p>
+            <p className="mt-1 text-base sm:text-lg font-semibold tabular-nums">
+              {period === "today"
+                ? report.peakHour.revenue > 0
+                  ? `${String(report.peakHour.hour).padStart(2, "0")}:00`
+                  : "—"
+                : report.bestDay
+                  ? money(report.bestDay.revenue)
+                  : "—"}
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {period === "today"
+                ? money(report.peakHour.revenue)
+                : report.bestDay
+                  ? report.bestDay.date
+                  : t.noData}
+            </p>
+          </div>
         </section>
       )}
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      {section === "overview" && (
+        <section className="grid gap-3 md:gap-4 grid-cols-2 lg:grid-cols-4">
+          <div className="rounded-2xl border border-red-300 bg-red-50 p-3 sm:p-4 text-red-950 col-span-2">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-[11px] sm:text-xs font-semibold uppercase tracking-wide opacity-70 flex items-center gap-1">
+                  <AlertTriangle className="h-3 w-3" />
+                  {t.periodLoss}
+                </p>
+                <p className="mt-1 text-xl sm:text-2xl font-bold tabular-nums">
+                  {money(report.realizedLoss)}
+                </p>
+                <p className="mt-1 text-[11px] sm:text-xs opacity-80">
+                  {t.expiredLoss} {money(report.stockMovement.expiredValue)} ·{" "}
+                  {t.damagedLoss} {money(report.stockMovement.damagedValue)}
+                </p>
+              </div>
+              <Scale className="h-5 w-5 opacity-70 shrink-0" />
+            </div>
+            <div className="mt-3 flex flex-wrap gap-1.5 text-[11px] sm:text-xs font-medium">
+              <span className="rounded-full bg-white/70 px-2.5 py-1">
+                {formatNumber(report.stockMovement.expired)} {t.expired}
+              </span>
+              <span className="rounded-full bg-white/70 px-2.5 py-1">
+                {formatNumber(report.stockMovement.damaged)} {t.damaged}
+              </span>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-red-200 bg-red-50 p-3 sm:p-4 text-red-950">
+            <p className="text-[11px] sm:text-xs opacity-80 flex items-center gap-1">
+              <Clock className="h-3 w-3" />
+              {t.stillPending}
+            </p>
+            <p className="mt-1 text-lg sm:text-xl font-bold tabular-nums">
+              {money(report.badStockValue)}
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 sm:p-4 text-amber-950">
+            <p className="text-[11px] sm:text-xs opacity-80 flex items-center gap-1">
+              <AlertTriangle className="h-3 w-3" />
+              {textFor(
+                language,
+                "Going-expiry value",
+                "लवकर कालबाह्य मूल्य",
+              )}
+            </p>
+            <p className="mt-1 text-lg sm:text-xl font-bold tabular-nums">
+              {money(report.expiringStockValue)}
+            </p>
+          </div>
+        </section>
+      )}
+
+      {section === "overview" && (
+        <ListCard
+          title={t.insight}
+          description={textFor(
+            language,
+            "What to focus on for this period.",
+            "या कालावधीसाठी काय लक्ष द्यायचे.",
+          )}
+        >
+          <div className="flex flex-col sm:flex-row sm:items-start gap-3">
+            <div className="h-9 w-9 shrink-0 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center dark:bg-indigo-950/40 dark:text-indigo-200">
+              <TrendingUp className="h-4 w-4" />
+            </div>
+            <div className="flex-1">
+              <p className="text-sm sm:text-[15px] leading-6 sm:leading-7 text-foreground/90">
+                {report.revenue === 0
+                  ? t.noData
+                  : (report.changes.profit ?? 0) < (report.changes.revenue ?? 0)
+                    ? textFor(
+                        language,
+                        "Sales grew faster than profit — review pricing, discounts and product mix for margin leakage.",
+                        "विक्री नफ्यापेक्षा वेगाने वाढली आहे. मार्जिन कमी होत नाही यासाठी किंमत, सवलती आणि उत्पादन मिश्रण तपासा.",
+                      )
+                    : report.realizedLoss > 0
+                      ? textFor(
+                          language,
+                          `Realized stock loss is ${money(report.realizedLoss)}. Start with expiry and damage records — then fix slow-moving stock worth ${money(report.stockAtRiskValue)}.`,
+                          `झालेला स्टॉक तोटा ${money(report.realizedLoss)} आहे. कालबाह्य आणि नुकसान नोंदींपासून सुरुवात करा — नंतर ${money(report.stockAtRiskValue)} च्या हळू विकल्या जाणाऱ्या स्टॉकवर काम करा.`,
+                        )
+                      : report.creditSales > report.cashSales
+                        ? textFor(
+                            language,
+                            `Credit sales (${money(report.creditSales)}) are higher than cash. Focus on udhari recovery — ${money(totalPending)} is pending right now.`,
+                            `उधारी विक्री (${money(report.creditSales)}) रोखपेक्षा जास्त आहे. उधारी वसुलीवर लक्ष द्या — सध्या ${money(totalPending)} बाकी आहे.`,
+                          )
+                        : textFor(
+                            language,
+                            "Profit is keeping pace with sales. Double-down on the products and categories driving your margin, and restock top sellers before they run out.",
+                            "नफा विक्रीसोबत चालला आहे. मार्जिन देणाऱ्या वस्तू आणि वर्गांवर जास्त लक्ष द्या आणि त्वरित विकणाऱ्या वस्तू संपण्यापूर्वी पुन्हा स्टॉक भरा.",
+                          )}
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2 text-[11px] sm:text-xs font-medium">
+                {report.stockAtRiskValue > 0 ? (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 text-amber-800 px-3 py-1">
+                    <AlertTriangle className="h-3 w-3" />
+                    {t.stockAtRisk}: {money(report.stockAtRiskValue)}
+                  </span>
+                ) : null}
+                {totalPending > 0 ? (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-orange-100 text-orange-800 px-3 py-1">
+                    <CreditCard className="h-3 w-3" />
+                    {t.pendingNow}: {money(totalPending)}
+                  </span>
+                ) : null}
+                <span className="inline-flex items-center gap-1 rounded-full bg-purple-100 text-purple-800 px-3 py-1">
+                  <Boxes className="h-3 w-3" />
+                  {t.currentStock}: {money(report.totalStockValue)}
+                </span>
+              </div>
+            </div>
+          </div>
+        </ListCard>
+      )}
+
+      <div className="grid gap-3 md:gap-4 lg:grid-cols-2">
         {section === "sales" && (
           <>
+            <div className="grid gap-2.5 grid-cols-2 lg:col-span-2 lg:grid-cols-4">
+              <MetricCard
+                label={t.sales}
+                value={money(report.revenue)}
+                note={`${formatNumber(report.transactionCount)} ${textFor(language, "bills", "बिले")}`}
+                tone="blue"
+                icon={BadgeIndianRupee}
+              />
+              <MetricCard
+                label={t.netProfit}
+                value={money(report.profit)}
+                note={`${t.margin} ${pct(report.margin)}`}
+                tone={report.profit >= 0 ? "green" : "red"}
+                icon={TrendingUp}
+              />
+              <MetricCard
+                label={t.moneyIn}
+                value={money(report.moneyIn)}
+                note={t.moneyInNote}
+                tone="green"
+                icon={Wallet}
+              />
+              <MetricCard
+                label={t.averageBill}
+                value={money(report.averageBill)}
+                note={`${formatNumber(report.unitsSold)} ${t.quantity}`}
+                tone="slate"
+                icon={BarChart3}
+              />
+            </div>
             <div id="sales" className="scroll-mt-24">
               <ListCard title={t.salesStory} description={t.topSellers}>
                 {report.topSellers.length ? (
@@ -1484,14 +1974,61 @@ export function ReportsDashboard({
             </ListCard>
 
             <ListCard
-              title={t.salesTrend}
+              title={
+                report.trendGranularity === "month"
+                  ? t.monthlyTrend
+                  : period === "today"
+                    ? t.hourlySales
+                    : t.salesTrend
+              }
               description={textFor(
                 language,
-                "Revenue and profit across the latest days in this period.",
-                "या कालावधीतील अलीकडच्या दिवसांची विक्री आणि नफा.",
+                report.trendGranularity === "month"
+                  ? "Revenue and profit by month in this period."
+                  : period === "today"
+                    ? "Sales by hour for the selected date."
+                    : "Revenue and profit across the latest days in this period.",
+                report.trendGranularity === "month"
+                  ? "या कालावधीतील महिन्यानुसार विक्री आणि नफा."
+                  : period === "today"
+                    ? "निवडलेल्या दिवसाची तासानुसार विक्री."
+                    : "या कालावधीतील अलीकडच्या दिवसांची विक्री आणि नफा.",
               )}
             >
-              {report.salesTrend.length ? (
+              {period === "today" && report.hourlySales.some((slot: any) => slot.revenue > 0) ? (
+                <div className="space-y-3">
+                  <div className="flex h-32 items-end gap-px border-b border-border/70 px-0.5">
+                    {report.hourlySales.map((slot: any) => {
+                      const maxRevenue = Math.max(
+                        ...report.hourlySales.map((entry: any) => entry.revenue),
+                        1,
+                      );
+                      return (
+                        <div
+                          key={slot.hour}
+                          className="flex h-full flex-1 items-end justify-center"
+                          title={`${String(slot.hour).padStart(2, "0")}:00 · ${money(slot.revenue)}`}
+                        >
+                          <div
+                            className="w-full rounded-t bg-blue-500"
+                            style={{
+                              height: `${Math.max((slot.revenue / maxRevenue) * 100, slot.revenue > 0 ? 6 : 2)}%`,
+                              opacity: slot.revenue > 0 ? 1 : 0.25,
+                            }}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="flex justify-between text-[10px] text-muted-foreground">
+                    <span>00</span>
+                    <span>06</span>
+                    <span>12</span>
+                    <span>18</span>
+                    <span>23</span>
+                  </div>
+                </div>
+              ) : report.salesTrend.length ? (
                 <div className="space-y-3">
                   <div className="flex h-40 items-end gap-1 border-b border-border/70 px-1">
                     {report.salesTrend.map((day: any) => {
@@ -1543,6 +2080,39 @@ export function ReportsDashboard({
               )}
             </ListCard>
 
+            {period !== "today" ? (
+              <ListCard title={t.weekdayMix}>
+                {report.weekdayMix.some((slot: any) => slot.revenue > 0) ? (
+                  <div className="grid grid-cols-7 gap-1.5">
+                    {report.weekdayMix.map((slot: any) => {
+                      const maxRevenue = Math.max(
+                        ...report.weekdayMix.map((entry: any) => entry.revenue),
+                        1,
+                      );
+                      return (
+                        <div key={slot.day} className="text-center">
+                          <div className="mx-auto flex h-20 items-end sm:h-24">
+                            <div
+                              className="mx-auto w-full max-w-6 rounded-t bg-indigo-500"
+                              style={{
+                                height: `${Math.max((slot.revenue / maxRevenue) * 100, slot.revenue > 0 ? 8 : 3)}%`,
+                                opacity: slot.revenue > 0 ? 1 : 0.2,
+                              }}
+                            />
+                          </div>
+                          <div className="mt-1 text-[10px] font-medium text-muted-foreground">
+                            {slot.label}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <EmptyLine>{t.noData}</EmptyLine>
+                )}
+              </ListCard>
+            ) : null}
+
             <ListCard
               title={t.categoryPerformance}
               description={textFor(
@@ -1579,85 +2149,173 @@ export function ReportsDashboard({
               )}
             </ListCard>
 
+            <div className="lg:col-span-2">
             <ListCard
-              title={t.billRegister}
+              title={t.allBills}
               description={textFor(
                 language,
-                "Every bill in the selected period, with payment and profit context.",
+                "Every bill in the selected period, with payment and profit.",
                 "निवडलेल्या कालावधीतील प्रत्येक बिल, पेमेंट आणि नफ्यासह.",
               )}
             >
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-155 text-left text-sm">
-                  <thead className="border-b text-xs text-muted-foreground">
-                    <tr>
-                      <th className="pb-2 font-medium">{t.bill}</th>
-                      <th className="pb-2 font-medium">{t.date}</th>
-                      <th className="pb-2 font-medium">{t.payment}</th>
-                      <th className="pb-2 text-right font-medium">{t.sales}</th>
-                      <th className="pb-2 text-right font-medium">
-                        {t.profit}
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y">
-                    {report.billRegister.slice(0, 25).map((sale: any) => (
-                      <tr key={sale.id}>
-                        <td className="py-2 font-medium">#{sale.id}</td>
-                        <td className="py-2 text-muted-foreground">
-                          {sale.date}
-                        </td>
-                        <td className="py-2 capitalize">
-                          {sale.paymentMethod}
-                        </td>
-                        <td className="py-2 text-right">
-                          {money(sale.subtotal)}
-                        </td>
-                        <td
-                          className={cn(
-                            "py-2 text-right font-medium",
-                            safeNumber(sale.totalProfit) >= 0
-                              ? "text-emerald-700"
-                              : "text-red-700",
-                          )}
+              {report.billRegister.length ? (
+                <>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-xs text-muted-foreground">
+                      {t.billsShown} {formatNumber(visibleBills.length)} /{" "}
+                      {formatNumber(report.billRegister.length)}
+                    </p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8"
+                      onClick={exportBills}
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                      <span className="ml-1.5">{t.exportCsv}</span>
+                    </Button>
+                  </div>
+                  <div className="hidden md:block overflow-x-auto">
+                    <table className="w-full min-w-155 text-left text-sm">
+                      <thead className="border-b text-xs text-muted-foreground">
+                        <tr>
+                          <th className="pb-2 font-medium">{t.bill}</th>
+                          <th className="pb-2 font-medium">{t.date}</th>
+                          <th className="pb-2 font-medium">{t.payment}</th>
+                          <th className="pb-2 font-medium">{t.customer}</th>
+                          <th className="pb-2 text-right font-medium">{t.sales}</th>
+                          <th className="pb-2 text-right font-medium">
+                            {t.profit}
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y">
+                        {visibleBills.map((sale: any) => (
+                          <tr key={sale.id}>
+                            <td className="py-2 font-medium tabular-nums">#{sale.id}</td>
+                            <td className="py-2 text-muted-foreground">{sale.date}</td>
+                            <td className="py-2">{paymentLabel(sale.paymentMethod, t, language)}</td>
+                            <td className="py-2 text-muted-foreground truncate max-w-36">
+                              {sale.creditCustomerName || "—"}
+                            </td>
+                            <td className="py-2 text-right tabular-nums">{money(sale.subtotal)}</td>
+                            <td
+                              className={cn(
+                                "py-2 text-right font-medium tabular-nums",
+                                safeNumber(sale.totalProfit) >= 0
+                                  ? "text-emerald-700"
+                                  : "text-red-700",
+                              )}
+                            >
+                              {money(sale.totalProfit)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="md:hidden space-y-2">
+                    {visibleBills.map((sale: any) => {
+                      const method = String(sale.paymentMethod || "").toLowerCase();
+                      const methodLabel = paymentLabel(sale.paymentMethod, t, language);
+                      const methodBadge =
+                        method === "cash"
+                          ? "bg-green-100 text-green-800"
+                          : method === "udhar" || method === "udhari"
+                            ? "bg-orange-100 text-orange-800"
+                            : method === "partial"
+                              ? "bg-purple-100 text-purple-800"
+                              : "bg-blue-100 text-blue-800";
+                      return (
+                        <div
+                          key={sale.id}
+                          className="rounded-xl border bg-card p-3"
                         >
-                          {money(sale.totalProfit)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                {!report.billRegister.length && (
-                  <EmptyLine>{t.noData}</EmptyLine>
-                )}
-              </div>
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="font-semibold tabular-nums">#{sale.id}</div>
+                            <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-medium", methodBadge)}>
+                              {methodLabel}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between text-xs text-muted-foreground mb-2 gap-2">
+                            <span>{sale.date}</span>
+                            {sale.creditCustomerName ? (
+                              <span className="truncate">{sale.creditCustomerName}</span>
+                            ) : null}
+                          </div>
+                          <div className="grid grid-cols-2 gap-2 border-t pt-2">
+                            <div>
+                              <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{t.sales}</div>
+                              <div className="text-sm font-semibold tabular-nums">{money(sale.subtotal)}</div>
+                            </div>
+                            <div className="text-right">
+                              <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{t.profit}</div>
+                              <div
+                                className={cn(
+                                  "text-sm font-semibold tabular-nums",
+                                  safeNumber(sale.totalProfit) >= 0
+                                    ? "text-emerald-700"
+                                    : "text-red-700",
+                                )}
+                              >
+                                {money(sale.totalProfit)}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {report.billRegister.length > 20 ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="w-full"
+                      onClick={() => setShowAllBills((value) => !value)}
+                    >
+                      {showAllBills ? t.showLess : t.showMore}
+                    </Button>
+                  ) : null}
+                </>
+              ) : (
+                <EmptyLine>{t.noBills}</EmptyLine>
+              )}
             </ListCard>
+            </div>
           </>
         )}
 
         {section === "stock" && (
           <>
-            <div className="grid gap-3 sm:grid-cols-3 lg:col-span-2">
+            <div className="grid gap-2.5 grid-cols-2 lg:col-span-2 lg:grid-cols-3">
               <MetricCard
                 label={t.totalStock}
                 value={money(report.totalStockValue)}
                 note={`${formatNumber(items.length)} ${t.item}`}
                 tone="purple"
                 icon={Boxes}
+                footnote={
+                  <span className="inline-flex items-center gap-1 rounded-full bg-white/70 px-2 py-0.5 text-[10px] font-medium">
+                    <Clock className="h-2.5 w-2.5" />
+                    {t.currentStock}
+                  </span>
+                }
               />
               <MetricCard
                 label={textFor(language, "Bad stock", "खराब स्टॉक")}
                 value={money(report.badStockValue)}
                 note={t.expiry}
                 tone="red"
-                icon={Scale}
+                icon={AlertTriangle}
               />
               <MetricCard
                 label={textFor(language, "Going expiry", "लवकर कालबाह्य")}
                 value={money(report.expiringStockValue)}
                 note={t.expiry}
                 tone="amber"
-                icon={CreditCard}
+                icon={Clock}
               />
             </div>
             <ListCard
@@ -1863,13 +2521,19 @@ export function ReportsDashboard({
 
         {section === "udhari" && (
           <>
-            <div className="grid gap-3 sm:grid-cols-2 lg:col-span-2">
+            <div className="grid gap-2.5 grid-cols-2 lg:col-span-2">
               <MetricCard
                 label={t.pendingTotal}
                 value={money(totalPending)}
                 note={`${formatNumber(report.topCustomers.length)} ${t.customer}`}
                 tone="red"
                 icon={CreditCard}
+                footnote={
+                  <span className="inline-flex items-center gap-1 rounded-full bg-white/70 px-2 py-0.5 text-[10px] font-medium">
+                    <Clock className="h-2.5 w-2.5" />
+                    {t.pendingNow}
+                  </span>
+                }
               />
               <MetricCard
                 label={t.oldestDebt}
@@ -1880,7 +2544,7 @@ export function ReportsDashboard({
                 }
                 note={report.longPendingCustomers[0]?.name || t.noData}
                 tone="amber"
-                icon={TrendingUp}
+                icon={Clock}
               />
             </div>
             <ListCard
@@ -1891,7 +2555,7 @@ export function ReportsDashboard({
                 "न भरलेल्या उधारीच्या वयानुसार बाकीचे वर्गीकरण.",
               )}
             >
-              <div className="grid gap-3 sm:grid-cols-4">
+              <div className="grid gap-2.5 grid-cols-2 md:grid-cols-4">
                 {report.agingBuckets.map((bucket: any) => {
                   const share =
                     totalPending > 0 ? (bucket.amount / totalPending) * 100 : 0;
@@ -2047,41 +2711,6 @@ export function ReportsDashboard({
           </>
         )}
 
-        {section === "overview" && (
-          <ListCard
-            title={t.rawExplore}
-            description={textFor(
-              language,
-              "Quick counts for deeper follow-up.",
-              "पुढील तपासणीसाठी झटपट आकडे.",
-            )}
-          >
-            <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
-              <div className="rounded-xl bg-muted/40 p-3">
-                <div className="text-muted-foreground">{t.sales}</div>
-                <div className="text-lg font-bold">
-                  {formatNumber(report.transactionCount)}
-                </div>
-              </div>
-              <div className="rounded-xl bg-muted/40 p-3">
-                <div className="text-muted-foreground">{t.stock}</div>
-                <div className="text-lg font-bold">
-                  {formatNumber(items.length)}
-                </div>
-              </div>
-              <div className="rounded-xl bg-muted/40 p-3">
-                <div className="text-muted-foreground">{t.lowStock}</div>
-                <div className="text-lg font-bold">
-                  {formatNumber(report.lowStock.length)}
-                </div>
-              </div>
-              <div className="rounded-xl bg-muted/40 p-3">
-                <div className="text-muted-foreground">{t.credit}</div>
-                <div className="text-lg font-bold">{money(totalPending)}</div>
-              </div>
-            </div>
-          </ListCard>
-        )}
       </div>
 
       {isLoading ? (

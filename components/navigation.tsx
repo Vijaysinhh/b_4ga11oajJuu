@@ -46,7 +46,7 @@ import {
 
 export function Navigation() {
   const { user, logout, isAuthenticated, currentShopId } = useAuth();
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const pathname = usePathname();
   const router = useRouter();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -238,12 +238,12 @@ export function Navigation() {
         </div>
 
         {/* Global Search Bar */}
-        {(user?.role === "owner" || user?.role === "super_admin") && (
+        {(user?.role === "owner" || user?.role === "super_admin" || canViewItems || canViewUdhari) && (
           <div className="flex flex-1 items-center gap-2 mx-4">
             <div className="relative flex-1 max-w-md search-container">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
-                placeholder="Search items, sales, udhari..."
+                placeholder={language === "mr" ? "स्टॉक किंवा उधारी शोधा..." : "Search stock or udhari..."}
                 value={globalSearchQuery}
                 onChange={(e) => setGlobalSearchQuery(e.target.value)}
                 onFocus={() => setShowSearchResults(true)}
@@ -274,8 +274,11 @@ export function Navigation() {
                         {searchResults.items.slice(0, 5).map((item) => (
                           <Link
                             key={item.id}
-                            href="/items"
-                            onClick={() => setShowSearchResults(false)}
+                            href={`/items?focusItemId=${item.id}`}
+                            onClick={() => {
+                              setGlobalSearchQuery("");
+                              setShowSearchResults(false);
+                            }}
                             className="block p-2 rounded hover:bg-muted transition-colors"
                           >
                             <div className="font-medium text-sm">
@@ -330,8 +333,11 @@ export function Navigation() {
                         {searchResults.customers.slice(0, 5).map((customer) => (
                           <Link
                             key={customer.id}
-                            href="/udhari"
-                            onClick={() => setShowSearchResults(false)}
+                            href={`/udhari?focusCustomerId=${customer.id}`}
+                            onClick={() => {
+                              setGlobalSearchQuery("");
+                              setShowSearchResults(false);
+                            }}
                             className="block p-2 rounded hover:bg-muted transition-colors"
                           >
                             <div className="font-medium text-sm">

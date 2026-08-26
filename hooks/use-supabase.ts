@@ -825,7 +825,15 @@ export function useSales(shopId?: number) {
             .insert(insertRow)
             .select("*")
             .single();
-          if (error) throw error;
+          if (error) {
+            const msg =
+              (error as any)?.message ||
+              (error as any)?.details ||
+              "Could not save the sale record";
+            throw new Error(`Sales save failed [${(error as any)?.code || "ERR"}]: ${msg}`, {
+              cause: error,
+            });
+          }
           return savedSale;
         },
       });
@@ -875,7 +883,16 @@ export function useSales(shopId?: number) {
               .insert(insertRow)
               .select("*")
               .single();
-            if (error) throw error;
+            if (error) {
+              const msg =
+                (error as any)?.message ||
+                (error as any)?.details ||
+                "Could not save the sale line item";
+              throw new Error(
+                `Sale line item save failed [${(error as any)?.code || "ERR"}]: ${msg}`,
+                { cause: error },
+              );
+            }
             return savedSaleItem;
           },
         });
@@ -917,7 +934,16 @@ export function useSales(shopId?: number) {
                 .upsert(updatedCustomer, { onConflict: "id" })
                 .select("*")
                 .single();
-              if (error) throw error;
+              if (error) {
+                const msg =
+                  (error as any)?.message ||
+                  (error as any)?.details ||
+                  "Could not update the credit customer balance";
+                throw new Error(
+                  `Credit customer update failed [${(error as any)?.code || "ERR"}]: ${msg}`,
+                  { cause: error },
+                );
+              }
               return savedCustomer;
             },
           });
@@ -955,7 +981,16 @@ export function useSales(shopId?: number) {
               .insert(insertRow)
               .select("*")
               .single();
-            if (error) throw error;
+            if (error) {
+              const msg =
+                (error as any)?.message ||
+                (error as any)?.details ||
+                "Could not save the credit entry";
+              throw new Error(
+                `Credit entry save failed [${(error as any)?.code || "ERR"}]: ${msg}`,
+                { cause: error },
+              );
+            }
             return savedEntry;
           },
         });
@@ -1103,7 +1138,15 @@ export function useSales(shopId?: number) {
                 .insert(insertRow)
                 .select("*")
                 .single();
-              if (error) throw error;
+              if (error) {
+                const msg =
+                  (error as any)?.message ||
+                  (error as any)?.details ||
+                  "Stock history entry could not be saved";
+                throw new Error(`Stock history save failed: ${msg}`, {
+                  cause: error,
+                });
+              }
               return data;
             },
           });
