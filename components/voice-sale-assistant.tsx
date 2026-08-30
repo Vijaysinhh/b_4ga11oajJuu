@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Check,
   Mic,
@@ -18,6 +18,7 @@ import {
   parseVoiceSaleCommand,
 } from "@/lib/voice-sale-parser";
 import { useGeminiUnderstanding } from "@/hooks/use-gemini";
+import { convertUnit } from "@/lib/unit-conversion";
 
 type SaleLine = {
   itemId: number;
@@ -40,6 +41,7 @@ type Draft = {
   variant?: string;
   candidates: any[];
   selectedId: number | null;
+  blockedReason?: "out-of-stock" | "expired";
 };
 
 const productScore = (query: string, item: any) => {
@@ -79,10 +81,6 @@ export function VoiceSaleAssistant({
   const recognition = useRef<any>(null);
   const keepListening = useRef(false);
   const transcript = useRef("");
-  const inStock = useMemo(
-    () => items.filter((item) => Number(item.quantity) > 0),
-    [items],
-  );
   const { parseVoiceCommand, isLoading: aiParsing } = useGeminiUnderstanding();
 
   useEffect(() => {
@@ -99,22 +97,63 @@ export function VoiceSaleAssistant({
       variant?: string;
     }>,
   ) => {
-    const lines = requests.map((request, index) => {
+    const uniqueRequests = requests.reduce<typeof requests>(
+      (result, request) => {
+        const query = normalizeVoiceText(
+          request.productName || request.productQuery || "",
+        );
+        const key = `${query}|${request.unit || ""}|${request.priceOverride ?? ""}`;
+        const previous = result.find((entry) => {
+          const previousQuery = normalizeVoiceText(
+            entry.productName || entry.productQuery || "",
+          );
+          return (
+            `${previousQuery}|${entry.unit || ""}|${entry.priceOverride ?? ""}` ===
+            key
+          );
+        });
+        if (previous) {
+          previous.quantity =
+            (previous.quantity || 1) + (request.quantity || 1);
+        } else {
+          result.push({ ...request });
+        }
+        return result;
+      },
+      [],
+    );
+
+    const lines = uniqueRequests.map((request, index) => {
       const query = request.productName || request.productQuery || "";
       const queryWords = normalizeVoiceText(query)
         .split(" ")
         .filter((word) => word.length > 1);
-      const rankedCandidates = inStock
+      const rankedCandidates = items
         .map((item) => ({
           item,
           score: productScore(query, item),
         }))
         .filter((entry) => entry.score > 0)
         .sort((a, b) => b.score - a.score);
-      // A single spoken product name should not flood the draft with alternatives.
+      const bestScore = rankedCandidates[0]?.score || 0;
+      const isAmbiguous =
+        rankedCandidates.length > 1 &&
+        bestScore > 0 &&
+        bestScore - rankedCandidates[1].score <= 2;
+      // Show alternatives only when the phrase genuinely has close matches.
       const candidates = rankedCandidates
-        .slice(0, queryWords.length <= 1 ? 1 : 3)
+        .slice(0, isAmbiguous && queryWords.length > 1 ? 3 : 1)
         .map((entry) => entry.item);
+      const selectedCandidate = candidates[0];
+      const expiryDate = selectedCandidate?.expiryDate
+        ? new Date(selectedCandidate.expiryDate)
+        : null;
+      const isExpired = !!expiryDate && expiryDate.getTime() < Date.now();
+      const blockedReason: Draft["blockedReason"] = isExpired
+        ? "expired"
+        : Number(selectedCandidate?.quantity || 0) <= 0
+          ? "out-of-stock"
+          : undefined;
       return {
         id: String(Date.now()) + "-" + index,
         query,
@@ -123,7 +162,9 @@ export function VoiceSaleAssistant({
         priceOverride: request.priceOverride,
         variant: request.variant,
         candidates,
-        selectedId: candidates.length === 1 ? candidates[0].id : null,
+        selectedId:
+          candidates.length === 1 && !blockedReason ? candidates[0].id : null,
+        blockedReason,
       };
     });
     setDraft(lines);
@@ -225,6 +266,28 @@ export function VoiceSaleAssistant({
     );
   const addConfirmed = () => {
     const confirmed = draft.filter((line) => line.selectedId);
+    const blocked = confirmed.filter((line) => {
+      const item = line.candidates.find(
+        (candidate) => candidate.id === line.selectedId,
+      );
+      const unit = units.find((candidate) => candidate.id === item?.unitId);
+      const quantity =
+        line.requestedUnit && unit
+          ? convertUnit(line.quantity, line.requestedUnit, unit.shortForm)
+          : line.quantity;
+      const expiryDate = item?.expiryDate ? new Date(item.expiryDate) : null;
+      return (
+        !item ||
+        quantity > Number(item.quantity || 0) ||
+        (!!expiryDate && expiryDate.getTime() < Date.now())
+      );
+    });
+    if (blocked.length > 0) {
+      setMessage(
+        "Some confirmed items are unavailable or expired. Remove them before adding the sale.",
+      );
+      return;
+    }
     confirmed.forEach((line) => {
       const item = line.candidates.find(
         (candidate) => candidate.id === line.selectedId,
@@ -232,17 +295,27 @@ export function VoiceSaleAssistant({
       if (!item) return;
       const unit = units.find((candidate) => candidate.id === item.unitId);
       const unitName = unit?.shortForm || "unit";
+      const requestedUnit = line.requestedUnit;
+      const quantity = requestedUnit
+        ? convertUnit(line.quantity, requestedUnit, unitName)
+        : line.quantity;
+      const expiryDate = item.expiryDate ? new Date(item.expiryDate) : null;
+      if (
+        Number(item.quantity || 0) <= 0 ||
+        (expiryDate && expiryDate.getTime() < Date.now())
+      )
+        return;
       onAdd({
         itemId: item.id,
         itemName: item.brand ? item.name + " (" + item.brand + ")" : item.name,
-        quantity: line.quantity,
-        displayQuantity: line.quantity + " " + unitName,
+        quantity,
+        displayQuantity: line.quantity + " " + (requestedUnit || unitName),
         unitId: item.unitId,
         unitShortForm: unitName,
         pricePerUnit: Number(item.sellPrice),
-        totalPrice: line.quantity * Number(item.sellPrice),
+        totalPrice: quantity * Number(item.sellPrice),
         costPerUnit: Number(item.buyPrice),
-        totalCost: line.quantity * Number(item.buyPrice),
+        totalCost: quantity * Number(item.buyPrice),
       });
     });
     setMessage(
@@ -356,18 +429,48 @@ export function VoiceSaleAssistant({
                   )}
                 </p>
               </div>
+              {line.blockedReason === "expired" && (
+                <p className="mt-2 rounded-md bg-red-50 px-2 py-1.5 text-xs font-semibold text-red-700">
+                  Expired product: remove it from this sale.
+                </p>
+              )}
+              {line.blockedReason === "out-of-stock" && (
+                <p className="mt-2 rounded-md bg-amber-50 px-2 py-1.5 text-xs font-semibold text-amber-700">
+                  No stock available for this product.
+                </p>
+              )}
               {line.candidates.length ? (
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   {line.candidates.map((item) => (
                     <button
                       key={item.id}
                       type="button"
-                      onClick={() => choose(line.id, item.id)}
+                      onClick={() => {
+                        const expiryDate = item.expiryDate
+                          ? new Date(item.expiryDate)
+                          : null;
+                        if (
+                          Number(item.quantity || 0) <= 0 ||
+                          (expiryDate && expiryDate.getTime() < Date.now())
+                        )
+                          return;
+                        choose(line.id, item.id);
+                      }}
+                      disabled={
+                        Number(item.quantity || 0) <= 0 ||
+                        (!!item.expiryDate &&
+                          new Date(item.expiryDate).getTime() < Date.now())
+                      }
                       className={
                         "inline-flex items-center gap-1 rounded-lg border px-2 py-1.5 text-xs font-medium " +
                         (line.selectedId === item.id
                           ? "border-violet-300 bg-violet-50 text-violet-800"
-                          : "border-slate-200 text-slate-600")
+                          : Number(item.quantity || 0) <= 0 ||
+                              (!!item.expiryDate &&
+                                new Date(item.expiryDate).getTime() <
+                                  Date.now())
+                            ? "cursor-not-allowed border-slate-200 text-slate-400 line-through"
+                            : "border-slate-200 text-slate-600")
                       }
                     >
                       {line.selectedId === item.id && (
