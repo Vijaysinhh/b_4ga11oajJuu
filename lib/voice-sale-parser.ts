@@ -100,6 +100,16 @@ const unitAliases: Record<string, string> = {
   मिली: "ml",
 };
 
+const priceVariantWords = new Set([
+  "wale",
+  "वाले",
+  "rupees",
+  "रुपये",
+  "रुपयाचे",
+  "price",
+  "rate",
+]);
+
 const commandWords = new Set([
   "add",
   "please",
@@ -141,55 +151,97 @@ function numberFromToken(token: string) {
   return numberWords[token];
 }
 
+function quantityStartIndexes(tokens: string[]) {
+  const indexes: number[] = [];
+
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    const nextToken = tokens[index + 1];
+    if (numberFromToken(token) === undefined) continue;
+    if (nextToken && priceVariantWords.has(nextToken)) continue;
+    if (index > 0 && numberFromToken(tokens[index - 1]) !== undefined) continue;
+    indexes.push(index);
+  }
+
+  return indexes;
+}
+
 function splitRequests(value: string) {
   const normalized = normalizeVoiceText(value)
     .replace(/\b(?:and|then|plus|ani|mag|aani)\b/g, "|")
-    .replace(/आणि|मग/g, "|");
-  return normalized
+    .replace(/[,;]+/g, "|")
+    .replace(/\b(?:आणि|मग|तथा)\b/g, "|");
+
+  const clauses = normalized
     .split("|")
     .map((part) => part.trim())
-    .filter(Boolean)
-    .flatMap((part) => {
-      const tokens = part.split(" ");
-      const starts = tokens.flatMap((token, index) => {
-        if (numberFromToken(token) === undefined) return [];
-        const nextToken = tokens[index + 1];
-        // A number before "wale"/"rupees" is a product price, not a new line quantity.
-        if (
-          nextToken &&
-          ["wale", "वाले", "रुपये", "रुपयाचे"].includes(nextToken)
-        ) {
-          return [];
-        }
-        return [index];
-      });
-      if (starts.length <= 1) return [part];
-      return starts.map((start, index) =>
-        tokens.slice(start, starts[index + 1]).join(" "),
-      );
-    });
+    .filter(Boolean);
+
+  const resolved: string[] = [];
+
+  for (const clause of clauses) {
+    const tokens = clause.split(" ").filter(Boolean);
+    const starts = quantityStartIndexes(tokens);
+
+    if (starts.length <= 1) {
+      resolved.push(clause);
+      continue;
+    }
+
+    for (let index = 0; index < starts.length; index += 1) {
+      const start = starts[index];
+      const end = starts[index + 1] ?? tokens.length;
+      const segment = tokens.slice(start, end).join(" ").trim();
+      if (segment) resolved.push(segment);
+    }
+  }
+
+  return resolved.length > 0 ? resolved : clauses;
 }
 
 export function parseVoiceSaleCommand(value: string): VoiceSaleRequest[] {
   return splitRequests(value)
     .map((part) => {
-      const tokens = part.split(" ");
+      const tokens = part.split(" ").filter(Boolean);
+      const ignoredIndexes = new Set<number>();
+
+      for (let index = 0; index < tokens.length - 1; index += 1) {
+        const token = tokens[index];
+        const nextToken = tokens[index + 1];
+        if (
+          numberFromToken(token) !== undefined &&
+          nextToken &&
+          priceVariantWords.has(nextToken)
+        ) {
+          ignoredIndexes.add(index);
+          ignoredIndexes.add(index + 1);
+        }
+      }
+
       const quantityIndex = tokens.findIndex(
-        (token) => numberFromToken(token) !== undefined,
+        (token, index) =>
+          !ignoredIndexes.has(index) && numberFromToken(token) !== undefined,
       );
+
       let quantity =
         quantityIndex >= 0 ? numberFromToken(tokens[quantityIndex]) || 1 : 1;
+
       const productTokens = tokens.filter(
-        (_, index) => index !== quantityIndex,
+        (_, index) =>
+          index !== quantityIndex &&
+          !ignoredIndexes.has(index) &&
+          !commandWords.has(tokens[index]),
       );
+
       let requestedUnit: string | undefined;
       const filteredTokens = productTokens.filter((token) => {
         const unit = unitAliases[token];
         if (unit) requestedUnit = unit;
-        return !unit && !commandWords.has(token);
+        return !unit;
       });
-      // A dozen is a quantity multiplier, not merely a display unit.
+
       if (requestedUnit === "dozen") quantity *= 12;
+
       return {
         quantity,
         productQuery: filteredTokens.join(" ").trim(),

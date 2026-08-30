@@ -44,6 +44,56 @@ type Draft = {
   blockedReason?: "out-of-stock" | "expired";
 };
 
+const fillerWords = new Set([
+  "um",
+  "uh",
+  "mm",
+  "hmm",
+  "eh",
+  "aa",
+  "aaa",
+  "okay",
+  "ok",
+  "bas",
+  "sir",
+  "madam",
+  "hello",
+  "hi",
+  "ye",
+  "yes",
+  "no",
+]);
+
+const cleanTranscript = (value: string) => {
+  const trimmed = value
+    .replace(/\s+/g, " ")
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .trim();
+
+  if (!trimmed) return "";
+
+  const filteredTokens = trimmed
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((token) => {
+      const cleaned = token.replace(/[^a-zA-Z0-9\u0900-\u097F]/g, "");
+      return cleaned.length > 0 && !fillerWords.has(cleaned);
+    });
+
+  const deduped: string[] = [];
+  for (const token of filteredTokens) {
+    const previous = deduped[deduped.length - 1];
+    if (previous && previous === token) continue;
+    deduped.push(token);
+  }
+
+  return deduped
+    .join(" ")
+    .replace(/\s+(and|aani|ani|aur|mag|then|plus)\s+/g, " ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+};
+
 const productScore = (query: string, item: any) => {
   const words = normalizeVoiceText(query)
     .split(" ")
@@ -83,6 +133,9 @@ export function VoiceSaleAssistant({
   const transcript = useRef("");
   const restartTimer = useRef<number | null>(null);
   const lastFinalPhrase = useRef("");
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const audioStreamRef = useRef<MediaStream | null>(null);
   const { parseVoiceCommand, isLoading: aiParsing } = useGeminiUnderstanding();
 
   useEffect(() => {
@@ -177,76 +230,180 @@ export function VoiceSaleAssistant({
     );
   };
 
-  const review = async () => {
-    if (!command.trim() || aiParsing) return;
+  const parseTranscript = async (rawTranscript: string) => {
+    const cleaned = cleanTranscript(rawTranscript);
+    if (!cleaned || aiParsing) return;
+
     setMessage("Understanding products, quantities, and price variants…");
-    const result = await parseVoiceCommand(command, items, units);
+
+    const result = await parseVoiceCommand(cleaned, items, units);
     if (Array.isArray(result?.data) && result.data.length > 0) {
       buildDraft(result.data);
       return;
     }
-    buildDraft(parseVoiceSaleCommand(command));
+
+    const fallback = parseVoiceSaleCommand(cleaned);
+    if (fallback.length > 0) {
+      buildDraft(fallback);
+      return;
+    }
+
+    setMessage(
+      "I could not match any sale items from that voice input. Please try again or type the product name and quantity.",
+    );
+    setDraft([]);
   };
 
-  const startListening = () => {
-    const Recognition =
-      (window as any).SpeechRecognition ||
-      (window as any).webkitSpeechRecognition;
-    if (!Recognition)
-      return setMessage(
-        "Voice input works best in Chrome or Edge. You can also type the sale.",
-      );
-    keepListening.current = true;
-    transcript.current = command.trim().slice(-6000);
-    lastFinalPhrase.current = "";
-    const session = () => {
-      if (!keepListening.current) return;
-      const instance = new Recognition();
-      recognition.current = instance;
-      instance.lang = "mr-IN";
-      instance.interimResults = true;
-      instance.continuous = true;
-      instance.onstart = () => {
-        setListening(true);
-        setMessage(
-          "Listening — keep speaking. I will stay open until you press Stop mic.",
+  const review = async () => {
+    await parseTranscript(command.trim());
+  };
+
+  const transcribeRecordedAudio = async (audioBlob: Blob) => {
+    const formData = new FormData();
+    formData.append("audio", audioBlob, "voice.webm");
+    formData.append("language", "mr-IN");
+
+    const response = await fetch("/api/transcribe", {
+      method: "POST",
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || "Voice transcription failed");
+    }
+
+    const data = await response.json();
+    const transcriptText = cleanTranscript(data.transcript || "");
+    if (!transcriptText) {
+      throw new Error("No transcript returned from the audio model");
+    }
+
+    setCommand(transcriptText);
+    await parseTranscript(transcriptText);
+  };
+
+  const startListening = async () => {
+    if (typeof window === "undefined") return;
+
+    const hasAudioCapture =
+      typeof MediaRecorder !== "undefined" &&
+      !!navigator.mediaDevices?.getUserMedia;
+
+    if (!hasAudioCapture) {
+      const Recognition =
+        (window as any).SpeechRecognition ||
+        (window as any).webkitSpeechRecognition;
+      if (!Recognition)
+        return setMessage(
+          "Voice input works best in Chrome or Edge. You can also type the sale.",
         );
-      };
-      instance.onresult = (event: any) => {
-        let interim = "";
-        for (let i = event.resultIndex; i < event.results.length; i += 1) {
-          const heard = event.results[i][0]?.transcript?.trim() || "";
-          if (event.results[i].isFinal && heard !== lastFinalPhrase.current) {
-            const nextTranscript = (transcript.current + " " + heard).trim();
-            transcript.current = nextTranscript.slice(-6000);
-            lastFinalPhrase.current = heard;
-          } else if (!event.results[i].isFinal)
-            interim = (interim + " " + heard).trim();
-        }
-        setCommand((transcript.current + " " + interim).trim().slice(-6000));
-      };
-      instance.onend = () => {
-        if (keepListening.current)
-          restartTimer.current = window.setTimeout(session, 250);
-        else setListening(false);
-      };
-      instance.onerror = (event: any) => {
-        if (event.error === "no-speech" || event.error === "aborted") return;
-        if (["not-allowed", "audio-capture", "network"].includes(event.error)) {
-          keepListening.current = false;
-          setListening(false);
+      keepListening.current = true;
+      transcript.current = command.trim().slice(-6000);
+      lastFinalPhrase.current = "";
+      const session = () => {
+        if (!keepListening.current) return;
+        const instance = new Recognition();
+        recognition.current = instance;
+        instance.lang = "mr-IN";
+        instance.interimResults = true;
+        instance.continuous = true;
+        instance.onstart = () => {
+          setListening(true);
           setMessage(
-            "Microphone is unavailable. Check permission and try again.",
+            "Listening — keep speaking. I will stay open until you press Stop mic.",
           );
+        };
+        instance.onresult = (event: any) => {
+          let interim = "";
+          for (let i = event.resultIndex; i < event.results.length; i += 1) {
+            const heard = event.results[i][0]?.transcript?.trim() || "";
+            if (event.results[i].isFinal && heard !== lastFinalPhrase.current) {
+              const nextTranscript = (transcript.current + " " + heard).trim();
+              transcript.current = nextTranscript.slice(-6000);
+              lastFinalPhrase.current = heard;
+            } else if (!event.results[i].isFinal)
+              interim = (interim + " " + heard).trim();
+          }
+          setCommand((transcript.current + " " + interim).trim().slice(-6000));
+        };
+        instance.onend = () => {
+          if (keepListening.current)
+            restartTimer.current = window.setTimeout(session, 250);
+          else setListening(false);
+        };
+        instance.onerror = (event: any) => {
+          if (event.error === "no-speech" || event.error === "aborted") return;
+          if (
+            ["not-allowed", "audio-capture", "network"].includes(event.error)
+          ) {
+            keepListening.current = false;
+            setListening(false);
+            setMessage(
+              "Microphone is unavailable. Check permission and try again.",
+            );
+          }
+        };
+        try {
+          instance.start();
+        } catch {
+          restartTimer.current = window.setTimeout(session, 400);
         }
       };
-      try {
-        instance.start();
-      } catch {
-        restartTimer.current = window.setTimeout(session, 400);
-      }
-    };
-    session();
+      session();
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioStreamRef.current = stream;
+      const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+        ? "audio/webm;codecs=opus"
+        : "audio/webm";
+      const recorder = new MediaRecorder(stream, { mimeType });
+      mediaRecorderRef.current = recorder;
+      audioChunksRef.current = [];
+
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) audioChunksRef.current.push(event.data);
+      };
+
+      recorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
+        if (audioBlob.size === 0) {
+          setMessage("No audio captured. Please try again.");
+          return;
+        }
+
+        setListening(false);
+        setMessage("Processing your spoken order…");
+
+        try {
+          await transcribeRecordedAudio(audioBlob);
+        } catch (error) {
+          const message =
+            error instanceof Error
+              ? error.message
+              : "Voice transcription failed";
+          setMessage(message);
+        } finally {
+          stream.getTracks().forEach((track) => track.stop());
+          audioStreamRef.current = null;
+        }
+      };
+
+      recorder.start();
+      setCommand("");
+      setDraft([]);
+      setListening(true);
+      setMessage(
+        "Listening with live audio capture. Speak naturally, then press Stop mic.",
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Microphone access was denied";
+      setMessage(message);
+    }
   };
 
   const stopListening = () => {
@@ -255,13 +412,25 @@ export function VoiceSaleAssistant({
       window.clearTimeout(restartTimer.current);
       restartTimer.current = null;
     }
+    if (
+      mediaRecorderRef.current &&
+      mediaRecorderRef.current.state !== "inactive"
+    ) {
+      mediaRecorderRef.current.stop();
+      return;
+    }
     recognition.current?.stop?.();
     setListening(false);
-    setMessage(
-      command
-        ? "Voice draft ready. Review it before adding products."
-        : "Voice entry stopped.",
-    );
+
+    if (command.trim()) {
+      setMessage("Voice captured. Parsing the raw transcript into products…");
+      window.setTimeout(() => {
+        void review();
+      }, 150);
+      return;
+    }
+
+    setMessage("Voice entry stopped.");
   };
   const changeQuantity = (id: string, amount: number) =>
     setDraft((current) =>
