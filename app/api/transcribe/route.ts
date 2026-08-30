@@ -3,19 +3,32 @@ import { GoogleGenAI } from "@google/genai";
 
 const apiKey = process.env.GEMINI_API_KEY;
 const defaultGeminiModels = [
+  "gemini-3-flash",
+  "gemini-3-flash-preview",
+  "gemini-3-flash-lite",
+  "gemini-2.5-flash-lite-preview-06-17",
+  "gemini-2.5-flash-preview-05-20",
+  "gemini-2.5-flash-preview-09-2025",
   "gemini-2.5-flash-lite",
   "gemini-2.5-flash",
-  "gemini-2.0-flash-lite",
   "gemini-2.0-flash",
+  "gemini-2.0-flash-lite",
+  "gemini-1.5-flash",
+  "gemini-1.5-flash-8b",
 ];
 const client = apiKey ? new GoogleGenAI({ apiKey }) : null;
 
 const resolveGeminiModels = () => {
-  const preferred = (process.env.GEMINI_MODEL || "").trim();
-  const preferredList = preferred ? [preferred] : [];
+  const envValue = process.env.GEMINI_MODEL || process.env.GEMINI_MODELS || "";
+  const preferredList = envValue
+    .split(/[\s,]+/)
+    .map((value) => value.trim())
+    .filter(Boolean);
+
   const fallbackList = defaultGeminiModels.filter(
-    (model) => model !== preferred,
+    (model) => !preferredList.includes(model),
   );
+
   return [...new Set([...preferredList, ...fallbackList])];
 };
 

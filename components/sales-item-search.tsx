@@ -186,9 +186,21 @@ export function SalesItemSearch({
           label: `${formatWholeNumber(tier.quantity)}${unit?.shortForm ? " " + unit.shortForm : ""}`,
         });
       }
-      return { item, tierSummaries, tierCount: tiers.length };
+      const matchText = normalizeVoiceText(searchTerm);
+      const exactMatch =
+        normalizeVoiceText(
+          [item.name, item.nameMarathi, item.brand, item.brandMarathi]
+            .filter(Boolean)
+            .join(" "),
+        ).includes(matchText) && matchText.length > 1;
+      return {
+        item,
+        tierSummaries,
+        tierCount: tiers.length,
+        exactMatch,
+      };
     });
-  }, [filteredItems, priceTiers, units]);
+  }, [filteredItems, priceTiers, searchTerm, units]);
 
   const itemPriceTiers = useMemo(() => {
     if (!selectedItem) return [];
@@ -384,7 +396,7 @@ export function SalesItemSearch({
             </div>
           ) : filteredItems.length > 0 ? (
             filteredWithTierSummary.map(
-              ({ item, tierSummaries, tierCount }) => {
+              ({ item, tierSummaries, tierCount, exactMatch }) => {
                 const unitShort =
                   units.find((u) => u.id === item.unitId)?.shortForm || "unit";
                 const remaining = getRemainingStock(item);
@@ -411,14 +423,12 @@ export function SalesItemSearch({
                   : baseName;
 
                 return (
-                  <button
+                  <div
                     key={item.id}
-                    onClick={() => !outOfStock && handleItemSelect(item)}
-                    disabled={outOfStock}
-                    className={`h-auto w-full border-b border-slate-200 bg-white p-3 text-left last:border-b-0 transition hover:bg-violet-50/70 ${
+                    className={`border-b border-slate-200 bg-white p-3 last:border-b-0 transition ${
                       outOfStock
-                        ? "cursor-not-allowed bg-gray-50/70 opacity-50"
-                        : ""
+                        ? "bg-gray-50/70 opacity-60"
+                        : "hover:bg-violet-50/70"
                     }`}
                   >
                     <div className="flex items-start justify-between gap-3">
@@ -432,29 +442,46 @@ export function SalesItemSearch({
                               {brandName}
                             </span>
                           )}
+                          {exactMatch && (
+                            <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-bold text-violet-700">
+                              exact match
+                            </span>
+                          )}
                         </div>
 
-                        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-600">
+                        <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-slate-600">
                           <span className="rounded bg-emerald-50 px-1.5 py-0.5 font-semibold text-emerald-700">
                             {t("stock")}: {formatWholeNumber(remaining)}{" "}
                             {unitShort}
                           </span>
                           <span className="rounded bg-blue-50 px-1.5 py-0.5 font-semibold text-blue-700">
-                            Price: ₹{formatMoney(item.sellPrice)}/{unitShort}
+                            ₹{formatMoney(item.sellPrice)}/{unitShort}
                           </span>
-                          {tierSummaries.length > 0 && (
-                            <span className="rounded bg-violet-50 px-1.5 py-0.5 font-medium text-violet-700">
-                              Packs:{" "}
-                              {tierSummaries
-                                .slice(0, 2)
-                                .map(
-                                  (t) => `₹${formatMoney(t.price)}/${t.label}`,
-                                )
-                                .join(" · ")}
-                              {tierCount > 2 && ` +${tierCount - 2}`}
+                          {item.category && (
+                            <span className="rounded bg-amber-50 px-1.5 py-0.5 font-medium text-amber-700">
+                              {item.category}
                             </span>
                           )}
                         </div>
+
+                        {tierSummaries.length > 0 && (
+                          <div className="mt-2 flex flex-wrap items-center gap-1 text-[10px] text-violet-700">
+                            <span className="font-semibold">Packs:</span>
+                            {tierSummaries.slice(0, 2).map((t, idx) => (
+                              <span
+                                key={`${item.id}-${t.label}-${idx}`}
+                                className="rounded bg-violet-50 px-1.5 py-0.5"
+                              >
+                                ₹{formatMoney(t.price)}/{t.label}
+                              </span>
+                            ))}
+                            {tierCount > 2 && (
+                              <span className="rounded bg-violet-50 px-1.5 py-0.5">
+                                +{tierCount - 2}
+                              </span>
+                            )}
+                          </div>
+                        )}
 
                         <div className="mt-2 flex items-center justify-between gap-3">
                           <div className="text-[11px] text-slate-500">
@@ -490,9 +517,21 @@ export function SalesItemSearch({
                         <div className="mt-1 text-[10px] font-semibold text-green-700">
                           Profit: ₹{formatMoney(profitPer)}
                         </div>
+                        <button
+                          type="button"
+                          onClick={() => !outOfStock && handleItemSelect(item)}
+                          disabled={outOfStock}
+                          className={`mt-2 inline-flex items-center rounded-md px-2.5 py-1.5 text-[10px] font-semibold transition ${
+                            outOfStock
+                              ? "cursor-not-allowed bg-slate-200 text-slate-400"
+                              : "bg-blue-600 text-white hover:bg-blue-700"
+                          }`}
+                        >
+                          {outOfStock ? "Unavailable" : "Add"}
+                        </button>
                       </div>
                     </div>
-                  </button>
+                  </div>
                 );
               },
             )
