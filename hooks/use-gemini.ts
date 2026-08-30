@@ -22,6 +22,7 @@ export function useGeminiUnderstanding(
       type: "voice" | "text" | "search" = "text",
       items?: any[],
       units?: any[],
+      context?: Record<string, any>,
     ) => {
       if (!input || input.trim().length === 0) {
         const err = "Input cannot be empty";
@@ -44,6 +45,7 @@ export function useGeminiUnderstanding(
             type,
             items: items || [],
             units: units || [],
+            context: context || {},
           }),
         });
 

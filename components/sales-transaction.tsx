@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useSales, useUdhari, useItems, useUnits } from "@/hooks/use-supabase";
 import { useAuth } from "@/providers/auth-provider";
 import { useLanguage } from "@/providers/language-provider";
@@ -57,6 +58,7 @@ interface LineItem {
 }
 
 export function SalesTransaction() {
+  const searchParams = useSearchParams();
   const { currentShopId } = useAuth();
   const { createSale, updateStockAfterSale, deleteSale } = useSales(currentShopId);
   const { customers, addCustomer, addCredit } = useUdhari(currentShopId);
@@ -292,7 +294,7 @@ export function SalesTransaction() {
             <CardTitle className="text-base">{t("add_items")}</CardTitle>
           </CardHeader>
           <CardContent>
-            <VoiceSaleAssistant items={allItems} units={units} onAdd={handleItemAdded} />
+            <VoiceSaleAssistant items={allItems} units={units} onAdd={handleItemAdded} autoFocus={searchParams.get("ai") === "voice"} />
             <SalesItemSearch onItemAdded={handleItemAdded} addedItems={items} />
           </CardContent>
         </Card>

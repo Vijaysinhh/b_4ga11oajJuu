@@ -159,7 +159,7 @@ export function parseVoiceSaleCommand(value: string): VoiceSaleRequest[] {
       const quantityIndex = tokens.findIndex(
         (token) => numberFromToken(token) !== undefined,
       );
-      const quantity =
+      let quantity =
         quantityIndex >= 0 ? numberFromToken(tokens[quantityIndex]) || 1 : 1;
       const productTokens = tokens.filter(
         (_, index) => index !== quantityIndex,
@@ -170,6 +170,8 @@ export function parseVoiceSaleCommand(value: string): VoiceSaleRequest[] {
         if (unit) requestedUnit = unit;
         return !unit && !commandWords.has(token);
       });
+      // A dozen is a quantity multiplier, not merely a display unit.
+      if (requestedUnit === "dozen") quantity *= 12;
       return {
         quantity,
         productQuery: filteredTokens.join(" ").trim(),

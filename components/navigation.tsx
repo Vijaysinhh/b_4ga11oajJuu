@@ -34,6 +34,7 @@ import { Input } from "@/components/ui/input";
 import { useItems, useSales, useUdhari } from "@/hooks/use-supabase";
 import { NotificationCenter } from "@/components/notification-center";
 import { OfflineStatus } from "@/components/offline-status";
+import { GlobalAiAssistant } from "@/components/global-ai-assistant";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -57,6 +58,14 @@ export function Navigation() {
   const { items } = useItems(currentShopId);
   const { sales } = useSales(currentShopId);
   const { customers } = useUdhari(currentShopId);
+  const headerPulse = useMemo(() => {
+    const today = new Date().toDateString();
+    const revenue = sales
+      .filter((sale) => new Date(sale.createdAt || sale.timestamp || sale.date).toDateString() === today)
+      .reduce((sum, sale) => sum + Number(sale.subtotal || sale.total || 0), 0);
+    const lowStock = items.filter((item) => Number(item.lowStockLimit || 0) > 0 && Number(item.quantity || 0) <= Number(item.lowStockLimit || 0)).length;
+    return { revenue, lowStock };
+  }, [items, sales]);
 
   // Compute search results
   const searchResults = useMemo(() => {
@@ -238,12 +247,34 @@ export function Navigation() {
         </div>
 
         {/* Global Search Bar */}
-        {(user?.role === "owner" || user?.role === "super_admin" || canViewItems || canViewUdhari) && (
+        {(user?.role === "owner" ||
+          user?.role === "super_admin" ||
+          canViewItems ||
+          canViewUdhari) && (
           <div className="flex flex-1 items-center gap-2 mx-4">
+            <div className="hidden lg:flex items-center gap-1.5 text-xs">
+              <Link href="/dashboard" className="rounded-full border border-emerald-100 bg-emerald-50 px-2.5 py-1.5 font-medium text-emerald-700 hover:bg-emerald-100">
+                Today ₹{Math.round(headerPulse.revenue).toLocaleString("en-IN")}
+              </Link>
+              {headerPulse.lowStock > 0 && <Link href="/items?stock=lowStock" className="rounded-full border border-amber-100 bg-amber-50 px-2.5 py-1.5 font-medium text-amber-800 hover:bg-amber-100">
+                {headerPulse.lowStock} low stock
+              </Link>}
+            </div>
+            <GlobalAiAssistant
+              items={items}
+              sales={sales}
+              customers={customers}
+              language={language}
+              pathname={pathname}
+            />
             <div className="relative flex-1 max-w-md search-container">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
-                placeholder={language === "mr" ? "स्टॉक किंवा उधारी शोधा..." : "Search stock or udhari..."}
+                placeholder={
+                  language === "mr"
+                    ? "स्टॉक किंवा उधारी शोधा..."
+                    : "Search stock or udhari..."
+                }
                 value={globalSearchQuery}
                 onChange={(e) => setGlobalSearchQuery(e.target.value)}
                 onFocus={() => setShowSearchResults(true)}

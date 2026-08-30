@@ -29,6 +29,7 @@ export async function POST(request: NextRequest) {
       items = [],
       units = [],
       language = "en",
+      context = {},
     } = body;
 
     // Validate required fields
@@ -79,6 +80,7 @@ export async function POST(request: NextRequest) {
       result = await understandUserInput(input, {
         availableItems: items,
         language: language as "en" | "mr",
+        ...context,
       });
 
       return NextResponse.json({

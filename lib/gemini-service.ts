@@ -1,13 +1,14 @@
 import { GoogleGenAI } from "@google/genai";
 
 const apiKey = process.env.GEMINI_API_KEY;
+const modelName = process.env.GEMINI_MODEL || "gemini-3.5-flash-lite";
 const client = apiKey ? new GoogleGenAI({ apiKey }) : null;
 
 const generateContent = (
   contents: string | Array<{ role: "user"; parts: Array<{ text: string }> }>,
 ) =>
   client
-    ? client.models.generateContent({ model: "gemini-2.0-flash", contents })
+    ? client.models.generateContent({ model: modelName, contents })
     : Promise.reject(
         new Error("GEMINI_API_KEY is not set in environment variables"),
       );
@@ -57,6 +58,17 @@ export async function understandUserInput(
     }>;
     availableActions?: string[];
     language?: "en" | "mr";
+    availableCustomers?: Array<{
+      name: string;
+      phone?: string;
+      balance: number;
+    }>;
+    salesSummary?: {
+      today?: number;
+      month?: number;
+      transactionCount?: number;
+    };
+    conversationHistory?: Array<{ role: "user" | "assistant"; text: string }>;
   },
 ): Promise<ParsedInput> {
   if (!userInput || userInput.trim().length === 0) {
@@ -74,6 +86,17 @@ export async function understandUserInput(
           .map((item) => `${item.name} (${item.nameMarathi})`)
           .join(", ")
       : "No items provided";
+    const availableCustomers = context?.availableCustomers
+      ? context.availableCustomers
+          .map(
+            (customer) =>
+              `${customer.name} (${customer.phone || "no phone"}) - balance: ${customer.balance}`,
+          )
+          .join(", ")
+      : "No customers provided";
+    const salesSummary = context?.salesSummary
+      ? JSON.stringify(context.salesSummary)
+      : "No sales summary provided";
 
     const systemPrompt = `You are an intelligent inventory assistant for a shop management system called "Dukan".
 Your task is to understand user inputs and extract structured information.
@@ -81,6 +104,9 @@ Your task is to understand user inputs and extract structured information.
 Respond ONLY with valid JSON (no markdown, no code blocks, just pure JSON object).
 
 Available items: ${availableItems}
+Available customers and udhari balances: ${availableCustomers}
+Sales summary: ${salesSummary}
+Recent conversation: ${context?.conversationHistory?.map((message) => `${message.role}: ${message.text}`).join("\n") || "No previous conversation"}
 Available actions: ${context?.availableActions?.join(", ") || "sale, search, inventory, report"}
 Language: ${context?.language === "mr" ? "Marathi (or mixed English-Marathi)" : "English"}
 
