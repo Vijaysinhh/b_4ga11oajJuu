@@ -2,8 +2,22 @@ import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenAI } from "@google/genai";
 
 const apiKey = process.env.GEMINI_API_KEY;
-const modelName = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+const defaultGeminiModels = [
+  "gemini-2.5-flash-lite",
+  "gemini-2.5-flash",
+  "gemini-2.0-flash-lite",
+  "gemini-2.0-flash",
+];
 const client = apiKey ? new GoogleGenAI({ apiKey }) : null;
+
+const resolveGeminiModels = () => {
+  const preferred = (process.env.GEMINI_MODEL || "").trim();
+  const preferredList = preferred ? [preferred] : [];
+  const fallbackList = defaultGeminiModels.filter(
+    (model) => model !== preferred,
+  );
+  return [...new Set([...preferredList, ...fallbackList])];
+};
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -39,25 +53,52 @@ export async function POST(request: NextRequest) {
     const base64Audio = toBase64(arrayBuffer);
     const mimeType = audio.type || "audio/webm";
 
-    const response = await client.models.generateContent({
-      model: modelName,
-      contents: [
-        {
-          role: "user",
-          parts: [
+    let lastError: unknown = null;
+    let response;
+
+    for (const model of resolveGeminiModels()) {
+      try {
+        response = await client.models.generateContent({
+          model,
+          contents: [
             {
-              text: `Transcribe this audio into plain text for a shop sales workflow. Use Marathi + English naturally. Keep the raw spoken transcript, including product names, numbers, quantity and price phrases. Do not add commentary or bullet points. Return only the final transcript text. Language hint: ${language}`,
-            },
-            {
-              inlineData: {
-                mimeType,
-                data: base64Audio,
-              },
+              role: "user",
+              parts: [
+                {
+                  text: `Transcribe this audio into plain text for a shop sales workflow. Use Marathi + English naturally. Keep the raw spoken transcript, including product names, numbers, quantity and price phrases. Do not add commentary or bullet points. Return only the final transcript text. Language hint: ${language}`,
+                },
+                {
+                  inlineData: {
+                    mimeType,
+                    data: base64Audio,
+                  },
+                },
+              ],
             },
           ],
-        },
-      ],
-    });
+        });
+        break;
+      } catch (error) {
+        lastError = error;
+        const message = error instanceof Error ? error.message : String(error);
+        const isUnavailableError =
+          /404|not found|model.*unavailable|not available/i.test(message);
+
+        if (!isUnavailableError) {
+          throw error;
+        }
+
+        console.warn(
+          `[transcribe-route] Model unavailable: ${model}. Retrying with next fallback.`,
+        );
+      }
+    }
+
+    if (!response) {
+      throw lastError instanceof Error
+        ? lastError
+        : new Error("No Gemini model is available for this request");
+    }
 
     const transcript = (response.text || "").trim();
 

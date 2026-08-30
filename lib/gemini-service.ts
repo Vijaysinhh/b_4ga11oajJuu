@@ -1,17 +1,57 @@
 import { GoogleGenAI } from "@google/genai";
 
 const apiKey = process.env.GEMINI_API_KEY;
-const modelName = process.env.GEMINI_MODEL || "gemini-3.5-flash-lite";
+const defaultGeminiModels = [
+  "gemini-2.5-flash-lite",
+  "gemini-2.5-flash",
+  "gemini-2.0-flash-lite",
+  "gemini-2.0-flash",
+];
 const client = apiKey ? new GoogleGenAI({ apiKey }) : null;
 
-const generateContent = (
+const resolveGeminiModels = () => {
+  const preferred = (process.env.GEMINI_MODEL || "").trim();
+  const preferredList = preferred ? [preferred] : [];
+  const fallbackList = defaultGeminiModels.filter(
+    (model) => model !== preferred,
+  );
+  return [...new Set([...preferredList, ...fallbackList])];
+};
+
+const generateContent = async (
   contents: string | Array<{ role: "user"; parts: Array<{ text: string }> }>,
-) =>
-  client
-    ? client.models.generateContent({ model: modelName, contents })
-    : Promise.reject(
-        new Error("GEMINI_API_KEY is not set in environment variables"),
+) => {
+  if (!client) {
+    return Promise.reject(
+      new Error("GEMINI_API_KEY is not set in environment variables"),
+    );
+  }
+
+  let lastError: unknown = null;
+
+  for (const model of resolveGeminiModels()) {
+    try {
+      return await client.models.generateContent({ model, contents });
+    } catch (error) {
+      lastError = error;
+      const message = error instanceof Error ? error.message : String(error);
+      const isUnavailableError =
+        /404|not found|model.*unavailable|not available/i.test(message);
+
+      if (!isUnavailableError) {
+        throw error;
+      }
+
+      console.warn(
+        `[gemini-service] Model unavailable: ${model}. Retrying with next fallback.`,
       );
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("No Gemini model is available for this request");
+};
 
 export interface ParsedInput {
   intent: "sale" | "search" | "inventory" | "report" | "unknown";
