@@ -11,6 +11,7 @@ interface UseGeminiUnderstandingOptions {
 export function useGeminiUnderstanding(
   options: UseGeminiUnderstandingOptions = {},
 ) {
+  const { onSuccess, onError } = options;
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<any>(null);
@@ -25,7 +26,7 @@ export function useGeminiUnderstanding(
       if (!input || input.trim().length === 0) {
         const err = "Input cannot be empty";
         setError(err);
-        options.onError?.(err);
+        onError?.(err);
         return null;
       }
 
@@ -50,25 +51,25 @@ export function useGeminiUnderstanding(
           const errorData = await response.json();
           const errorMessage = errorData.error || `HTTP ${response.status}`;
           setError(errorMessage);
-          options.onError?.(errorMessage);
+          onError?.(errorMessage);
           return null;
         }
 
         const data = await response.json();
         setResult(data);
-        options.onSuccess?.(data);
+        onSuccess?.(data);
         return data;
       } catch (err) {
         const errorMessage =
           err instanceof Error ? err.message : "Failed to understand input";
         setError(errorMessage);
-        options.onError?.(errorMessage);
+        onError?.(errorMessage);
         return null;
       } finally {
         setIsLoading(false);
       }
     },
-    [options],
+    [onError, onSuccess],
   );
 
   const parseVoiceCommand = useCallback(

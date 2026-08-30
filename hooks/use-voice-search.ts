@@ -12,6 +12,7 @@ export function useVoiceSearch(options: UseVoiceSearchOptions = {}) {
   const [transcript, setTranscript] = useState('');
   const [isSupported, setIsSupported] = useState(false);
   const recognitionRef = useRef<any>(null);
+  const shouldKeepListeningRef = useRef(false);
 
   useEffect(() => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -20,7 +21,7 @@ export function useVoiceSearch(options: UseVoiceSearchOptions = {}) {
     if (!SpeechRecognition) return;
 
     const recognition = new SpeechRecognition();
-    recognition.continuous = false;
+    recognition.continuous = true;
     recognition.interimResults = true;
     recognition.lang = language;
 
@@ -46,25 +47,40 @@ export function useVoiceSearch(options: UseVoiceSearchOptions = {}) {
     };
 
     recognition.onend = () => {
-      setIsListening(false);
+      if (shouldKeepListeningRef.current) {
+        try {
+          recognition.start();
+        } catch {
+          setIsListening(false);
+        }
+      } else {
+        setIsListening(false);
+      }
     };
 
     recognitionRef.current = recognition;
 
     return () => {
+      shouldKeepListeningRef.current = false;
       recognition.abort();
     };
   }, [language]);
 
   const startListening = () => {
     if (recognitionRef.current) {
+      shouldKeepListeningRef.current = true;
       setTranscript('');
-      recognitionRef.current.start();
+      try {
+        recognitionRef.current.start();
+      } catch {
+        setIsListening(true);
+      }
     }
   };
 
   const stopListening = () => {
     if (recognitionRef.current) {
+      shouldKeepListeningRef.current = false;
       recognitionRef.current.stop();
     }
   };

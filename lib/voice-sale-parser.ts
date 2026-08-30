@@ -109,6 +109,9 @@ const commandWords = new Set([
   "द्याना",
   "हवे",
   "पाहिजे",
+  "वस्तू",
+  "आणून",
+  "घ्या",
 ]);
 
 export function normalizeVoiceText(value: string) {

@@ -7,7 +7,7 @@ import { useLanguage } from "@/providers/language-provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
-import { Search, Plus, X } from "lucide-react";
+import { Search, Plus, X, Mic, Sparkles } from "lucide-react";
 import { HelpTooltip } from "@/components/help-tooltip";
 import { calculatePriceTierCost, convertUnit } from "@/lib/unit-conversion";
 import { toast } from "sonner";
@@ -19,6 +19,8 @@ import {
   parseNumberInput,
 } from "@/lib/number-format";
 import type { Item, PriceTier } from "@/lib/db";
+import { useVoiceSearch } from "@/hooks/use-voice-search";
+import { useGeminiUnderstanding } from "@/hooks/use-gemini";
 
 interface SaleLineItem {
   itemId: number;
@@ -62,17 +64,64 @@ export function SalesItemSearch({
   const [selectedPriceTier, setSelectedPriceTier] = useState<PriceTier | null>(
     null,
   );
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
+  const {
+    transcript,
+    isListening,
+    isSupported,
+    startListening,
+    stopListening,
+    resetTranscript,
+  } = useVoiceSearch({ language: language === "mr" ? "mr-IN" : "en-US" });
+  const { searchItems } = useGeminiUnderstanding();
+
+  useEffect(() => {
+    if (transcript) setSearchTerm(transcript);
+  }, [transcript]);
+
+  useEffect(() => {
+    if (!searchTerm.trim() || items.length === 0) {
+      setSuggestions([]);
+      return;
+    }
+    const timer = window.setTimeout(async () => {
+      setSuggestionsLoading(true);
+      const result = await searchItems(searchTerm, items);
+      const aiSuggestions = Array.isArray(result?.suggestions)
+        ? result.suggestions
+        : [];
+      const normalizedQuery = searchTerm.toLocaleLowerCase();
+      const localSuggestions = items
+        .filter((item) =>
+          `${item.name} ${item.nameMarathi || ""} ${item.brand || ""} ${item.brandMarathi || ""}`
+            .toLocaleLowerCase()
+            .includes(normalizedQuery),
+        )
+        .slice(0, 5)
+        .map((item) => item.name);
+      setSuggestions(
+        [...new Set([...aiSuggestions, ...localSuggestions])].slice(0, 5),
+      );
+      setSuggestionsLoading(false);
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [items, searchItems, searchTerm]);
 
   // Initialize from itemToEdit if provided
   useEffect(() => {
     if (itemToEdit) {
-      const originalItem = items.find(i => i.id === itemToEdit.itemId);
+      const originalItem = items.find((i) => i.id === itemToEdit.itemId);
       if (originalItem) {
         setSelectedItem(originalItem);
         // Try to guess original quantity and price tier
-        setQuantity(itemToEdit.packCount ? itemToEdit.packCount.toString() : itemToEdit.quantity.toString());
+        setQuantity(
+          itemToEdit.packCount
+            ? itemToEdit.packCount.toString()
+            : itemToEdit.quantity.toString(),
+        );
         if (itemToEdit.priceTierId) {
-          const tier = priceTiers.find(t => t.id === itemToEdit.priceTierId);
+          const tier = priceTiers.find((t) => t.id === itemToEdit.priceTierId);
           setSelectedPriceTier(tier || null);
         } else {
           setSelectedPriceTier(null);
@@ -118,7 +167,9 @@ export function SalesItemSearch({
         const matchesNameMr = item.nameMarathi
           ? item.nameMarathi.toLowerCase().includes(term)
           : false;
-        const matchesBrand = item.brand ? item.brand.toLowerCase().includes(term) : false;
+        const matchesBrand = item.brand
+          ? item.brand.toLowerCase().includes(term)
+          : false;
         const matchesBrandMr = item.brandMarathi
           ? item.brandMarathi.toLowerCase().includes(term)
           : false;
@@ -157,7 +208,10 @@ export function SalesItemSearch({
       inCart -= itemToEdit.quantity;
     }
     // Now calculate remaining stock: current stock minus (other items in cart)
-    const remaining = item.quantity - inCart + (itemToEdit && itemToEdit.itemId === item.id ? itemToEdit.quantity : 0);
+    const remaining =
+      item.quantity -
+      inCart +
+      (itemToEdit && itemToEdit.itemId === item.id ? itemToEdit.quantity : 0);
     return remaining;
   };
 
@@ -303,14 +357,61 @@ export function SalesItemSearch({
           className="h-10 pl-10"
           autoFocus
         />
+        {isSupported && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={
+              isListening
+                ? stopListening
+                : () => {
+                    resetTranscript();
+                    startListening();
+                  }
+            }
+            className="absolute right-1 top-1 h-8 w-8 text-violet-600 hover:bg-violet-50"
+            aria-label={
+              isListening ? "Stop voice search" : "Start voice search"
+            }
+            title={isListening ? "Stop voice search" : "Search by voice"}
+          >
+            <Mic
+              className={`h-4 w-4 ${isListening ? "animate-pulse text-red-600" : ""}`}
+            />
+          </Button>
+        )}
       </div>
+
+      {(suggestionsLoading || suggestions.length > 0) && !selectedItem && (
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <Sparkles className="h-3.5 w-3.5 text-violet-500" />
+          {suggestionsLoading && (
+            <span className="text-gray-500">Finding suggestions...</span>
+          )}
+          {suggestions.map((suggestion) => (
+            <button
+              key={suggestion}
+              type="button"
+              onClick={() => setSearchTerm(suggestion)}
+              className="rounded-full border border-violet-200 bg-violet-50 px-2.5 py-1 text-violet-700 hover:bg-violet-100"
+            >
+              {suggestion}
+            </button>
+          ))}
+        </div>
+      )}
 
       {searchTerm && filteredItems.length > 0 && !selectedItem && (
         <div className="overflow-hidden rounded-lg border">
           {filteredWithTierSummary.map(({ item, tierSummaries, tierCount }) => {
-            const unitShort = units.find((u) => u.id === item.unitId)?.shortForm || "unit";
+            const unitShort =
+              units.find((u) => u.id === item.unitId)?.shortForm || "unit";
             const remaining = getRemainingStock(item);
-            const profitPer = Math.max(0, Number(item.sellPrice || 0) - Number(item.buyPrice || 0));
+            const profitPer = Math.max(
+              0,
+              Number(item.sellPrice || 0) - Number(item.buyPrice || 0),
+            );
             const marginPct =
               Number(item.sellPrice || 0) > 0
                 ? (profitPer / Number(item.sellPrice || 0)) * 100
@@ -341,7 +442,9 @@ export function SalesItemSearch({
                             language === "mr" && item.brandMarathi
                               ? item.brandMarathi
                               : item.brand;
-                          return brandName ? `${baseName} (${brandName})` : baseName;
+                          return brandName
+                            ? `${baseName} (${brandName})`
+                            : baseName;
                         })()}
                       </span>
                       {marginPct >= 0 && (
@@ -359,7 +462,11 @@ export function SalesItemSearch({
                       )}
                     </div>
                     <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-gray-600">
-                      <span className={lowStock ? "font-semibold text-orange-700" : ""}>
+                      <span
+                        className={
+                          lowStock ? "font-semibold text-orange-700" : ""
+                        }
+                      >
                         {t("stock")}: {formatWholeNumber(remaining)} {unitShort}
                         {lowStock && !outOfStock && " · low"}
                         {outOfStock && " · out"}
@@ -368,12 +475,10 @@ export function SalesItemSearch({
                         <span className="text-indigo-700">
                           {language === "mr" ? "पॅक" : "packs"}:{" "}
                           {tierSummaries
-                            .map(
-                              (t) =>
-                                `₹${formatMoney(t.price)}/${t.label}`,
-                            )
+                            .map((t) => `₹${formatMoney(t.price)}/${t.label}`)
                             .join(" · ")}
-                          {tierCount > tierSummaries.length && ` +${tierCount - tierSummaries.length}`}
+                          {tierCount > tierSummaries.length &&
+                            ` +${tierCount - tierSummaries.length}`}
                         </span>
                       )}
                     </div>
@@ -387,7 +492,13 @@ export function SalesItemSearch({
                     </div>
                     <div className="mt-0.5 text-[10px] font-medium text-gray-500">
                       {t("buy")}: ₹{formatMoney(item.buyPrice)} ·{" "}
-                      <span className={profitPer > 0 ? "text-green-700 font-semibold" : "text-gray-500"}>
+                      <span
+                        className={
+                          profitPer > 0
+                            ? "text-green-700 font-semibold"
+                            : "text-gray-500"
+                        }
+                      >
                         +₹{formatMoney(profitPer)}
                       </span>
                     </div>
@@ -420,7 +531,8 @@ export function SalesItemSearch({
               </div>
               <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-gray-600">
                 <span>
-                  {t("stock")}: {formatWholeNumber(getRemainingStock(selectedItem))}{" "}
+                  {t("stock")}:{" "}
+                  {formatWholeNumber(getRemainingStock(selectedItem))}{" "}
                   {units.find((u) => u.id === selectedItem.unitId)?.shortForm}
                 </span>
                 <span className="font-semibold text-blue-700">
@@ -431,7 +543,9 @@ export function SalesItemSearch({
                   {t("buy")}: ₹{formatMoney(selectedItem.buyPrice)}
                 </span>
                 {(() => {
-                  const ppu = Number(selectedItem.sellPrice || 0) - Number(selectedItem.buyPrice || 0);
+                  const ppu =
+                    Number(selectedItem.sellPrice || 0) -
+                    Number(selectedItem.buyPrice || 0);
                   const mp =
                     Number(selectedItem.sellPrice || 0) > 0
                       ? (ppu / Number(selectedItem.sellPrice || 0)) * 100

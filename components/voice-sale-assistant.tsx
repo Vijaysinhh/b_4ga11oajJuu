@@ -38,6 +38,7 @@ export function VoiceSaleAssistant({
   const [useGemini, setUseGemini] = useState(false);
   const [geminiParsing, setGeminiParsing] = useState(false);
   const recognition = useRef<any>(null);
+  const keepListening = useRef(false);
   const { parseVoiceCommand } = useGeminiUnderstanding();
 
   const inStockItems = useMemo(
@@ -208,7 +209,8 @@ export function VoiceSaleAssistant({
     recognition.current = instance;
     instance.lang = "mr-IN";
     instance.interimResults = true;
-    instance.continuous = false;
+    instance.continuous = true;
+    keepListening.current = true;
     instance.onstart = () => {
       setListening(true);
       setFeedback(["Listening… say all products and quantities, then pause."]);
@@ -222,8 +224,19 @@ export function VoiceSaleAssistant({
       if (event.results[event.results.length - 1]?.isFinal)
         setFeedback([`Heard: “${heard}”. Tap Add to update this sale cart.`]);
     };
-    instance.onend = () => setListening(false);
+    instance.onend = () => {
+      if (keepListening.current) {
+        try {
+          instance.start();
+        } catch {
+          setListening(false);
+        }
+      } else {
+        setListening(false);
+      }
+    };
     instance.onerror = (event: any) => {
+      keepListening.current = false;
       setListening(false);
       const errors: Record<string, string> = {
         "not-allowed":
@@ -241,6 +254,12 @@ export function VoiceSaleAssistant({
       ]);
     };
     instance.start();
+  };
+
+  const stopListening = () => {
+    keepListening.current = false;
+    recognition.current?.stop?.();
+    setListening(false);
   };
 
   return (
@@ -281,13 +300,12 @@ export function VoiceSaleAssistant({
         </div>
         <Button
           type="button"
-          onClick={startListening}
-          disabled={listening}
+          onClick={listening ? stopListening : startListening}
           variant="outline"
           className="border-violet-300 text-violet-700 hover:bg-violet-50"
         >
           <Mic className="mr-2 h-4 w-4" />
-          {listening ? "Listening…" : "Speak"}
+          {listening ? "Stop" : "Speak"}
         </Button>
         <Button
           type="button"
