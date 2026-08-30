@@ -94,21 +94,83 @@ const cleanTranscript = (value: string) => {
     .trim();
 };
 
+const levenshteinDistance = (first: string, second: string) => {
+  const matrix = Array.from({ length: first.length + 1 }, () =>
+    Array(second.length + 1).fill(0),
+  );
+
+  for (let i = 0; i <= first.length; i += 1) matrix[i][0] = i;
+  for (let j = 0; j <= second.length; j += 1) matrix[0][j] = j;
+
+  for (let i = 1; i <= first.length; i += 1) {
+    for (let j = 1; j <= second.length; j += 1) {
+      const substitutionCost = first[i - 1] === second[j - 1] ? 0 : 1;
+      matrix[i][j] = Math.min(
+        matrix[i - 1][j] + 1,
+        matrix[i][j - 1] + 1,
+        matrix[i - 1][j - 1] + substitutionCost,
+      );
+    }
+  }
+
+  return matrix[first.length][second.length];
+};
+
 const productScore = (query: string, item: any) => {
-  const words = normalizeVoiceText(query)
-    .split(" ")
-    .filter((word) => word.length > 1);
-  const name = normalizeVoiceText(
+  const normalizedQuery = normalizeVoiceText(query);
+  const itemText = normalizeVoiceText(
     [item.name, item.nameMarathi, item.brand, item.brandMarathi]
       .filter(Boolean)
       .join(" "),
   );
-  const compactQuery = normalizeVoiceText(query).replace(/\s/g, "");
-  const compactName = name.replace(/\s/g, "");
+
+  if (!normalizedQuery || !itemText) return 0;
+
+  const queryTokens = normalizedQuery
+    .split(" ")
+    .filter((word) => word.length > 1);
+  const itemTokens = itemText.split(" ").filter((word) => word.length > 1);
+
+  const exactMatch = itemText.includes(normalizedQuery) ? 35 : 0;
+  const prefixBoost =
+    normalizedQuery.length > 3 &&
+    itemText.startsWith(normalizedQuery.slice(0, 4))
+      ? 12
+      : 0;
+  const tokenOverlap = queryTokens.reduce(
+    (total, word) => total + (itemTokens.includes(word) ? 8 : 0),
+    0,
+  );
+  const sharedLeading =
+    queryTokens.length > 0 && itemTokens.length > 0
+      ? queryTokens
+          .slice(0, 2)
+          .every((word, index) => itemTokens[index] === word)
+        ? 10
+        : 0
+      : 0;
+
+  const distance = levenshteinDistance(normalizedQuery, itemText);
+  const maxLength = Math.max(normalizedQuery.length, itemText.length, 1);
+  const fuzzyRatio = Math.max(0, 1 - distance / maxLength);
+  const fuzzyBoost = fuzzyRatio * 30;
+
+  const compactQuery = normalizedQuery.replace(/\s+/g, "");
+  const compactItem = itemText.replace(/\s+/g, "");
+  const compactDistance = levenshteinDistance(compactQuery, compactItem);
+  const compactRatio = Math.max(
+    0,
+    1 - compactDistance / Math.max(compactQuery.length, compactItem.length, 1),
+  );
+  const compactBoost = compactRatio * 20;
+
   return (
-    words.reduce((total, word) => total + (name.includes(word) ? 3 : 0), 0) +
-    (name.includes(normalizeVoiceText(query)) ? 5 : 0) +
-    (compactName.includes(compactQuery) ? 4 : 0)
+    exactMatch +
+    prefixBoost +
+    tokenOverlap +
+    sharedLeading +
+    fuzzyBoost +
+    compactBoost
   );
 };
 

@@ -133,8 +133,25 @@ const commandWords = new Set([
   "चे",
 ]);
 
+const speechAliases: Record<string, string> = {
+  shivamrut: "shivamrut",
+  shivamrutdoodh: "shivamrut doodh",
+  shubhamrut: "shivamrut",
+  shubhamrutdoodh: "shivamrut doodh",
+  shivaamrut: "shivamrut",
+  shivamrutdudh: "shivamrut doodh",
+  shubhamrutdudh: "shivamrut doodh",
+  doodh: "doodh",
+  duudh: "doodh",
+  dhoodh: "doodh",
+  dudh: "doodh",
+  milk: "doodh",
+  dule: "doodh",
+  dud: "doodh",
+};
+
 export function normalizeVoiceText(value: string) {
-  return value
+  const normalized = value
     .toLowerCase()
     .replace(/[०-९]/g, (digit) => String("०१२३४५६७८९".indexOf(digit)))
     .replace(
@@ -144,6 +161,24 @@ export function normalizeVoiceText(value: string) {
     .replace(/[,.!?;:]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+
+  const withoutRepeats = normalized
+    .replace(/([a-z])\1{2,}/g, "$1$1")
+    .replace(/([aeiou])\1{2,}/g, "$1");
+
+  const aliasApplied = Object.entries(speechAliases).reduce(
+    (result, [alias, replacement]) =>
+      result.replace(
+        new RegExp(
+          `\\b${alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`,
+          "g",
+        ),
+        replacement,
+      ),
+    withoutRepeats,
+  );
+
+  return aliasApplied.replace(/\s+/g, " ").trim();
 }
 
 function numberFromToken(token: string) {
