@@ -81,6 +81,8 @@ export function VoiceSaleAssistant({
   const recognition = useRef<any>(null);
   const keepListening = useRef(false);
   const transcript = useRef("");
+  const restartTimer = useRef<number | null>(null);
+  const lastFinalPhrase = useRef("");
   const { parseVoiceCommand, isLoading: aiParsing } = useGeminiUnderstanding();
 
   useEffect(() => {
@@ -196,6 +198,7 @@ export function VoiceSaleAssistant({
       );
     keepListening.current = true;
     transcript.current = command.trim().slice(-6000);
+    lastFinalPhrase.current = "";
     const session = () => {
       if (!keepListening.current) return;
       const instance = new Recognition();
@@ -213,15 +216,18 @@ export function VoiceSaleAssistant({
         let interim = "";
         for (let i = event.resultIndex; i < event.results.length; i += 1) {
           const heard = event.results[i][0]?.transcript?.trim() || "";
-          if (event.results[i].isFinal) {
+          if (event.results[i].isFinal && heard !== lastFinalPhrase.current) {
             const nextTranscript = (transcript.current + " " + heard).trim();
             transcript.current = nextTranscript.slice(-6000);
-          } else interim = (interim + " " + heard).trim();
+            lastFinalPhrase.current = heard;
+          } else if (!event.results[i].isFinal)
+            interim = (interim + " " + heard).trim();
         }
         setCommand((transcript.current + " " + interim).trim().slice(-6000));
       };
       instance.onend = () => {
-        if (keepListening.current) window.setTimeout(session, 250);
+        if (keepListening.current)
+          restartTimer.current = window.setTimeout(session, 250);
         else setListening(false);
       };
       instance.onerror = (event: any) => {
@@ -237,7 +243,7 @@ export function VoiceSaleAssistant({
       try {
         instance.start();
       } catch {
-        window.setTimeout(session, 400);
+        restartTimer.current = window.setTimeout(session, 400);
       }
     };
     session();
@@ -245,6 +251,10 @@ export function VoiceSaleAssistant({
 
   const stopListening = () => {
     keepListening.current = false;
+    if (restartTimer.current) {
+      window.clearTimeout(restartTimer.current);
+      restartTimer.current = null;
+    }
     recognition.current?.stop?.();
     setListening(false);
     setMessage(

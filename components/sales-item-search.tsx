@@ -20,6 +20,7 @@ import {
 } from "@/lib/number-format";
 import type { Item, PriceTier } from "@/lib/db";
 import { VoiceSaleAssistant } from "./voice-sale-assistant";
+import { normalizeVoiceText } from "@/lib/voice-sale-parser";
 
 interface SaleLineItem {
   itemId: number;
@@ -115,22 +116,50 @@ export function SalesItemSearch({
 
   const filteredItems = useMemo(() => {
     if (!searchTerm.trim()) return [];
-    const term = searchTerm.toLowerCase();
+    const ignoredWords = new Set([
+      "add",
+      "please",
+      "and",
+      "ani",
+      "aani",
+      "then",
+      "plus",
+      "wale",
+      "वाले",
+      "रुपये",
+      "रुपयाचे",
+    ]);
+    const tokens = normalizeVoiceText(searchTerm)
+      .split(" ")
+      .filter(
+        (token) =>
+          token.length > 1 &&
+          !ignoredWords.has(token) &&
+          !/^\d+(?:\.\d+)?$/.test(token),
+      );
+
     return items
-      .filter((item) => {
-        const matchesName = item.name.toLowerCase().includes(term);
-        const matchesNameMr = item.nameMarathi
-          ? item.nameMarathi.toLowerCase().includes(term)
-          : false;
-        const matchesBrand = item.brand
-          ? item.brand.toLowerCase().includes(term)
-          : false;
-        const matchesBrandMr = item.brandMarathi
-          ? item.brandMarathi.toLowerCase().includes(term)
-          : false;
-        return matchesName || matchesNameMr || matchesBrand || matchesBrandMr;
+      .map((item) => {
+        const searchable = normalizeVoiceText(
+          [item.name, item.nameMarathi, item.brand, item.brandMarathi]
+            .filter(Boolean)
+            .join(" "),
+        );
+        const score = tokens.reduce(
+          (total, token) => total + (searchable.includes(token) ? 1 : 0),
+          0,
+        );
+        const exactPhrase = searchable.includes(normalizeVoiceText(searchTerm));
+        return { item, score: score + (exactPhrase ? 2 : 0) };
       })
-      .slice(0, 10);
+      .filter(({ score }) => score > 0)
+      .sort((first, second) => second.score - first.score)
+      .filter(
+        ({ item }, index, results) =>
+          results.findIndex((entry) => entry.item.id === item.id) === index,
+      )
+      .slice(0, 10)
+      .map(({ item }) => item);
   }, [searchTerm, items]);
 
   const filteredWithTierSummary = useMemo(() => {
