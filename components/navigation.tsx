@@ -260,13 +260,7 @@ export function Navigation() {
                 {headerPulse.lowStock} low stock
               </Link>}
             </div>
-            <GlobalAiAssistant
-              items={items}
-              sales={sales}
-              customers={customers}
-              language={language}
-              pathname={pathname}
-            />
+            <GlobalAiAssistant items={items} sales={sales} customers={customers} />
             <div className="relative flex-1 max-w-md search-container">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
@@ -421,6 +415,15 @@ export function Navigation() {
         )}
 
         <div className="flex items-center gap-2">
+          {canCreateSale && (
+            <Link
+              href="/sales"
+              className="hidden md:inline-flex h-9 items-center gap-1.5 rounded-full bg-primary px-3 text-sm font-semibold text-primary-foreground shadow-sm hover:bg-primary/90"
+            >
+              <Plus className="h-4 w-4" />
+              {t("new_sale")}
+            </Link>
+          )}
           {user?.role !== "worker" && (
             <LanguageToggle className="hidden sm:flex" />
           )}

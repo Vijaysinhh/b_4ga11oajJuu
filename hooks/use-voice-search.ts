@@ -11,6 +11,7 @@ export function useVoiceSearch(options: UseVoiceSearchOptions = {}) {
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [isSupported, setIsSupported] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const recognitionRef = useRef<any>(null);
   const shouldKeepListeningRef = useRef(false);
 
@@ -28,6 +29,7 @@ export function useVoiceSearch(options: UseVoiceSearchOptions = {}) {
     recognition.onstart = () => {
       setIsListening(true);
       setTranscript('');
+      setError(null);
     };
 
     recognition.onresult = (event: any) => {
@@ -43,7 +45,15 @@ export function useVoiceSearch(options: UseVoiceSearchOptions = {}) {
     };
 
     recognition.onerror = (event: any) => {
-      console.error('[Dukan] Speech recognition error:', event.error);
+      const messages: Record<string, string> = {
+        'not-allowed': 'Microphone permission is blocked.',
+        'audio-capture': 'No microphone was found.',
+        network: 'Voice service is unavailable. Please type your question or try again later.',
+      };
+      if (event.error === 'aborted' || event.error === 'no-speech') return;
+      shouldKeepListeningRef.current = false;
+      setIsListening(false);
+      setError(messages[event.error] || 'Voice input stopped. Please try again.');
     };
 
     recognition.onend = () => {
@@ -70,6 +80,7 @@ export function useVoiceSearch(options: UseVoiceSearchOptions = {}) {
     if (recognitionRef.current) {
       shouldKeepListeningRef.current = true;
       setTranscript('');
+      setError(null);
       try {
         recognitionRef.current.start();
       } catch {
@@ -92,6 +103,7 @@ export function useVoiceSearch(options: UseVoiceSearchOptions = {}) {
   return {
     isListening,
     transcript,
+    error,
     isSupported,
     startListening,
     stopListening,

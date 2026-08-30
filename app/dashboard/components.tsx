@@ -548,9 +548,6 @@ export function Dashboard() {
   const [editingSale, setEditingSale] = useState<any | null>(null);
   const [deleteSaleId, setDeleteSaleId] = useState<number | null>(null);
   const [showDayActivity, setShowDayActivity] = useState(false);
-  const [activeInsight, setActiveInsight] = useState<
-    "reports" | "brands" | "udhari" | "margin" | null
-  >(null);
 
   // --- Report Selection State ---
   const [selectedReportType, setSelectedReportType] = useState<
@@ -2175,10 +2172,10 @@ export function Dashboard() {
       <section className="order-3 rounded-2xl border border-slate-200/80 bg-card p-3 shadow-[0_4px_16px_rgba(15,23,42,0.04)]">
         <div className="mb-2 flex items-center justify-between px-1">
           <h2 className="text-sm font-semibold tracking-tight">
-            {language === "mr" ? "आजची कामे" : "Today’s tasks"}
+            {language === "mr" ? "लक्ष देण्याच्या गोष्टी" : "Needs attention"}
           </h2>
           <span className="text-xs text-muted-foreground">
-            {language === "mr" ? "एका टॅपमध्ये करा" : "Finish in one tap"}
+            {language === "mr" ? "दुकानासाठी महत्त्वाच्या गोष्टी" : "Important shop actions, updated live"}
           </span>
         </div>
         <div className="grid grid-cols-3 gap-2">
@@ -2551,25 +2548,6 @@ export function Dashboard() {
       </section>
 
       {/* ─── Reports Section (Updated) ─── */}
-      <section className="order-8 rounded-2xl border border-slate-200/80 bg-card p-3 shadow-[0_4px_16px_rgba(15,23,42,0.04)]">
-        <div className="mb-2 px-1">
-          <h2 className="text-sm font-semibold tracking-tight">{language === "mr" ? "तपशीलवार माहिती" : "Insights"}</h2>
-          <p className="mt-0.5 text-xs text-muted-foreground">{language === "mr" ? "हवे तेव्हाच उघडा" : "Open only what you need"}</p>
-        </div>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          {([
-            ["reports", language === "mr" ? "विक्री रिपोर्ट" : "Sales report", BarChart3],
-            ["brands", language === "mr" ? "ब्रँड तुलना" : "Brands", Package],
-            ["udhari", language === "mr" ? "उधारी" : "Udhari", WalletCards],
-            ["margin", language === "mr" ? "नफा मार्जिन" : "Margin", TrendingUp],
-          ] as const).map(([key, label, Icon]) => (
-            <button key={key} type="button" onClick={() => setActiveInsight((current) => current === key ? null : key)} className={`flex items-center gap-2 rounded-xl border px-3 py-2.5 text-left text-xs font-semibold transition-all active:scale-[0.98] ${activeInsight === key ? "border-indigo-200 bg-indigo-50 text-indigo-800 shadow-sm" : "border-slate-200 bg-white text-slate-700 hover:border-indigo-200 hover:bg-slate-50"}`}>
-              <Icon className="h-4 w-4 shrink-0" /><span className="truncate">{label}</span>
-            </button>
-          ))}
-        </div>
-      </section>
-
       <section className="order-9 space-y-3 [content-visibility:auto] [contain-intrinsic-size:auto_720px] animate-in fade-in-0 slide-in-from-top-1 duration-200">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-2">
@@ -2756,7 +2734,7 @@ export function Dashboard() {
       </section>
 
       {/* ─── Brand Comparison Section ─── */}
-      {activeInsight === "brands" && (
+      {(
       <div className="order-9 [content-visibility:auto] [contain-intrinsic-size:auto_500px] animate-in fade-in-0 slide-in-from-top-1 duration-200">
         <BrandComparison
           showOnlyTop5={true}
@@ -2769,7 +2747,7 @@ export function Dashboard() {
       )}
 
       {/* ─── Highest Udhar Customer ─── */}
-      {activeInsight === "udhari" && highestUdharCustomer && (
+      {highestUdharCustomer && (
         <section className="order-9 space-y-3 [content-visibility:auto] [contain-intrinsic-size:auto_280px]">
           <h2 className="text-xl font-bold">{t("highest_udhar")}</h2>
           <Card
@@ -2805,7 +2783,7 @@ export function Dashboard() {
       )}
 
       {/* ─── High Margin Items (unchanged) ─── */}
-      {activeInsight === "margin" && topMarginItems.length > 0 && (
+      {topMarginItems.length > 0 && (
         <section className="order-10 space-y-3 [content-visibility:auto] [contain-intrinsic-size:auto_450px]">
           <h2 className="text-xl font-bold">{t("high_margin_items")}</h2>
           <div className="grid gap-2">

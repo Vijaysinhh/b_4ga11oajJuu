@@ -645,7 +645,7 @@ export default function UdhariPage() {
                     </Button>
                   </div>
                   {/* WhatsApp Reminder Button */}
-                  {customer.phone && customer.balance > 0 && (
+                  {customer.balance > 0 && (
                     <Button
                       onClick={() => sendWhatsAppReminder(customer)}
                       variant="default"

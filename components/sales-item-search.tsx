@@ -7,7 +7,7 @@ import { useLanguage } from "@/providers/language-provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
-import { Search, Plus, X, Mic, Sparkles } from "lucide-react";
+import { Search, Plus, X, Mic } from "lucide-react";
 import { HelpTooltip } from "@/components/help-tooltip";
 import { calculatePriceTierCost, convertUnit } from "@/lib/unit-conversion";
 import { toast } from "sonner";
@@ -20,7 +20,6 @@ import {
 } from "@/lib/number-format";
 import type { Item, PriceTier } from "@/lib/db";
 import { useVoiceSearch } from "@/hooks/use-voice-search";
-import { useGeminiUnderstanding } from "@/hooks/use-gemini";
 
 interface SaleLineItem {
   itemId: number;
@@ -64,8 +63,6 @@ export function SalesItemSearch({
   const [selectedPriceTier, setSelectedPriceTier] = useState<PriceTier | null>(
     null,
   );
-  const [suggestions, setSuggestions] = useState<string[]>([]);
-  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
   const {
     transcript,
     isListening,
@@ -74,39 +71,10 @@ export function SalesItemSearch({
     stopListening,
     resetTranscript,
   } = useVoiceSearch({ language: language === "mr" ? "mr-IN" : "en-US" });
-  const { searchItems } = useGeminiUnderstanding();
 
   useEffect(() => {
     if (transcript) setSearchTerm(transcript);
   }, [transcript]);
-
-  useEffect(() => {
-    if (!searchTerm.trim() || items.length === 0) {
-      setSuggestions([]);
-      return;
-    }
-    const timer = window.setTimeout(async () => {
-      setSuggestionsLoading(true);
-      const result = await searchItems(searchTerm, items);
-      const aiSuggestions = Array.isArray(result?.suggestions)
-        ? result.suggestions
-        : [];
-      const normalizedQuery = searchTerm.toLocaleLowerCase();
-      const localSuggestions = items
-        .filter((item) =>
-          `${item.name} ${item.nameMarathi || ""} ${item.brand || ""} ${item.brandMarathi || ""}`
-            .toLocaleLowerCase()
-            .includes(normalizedQuery),
-        )
-        .slice(0, 5)
-        .map((item) => item.name);
-      setSuggestions(
-        [...new Set([...aiSuggestions, ...localSuggestions])].slice(0, 5),
-      );
-      setSuggestionsLoading(false);
-    }, 350);
-    return () => window.clearTimeout(timer);
-  }, [items, searchItems, searchTerm]);
 
   // Initialize from itemToEdit if provided
   useEffect(() => {
@@ -382,25 +350,6 @@ export function SalesItemSearch({
           </Button>
         )}
       </div>
-
-      {(suggestionsLoading || suggestions.length > 0) && !selectedItem && (
-        <div className="flex flex-wrap items-center gap-2 text-xs">
-          <Sparkles className="h-3.5 w-3.5 text-violet-500" />
-          {suggestionsLoading && (
-            <span className="text-gray-500">Finding suggestions...</span>
-          )}
-          {suggestions.map((suggestion) => (
-            <button
-              key={suggestion}
-              type="button"
-              onClick={() => setSearchTerm(suggestion)}
-              className="rounded-full border border-violet-200 bg-violet-50 px-2.5 py-1 text-violet-700 hover:bg-violet-100"
-            >
-              {suggestion}
-            </button>
-          ))}
-        </div>
-      )}
 
       {searchTerm && filteredItems.length > 0 && !selectedItem && (
         <div className="overflow-hidden rounded-lg border">
