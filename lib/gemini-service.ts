@@ -1,13 +1,16 @@
 import { GoogleGenAI } from "@google/genai";
 
 const apiKey = process.env.GEMINI_API_KEY;
+const client = apiKey ? new GoogleGenAI({ apiKey }) : null;
 
-if (!apiKey) {
-  throw new Error("GEMINI_API_KEY is not set in environment variables");
-}
-
-const client = new GoogleGenAI({ apiKey });
-const model = client.getGenerativeModel({ model: "gemini-2.0-flash" });
+const generateContent = (
+  contents: string | Array<{ role: "user"; parts: Array<{ text: string }> }>,
+) =>
+  client
+    ? client.models.generateContent({ model: "gemini-2.0-flash", contents })
+    : Promise.reject(
+        new Error("GEMINI_API_KEY is not set in environment variables"),
+      );
 
 export interface ParsedInput {
   intent: "sale" | "search" | "inventory" | "report" | "unknown";
@@ -109,7 +112,7 @@ Be smart about handling:
 
 Please analyze this input and extract the intent and details. Be flexible with language and spelling variations.`;
 
-    const response = await model.generateContent([
+    const response = await generateContent([
       {
         role: "user",
         parts: [
@@ -120,7 +123,7 @@ Please analyze this input and extract the intent and details. Be flexible with l
       },
     ]);
 
-    const responseText = response.response.text().trim();
+    const responseText = response.text?.trim() ?? "";
 
     // Clean up response if it has markdown code blocks
     let cleanedText = responseText;
@@ -216,7 +219,7 @@ Rules:
 
 Extract all sale line items from this voice command. Match products with the available inventory.`;
 
-    const response = await model.generateContent([
+    const response = await generateContent([
       {
         role: "user",
         parts: [
@@ -227,7 +230,7 @@ Extract all sale line items from this voice command. Match products with the ava
       },
     ]);
 
-    const responseText = response.response.text().trim();
+    const responseText = response.text?.trim() ?? "";
 
     // Clean up response if it has markdown code blocks
     let cleanedText = responseText;
@@ -276,8 +279,8 @@ Respond with ONLY the JSON array, no other text.
 
 Example response: ["Milk", "Milk Packets", "Dairy Products"]`;
 
-    const response = await model.generateContent(prompt);
-    const responseText = response.response.text().trim();
+    const response = await generateContent(prompt);
+    const responseText = response.text?.trim() ?? "";
 
     let cleanedText = responseText;
     if (cleanedText.includes("```json")) {
@@ -336,8 +339,8 @@ Respond with ONLY this JSON structure:
   "metrics": {}
 }`;
 
-    const response = await model.generateContent(prompt);
-    const responseText = response.response.text().trim();
+    const response = await generateContent(prompt);
+    const responseText = response.text?.trim() ?? "";
 
     let cleanedText = responseText;
     if (cleanedText.includes("```json")) {
