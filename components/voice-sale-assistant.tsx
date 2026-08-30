@@ -195,7 +195,7 @@ export function VoiceSaleAssistant({
         "Voice input works best in Chrome or Edge. You can also type the sale.",
       );
     keepListening.current = true;
-    transcript.current = command.trim();
+    transcript.current = command.trim().slice(-6000);
     const session = () => {
       if (!keepListening.current) return;
       const instance = new Recognition();
@@ -213,11 +213,12 @@ export function VoiceSaleAssistant({
         let interim = "";
         for (let i = event.resultIndex; i < event.results.length; i += 1) {
           const heard = event.results[i][0]?.transcript?.trim() || "";
-          if (event.results[i].isFinal)
-            transcript.current = (transcript.current + " " + heard).trim();
-          else interim = (interim + " " + heard).trim();
+          if (event.results[i].isFinal) {
+            const nextTranscript = (transcript.current + " " + heard).trim();
+            transcript.current = nextTranscript.slice(-6000);
+          } else interim = (interim + " " + heard).trim();
         }
-        setCommand((transcript.current + " " + interim).trim());
+        setCommand((transcript.current + " " + interim).trim().slice(-6000));
       };
       instance.onend = () => {
         if (keepListening.current) window.setTimeout(session, 250);

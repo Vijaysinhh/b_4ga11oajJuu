@@ -206,6 +206,7 @@ export async function parseVoiceCommandWithGemini(
 
   try {
     const itemsList = items
+      .slice(0, 150)
       .map(
         (item) =>
           `${item.name} (${item.nameMarathi}), Brand: ${item.brand || "N/A"}, Stock: ${item.quantity}`,
@@ -224,7 +225,7 @@ ${itemsList}
 
 Available units: ${unitsList}
 
-Respond ONLY with a valid JSON array. Example:
+Respond ONLY with a valid JSON array containing every distinct requested product, up to 30 line items. Never omit a product because the voice command is long. Example:
 [
   {
     "productName": "Milk",
@@ -237,7 +238,7 @@ Respond ONLY with a valid JSON array. Example:
 
 Rules:
 1. Match product names intelligently (handle typos, abbreviations, brand names)
-2. Convert number words to digits (एक->1, two->2, दीड->1.5, etc.)
+2. Convert number words to digits (एक->1, दोन/dhon->2, two->2, दीड->1.5, etc.)
 3. Default unit to product's standard unit if not mentioned
 4. Return empty array if no valid sale items found
 5. Handle mixed English-Marathi input
@@ -274,7 +275,22 @@ Extract all sale line items from this voice command. Match products with the ava
     }
 
     const parsed = JSON.parse(cleanedText.trim());
-    return Array.isArray(parsed) ? parsed : [];
+    return Array.isArray(parsed)
+      ? parsed
+          .filter(
+            (item) =>
+              item &&
+              typeof item.productName === "string" &&
+              item.productName.trim() &&
+              Number(item.quantity) > 0,
+          )
+          .slice(0, 30)
+          .map((item) => ({
+            ...item,
+            productName: item.productName.trim(),
+            quantity: Number(item.quantity),
+          }))
+      : [];
   } catch (error) {
     console.error("Error parsing voice command with Gemini:", error);
     return [];

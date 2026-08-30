@@ -26,6 +26,8 @@ const numberWords: Record<string, number> = {
   eighteen: 18,
   nineteen: 19,
   twenty: 20,
+  don: 2,
+  dhon: 2,
   एक: 1,
   दोन: 2,
   तीन: 3,
@@ -112,6 +114,13 @@ const commandWords = new Set([
   "वस्तू",
   "आणून",
   "घ्या",
+  "wale",
+  "वाले",
+  "रुपये",
+  "रुपयाचे",
+  "चा",
+  "ची",
+  "चे",
 ]);
 
 export function normalizeVoiceText(value: string) {
@@ -142,9 +151,18 @@ function splitRequests(value: string) {
     .filter(Boolean)
     .flatMap((part) => {
       const tokens = part.split(" ");
-      const starts = tokens.flatMap((token, index) =>
-        numberFromToken(token) === undefined ? [] : [index],
-      );
+      const starts = tokens.flatMap((token, index) => {
+        if (numberFromToken(token) === undefined) return [];
+        const nextToken = tokens[index + 1];
+        // A number before "wale"/"rupees" is a product price, not a new line quantity.
+        if (
+          nextToken &&
+          ["wale", "वाले", "रुपये", "रुपयाचे"].includes(nextToken)
+        ) {
+          return [];
+        }
+        return [index];
+      });
       if (starts.length <= 1) return [part];
       return starts.map((start, index) =>
         tokens.slice(start, starts[index + 1]).join(" "),
