@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useSales, useUdhari, useItems } from "@/hooks/use-supabase";
+import { useSales, useUdhari, useItems, useUnits } from "@/hooks/use-supabase";
 import { useAuth } from "@/providers/auth-provider";
 import { useLanguage } from "@/providers/language-provider";
 import { dateKey } from "@/lib/utils";
@@ -35,6 +35,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Check, Trash2, UserPlus } from "lucide-react";
 import { toast } from "sonner";
+import { VoiceSaleAssistant } from "./voice-sale-assistant";
 
 type PaymentMethod = "cash" | "card" | "partial" | "udhar";
 
@@ -60,6 +61,7 @@ export function SalesTransaction() {
   const { createSale, updateStockAfterSale, deleteSale } = useSales(currentShopId);
   const { customers, addCustomer, addCredit } = useUdhari(currentShopId);
   const { items: allItems } = useItems(currentShopId);
+  const { units } = useUnits(currentShopId);
   const { t, language } = useLanguage();
 
   const [items, setItems] = useState<LineItem[]>([]);
@@ -86,7 +88,7 @@ export function SalesTransaction() {
     totals.subtotal > 0 ? (totals.totalProfit / totals.subtotal) * 100 : 0;
 
   const handleItemAdded = (item: LineItem) => {
-    setItems([...items, item]);
+    setItems((current) => [...current, item]);
     toast.success(`${item.itemName} ${t("success")}`);
   };
 
@@ -290,6 +292,7 @@ export function SalesTransaction() {
             <CardTitle className="text-base">{t("add_items")}</CardTitle>
           </CardHeader>
           <CardContent>
+            <VoiceSaleAssistant items={allItems} units={units} onAdd={handleItemAdded} />
             <SalesItemSearch onItemAdded={handleItemAdded} addedItems={items} />
           </CardContent>
         </Card>

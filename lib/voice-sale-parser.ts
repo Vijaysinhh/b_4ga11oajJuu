@@ -1,0 +1,177 @@
+export type VoiceSaleRequest = {
+  quantity: number;
+  productQuery: string;
+  requestedUnit?: string;
+};
+
+const numberWords: Record<string, number> = {
+  zero: 0,
+  one: 1,
+  two: 2,
+  three: 3,
+  four: 4,
+  five: 5,
+  six: 6,
+  seven: 7,
+  eight: 8,
+  nine: 9,
+  ten: 10,
+  eleven: 11,
+  twelve: 12,
+  thirteen: 13,
+  fourteen: 14,
+  fifteen: 15,
+  sixteen: 16,
+  seventeen: 17,
+  eighteen: 18,
+  nineteen: 19,
+  twenty: 20,
+  एक: 1,
+  दोन: 2,
+  तीन: 3,
+  चार: 4,
+  पाच: 5,
+  सहा: 6,
+  सात: 7,
+  आठ: 8,
+  नऊ: 9,
+  दहा: 10,
+  अकरा: 11,
+  बारा: 12,
+  तेरा: 13,
+  चौदा: 14,
+  पंधरा: 15,
+  सोळा: 16,
+  सतरा: 17,
+  अठरा: 18,
+  एकोणीस: 19,
+  वीस: 20,
+  दीड: 1.5,
+  अर्धा: 0.5,
+  अर्धी: 0.5,
+  पाव: 0.25,
+  सव्वा: 1.25,
+  अडीच: 2.5,
+  साडेतीन: 3.5,
+  half: 0.5,
+};
+
+const unitAliases: Record<string, string> = {
+  pc: "pcs",
+  pcs: "pcs",
+  piece: "pcs",
+  pieces: "pcs",
+  नग: "pcs",
+  नगा: "pcs",
+  packet: "packet",
+  packets: "packet",
+  pkt: "packet",
+  पॅकेट: "packet",
+  पॅकेट्स: "packet",
+  sachet: "sachet",
+  sachets: "sachet",
+  सॅशे: "sachet",
+  box: "box",
+  boxes: "box",
+  डबा: "box",
+  dozen: "dozen",
+  dz: "dozen",
+  डझन: "dozen",
+  kg: "kg",
+  kilogram: "kg",
+  kilograms: "kg",
+  kilo: "kg",
+  kilos: "kg",
+  किलो: "kg",
+  किलोग्राम: "kg",
+  g: "g",
+  gram: "g",
+  grams: "g",
+  ग्रॅम: "g",
+  l: "l",
+  liter: "l",
+  litre: "l",
+  लिटर: "l",
+  ml: "ml",
+  milliliter: "ml",
+  millilitre: "ml",
+  मिली: "ml",
+};
+
+const commandWords = new Set([
+  "add",
+  "please",
+  "qty",
+  "quantity",
+  "करा",
+  "टाका",
+  "द्या",
+  "द्याना",
+  "हवे",
+  "पाहिजे",
+]);
+
+export function normalizeVoiceText(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[०-९]/g, (digit) => String("०१२३४५६७८९".indexOf(digit)))
+    .replace(
+      /\b(?:i|ek|एक)\s+(?=(?:kilo|kilos|kg|kilogram|kilograms|किलो|किलोग्राम)\b)/g,
+      "1 ",
+    )
+    .replace(/[,.!?;:]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function numberFromToken(token: string) {
+  if (/^\d+(?:\.\d+)?$/.test(token)) return Number(token);
+  return numberWords[token];
+}
+
+function splitRequests(value: string) {
+  const normalized = normalizeVoiceText(value)
+    .replace(/\b(?:and|then|plus|ani|mag|aani)\b/g, "|")
+    .replace(/आणि|मग/g, "|");
+  return normalized
+    .split("|")
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .flatMap((part) => {
+      const tokens = part.split(" ");
+      const starts = tokens.flatMap((token, index) =>
+        numberFromToken(token) === undefined ? [] : [index],
+      );
+      if (starts.length <= 1) return [part];
+      return starts.map((start, index) =>
+        tokens.slice(start, starts[index + 1]).join(" "),
+      );
+    });
+}
+
+export function parseVoiceSaleCommand(value: string): VoiceSaleRequest[] {
+  return splitRequests(value)
+    .map((part) => {
+      const tokens = part.split(" ");
+      const quantityIndex = tokens.findIndex(
+        (token) => numberFromToken(token) !== undefined,
+      );
+      const quantity =
+        quantityIndex >= 0 ? numberFromToken(tokens[quantityIndex]) || 1 : 1;
+      const productTokens = tokens.filter(
+        (_, index) => index !== quantityIndex,
+      );
+      let requestedUnit: string | undefined;
+      const filteredTokens = productTokens.filter((token) => {
+        const unit = unitAliases[token];
+        if (unit) requestedUnit = unit;
+        return !unit && !commandWords.has(token);
+      });
+      return {
+        quantity,
+        productQuery: filteredTokens.join(" ").trim(),
+        ...(requestedUnit ? { requestedUnit } : {}),
+      };
+    })
+    .filter((request) => request.productQuery.length > 0);
+}
