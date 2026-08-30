@@ -27,6 +27,7 @@ export interface SaleIntent {
   quantity: number;
   unit?: string;
   priceOverride?: number;
+  variant?: string;
   customerName?: string;
 }
 
@@ -239,7 +240,11 @@ Rules:
 2. Convert number words to digits (एक->1, two->2, दीड->1.5, etc.)
 3. Default unit to product's standard unit if not mentioned
 4. Return empty array if no valid sale items found
-5. Handle mixed English-Marathi input`;
+5. Handle mixed English-Marathi input
+6. Important: phrases like "5 wale biscuit", "5 rupaye biscuit", "five rupees biscuit", or "₹5 biscuit" mean the biscuit's price/pack variant is 5, NOT a quantity of 5. Return quantity 1 and priceOverride 5 for that phrase unless another quantity is explicitly spoken.
+7. Keep the price/pack variant attached to productName or variant, and return variant such as "₹5 pack" when understood.
+
+Example: "dhon parle biscuit 5 wale" => [{"productName":"Parle biscuit","quantity":2,"priceOverride":5,"variant":"₹5 pack"}]`;
 
     const prompt = `Voice transcript: "${voiceTranscript}"
 

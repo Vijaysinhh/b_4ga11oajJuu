@@ -57,7 +57,8 @@ interface LineItem {
 
 export function SalesTransaction() {
   const { currentShopId } = useAuth();
-  const { createSale, updateStockAfterSale, deleteSale } = useSales(currentShopId);
+  const { createSale, updateStockAfterSale, deleteSale } =
+    useSales(currentShopId);
   const { customers, addCustomer, addCredit } = useUdhari(currentShopId);
   const { items: allItems } = useItems(currentShopId);
   const { units } = useUnits(currentShopId);
@@ -129,13 +130,16 @@ export function SalesTransaction() {
     }
 
     // Verify stock availability (sum quantities per item in cart)
-    const quantityByItemId = items.reduce<Map<number, number>>((acc, lineItem) => {
-      acc.set(
-        lineItem.itemId,
-        (acc.get(lineItem.itemId) || 0) + lineItem.quantity,
-      );
-      return acc;
-    }, new Map());
+    const quantityByItemId = items.reduce<Map<number, number>>(
+      (acc, lineItem) => {
+        acc.set(
+          lineItem.itemId,
+          (acc.get(lineItem.itemId) || 0) + lineItem.quantity,
+        );
+        return acc;
+      },
+      new Map(),
+    );
 
     const stockErrors: string[] = [];
     for (const [itemId, requestedQty] of quantityByItemId) {
@@ -234,7 +238,10 @@ export function SalesTransaction() {
           : typeof error === "string"
             ? error
             : JSON.stringify(error, null, 2);
-      console.group("%cSale completion error", "color: #dc2626; font-weight: bold");
+      console.group(
+        "%cSale completion error",
+        "color: #dc2626; font-weight: bold",
+      );
       console.error("Error value:");
       console.dir(error, { depth: null });
       console.error("Error message:", errorMessage);
@@ -261,7 +268,10 @@ export function SalesTransaction() {
             rollbackError instanceof Error
               ? rollbackError.message
               : String(rollbackError);
-          console.group("%cSale rollback ALSO failed", "color: #b91c1c; font-weight: bold");
+          console.group(
+            "%cSale rollback ALSO failed",
+            "color: #b91c1c; font-weight: bold",
+          );
           console.error("Rollback error:", rollbackError);
           console.groupEnd();
           toast.error(
@@ -274,9 +284,14 @@ export function SalesTransaction() {
           );
         }
       } else {
-        toast.error(language === "mr" ? "विक्री जोडता आली नाही" : "Could not complete sale", {
-          description: errorMessage.slice(0, 220),
-        });
+        toast.error(
+          language === "mr"
+            ? "विक्री जोडता आली नाही"
+            : "Could not complete sale",
+          {
+            description: errorMessage.slice(0, 220),
+          },
+        );
       }
     } finally {
       setIsProcessing(false);

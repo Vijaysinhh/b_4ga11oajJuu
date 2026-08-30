@@ -7,7 +7,7 @@ import { useLanguage } from "@/providers/language-provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
-import { Search, Plus, X, Mic } from "lucide-react";
+import { Search, Plus, X } from "lucide-react";
 import { HelpTooltip } from "@/components/help-tooltip";
 import { calculatePriceTierCost, convertUnit } from "@/lib/unit-conversion";
 import { toast } from "sonner";
@@ -19,7 +19,7 @@ import {
   parseNumberInput,
 } from "@/lib/number-format";
 import type { Item, PriceTier } from "@/lib/db";
-import { useVoiceSearch } from "@/hooks/use-voice-search";
+import { VoiceSaleAssistant } from "./voice-sale-assistant";
 
 interface SaleLineItem {
   itemId: number;
@@ -63,19 +63,6 @@ export function SalesItemSearch({
   const [selectedPriceTier, setSelectedPriceTier] = useState<PriceTier | null>(
     null,
   );
-  const {
-    transcript,
-    isListening,
-    isSupported,
-    startListening,
-    stopListening,
-    resetTranscript,
-  } = useVoiceSearch({ language: language === "mr" ? "mr-IN" : "en-US" });
-
-  useEffect(() => {
-    if (transcript) setSearchTerm(transcript);
-  }, [transcript]);
-
   // Initialize from itemToEdit if provided
   useEffect(() => {
     if (itemToEdit) {
@@ -325,31 +312,9 @@ export function SalesItemSearch({
           className="h-10 pl-10"
           autoFocus
         />
-        {isSupported && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            onClick={
-              isListening
-                ? stopListening
-                : () => {
-                    resetTranscript();
-                    startListening();
-                  }
-            }
-            className="absolute right-1 top-1 h-8 w-8 text-violet-600 hover:bg-violet-50"
-            aria-label={
-              isListening ? "Stop voice search" : "Start voice search"
-            }
-            title={isListening ? "Stop voice search" : "Search by voice"}
-          >
-            <Mic
-              className={`h-4 w-4 ${isListening ? "animate-pulse text-red-600" : ""}`}
-            />
-          </Button>
-        )}
       </div>
+
+      <VoiceSaleAssistant items={items} units={units} onAdd={onItemAdded} />
 
       {searchTerm && filteredItems.length > 0 && !selectedItem && (
         <div className="overflow-hidden rounded-lg border">
