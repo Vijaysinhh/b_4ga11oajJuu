@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useSales, useUdhari, useItems } from "@/hooks/use-supabase";
+import { useSales, useUdhari, useItems, useUnits } from "@/hooks/use-supabase";
 import { useAuth } from "@/providers/auth-provider";
 import { useLanguage } from "@/providers/language-provider";
 import { dateKey } from "@/lib/utils";
@@ -57,10 +57,12 @@ interface LineItem {
 
 export function SalesTransaction() {
   const { currentShopId } = useAuth();
-  const { createSale, updateStockAfterSale } = useSales(currentShopId);
+  const { createSale, updateStockAfterSale, deleteSale } =
+    useSales(currentShopId);
   const { customers, addCustomer, addCredit } = useUdhari(currentShopId);
   const { items: allItems } = useItems(currentShopId);
-  const { t } = useLanguage();
+  const { units } = useUnits(currentShopId);
+  const { t, language } = useLanguage();
 
   const [items, setItems] = useState<LineItem[]>([]);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
@@ -86,7 +88,7 @@ export function SalesTransaction() {
     totals.subtotal > 0 ? (totals.totalProfit / totals.subtotal) * 100 : 0;
 
   const handleItemAdded = (item: LineItem) => {
-    setItems([...items, item]);
+    setItems((current) => [...current, item]);
     toast.success(`${item.itemName} ${t("success")}`);
   };
 
@@ -128,13 +130,16 @@ export function SalesTransaction() {
     }
 
     // Verify stock availability (sum quantities per item in cart)
-    const quantityByItemId = items.reduce<Map<number, number>>((acc, lineItem) => {
-      acc.set(
-        lineItem.itemId,
-        (acc.get(lineItem.itemId) || 0) + lineItem.quantity,
-      );
-      return acc;
-    }, new Map());
+    const quantityByItemId = items.reduce<Map<number, number>>(
+      (acc, lineItem) => {
+        acc.set(
+          lineItem.itemId,
+          (acc.get(lineItem.itemId) || 0) + lineItem.quantity,
+        );
+        return acc;
+      },
+      new Map(),
+    );
 
     const stockErrors: string[] = [];
     for (const [itemId, requestedQty] of quantityByItemId) {
@@ -155,6 +160,7 @@ export function SalesTransaction() {
 
     setIsProcessing(true);
 
+    let createdSaleId: number | null = null;
     try {
       const saleItems: any[] = items.map((item) => ({
         itemId: item.itemId,
@@ -188,7 +194,7 @@ export function SalesTransaction() {
       }
 
       const today = dateKey(new Date());
-      const saleId = await createSale({
+      createdSaleId = await createSale({
         date: today,
         timestamp: Date.now(),
         items: saleItems,
@@ -204,14 +210,89 @@ export function SalesTransaction() {
         creditCustomerName: isUdharSale ? finalCreditCustomerName : undefined,
       });
 
+      if (createdSaleId === null || createdSaleId === undefined) {
+        throw new Error("Sale could not be saved");
+      }
+
       await updateStockAfterSale(saleItems);
 
-      toast.success(t("success"));
+      toast.success(
+        language === "mr"
+          ? `छान! ₹${formatMoney(totals.subtotal)} विक्री जोडली`
+          : `Nice! ₹${formatMoney(totals.subtotal)} sale added`,
+        {
+          description:
+            totals.totalProfit > 0
+              ? language === "mr"
+                ? `आजचा नफा +₹${formatMoney(totals.totalProfit)}`
+                : `Profit +₹${formatMoney(totals.totalProfit)}`
+              : undefined,
+        },
+      );
       resetSale();
-      window.dispatchEvent(new Event('refresh-dukan-data'));
+      window.dispatchEvent(new Event("refresh-dukan-data"));
     } catch (error) {
-      console.error("Error completing sale:", error);
-      toast.error(t("error"));
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : typeof error === "string"
+            ? error
+            : JSON.stringify(error, null, 2);
+      console.group(
+        "%cSale completion error",
+        "color: #dc2626; font-weight: bold",
+      );
+      console.error("Error value:");
+      console.dir(error, { depth: null });
+      console.error("Error message:", errorMessage);
+      if (error instanceof Error && error.cause) {
+        console.error("Error cause:");
+        console.dir(error.cause, { depth: null });
+      }
+      console.trace("Error thrown at:");
+      console.groupEnd();
+      const persistedSaleId = Number(createdSaleId ?? 0);
+      if (persistedSaleId > 0) {
+        try {
+          await deleteSale(persistedSaleId);
+          toast.error(
+            language === "mr"
+              ? "विक्री पूर्ण होऊ शकली नाही, त्यामुळे अर्धवट नोंद काढून टाकण्यात आली."
+              : "The sale could not be completed cleanly, so the partial entry was rolled back.",
+            {
+              description: errorMessage.slice(0, 160),
+            },
+          );
+        } catch (rollbackError) {
+          const rollbackMsg =
+            rollbackError instanceof Error
+              ? rollbackError.message
+              : String(rollbackError);
+          console.group(
+            "%cSale rollback ALSO failed",
+            "color: #b91c1c; font-weight: bold",
+          );
+          console.error("Rollback error:", rollbackError);
+          console.groupEnd();
+          toast.error(
+            language === "mr"
+              ? "विक्री पूर्ण होऊ शकली नाही आणि रोलबॅकही अपयशी ठरला."
+              : "The sale could not be completed and rollback may be incomplete.",
+            {
+              description: `${errorMessage.slice(0, 100)} · Rollback: ${rollbackMsg.slice(0, 60)}`,
+            },
+          );
+        }
+      } else {
+        toast.error(
+          language === "mr"
+            ? "विक्री जोडता आली नाही"
+            : "Could not complete sale",
+          {
+            description: errorMessage.slice(0, 220),
+          },
+        );
+      }
     } finally {
       setIsProcessing(false);
     }

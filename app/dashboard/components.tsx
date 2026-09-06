@@ -2,17 +2,27 @@
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
 import { useAuth } from "@/providers/auth-provider";
 import { useLanguage } from "@/providers/language-provider";
 import {
-  useDashboardStats,
   useItems,
   useUnits,
   useSales,
+  useStockHistory,
   useUdhari,
   usePriceTiers,
+  useCategories,
+  useBatches,
 } from "@/hooks/use-supabase";
-import { downloadSimplePdf, type PdfSection } from "@/lib/simple-pdf";
+import { useStaff } from "@/hooks/use-staff";
+import {
+  getCreditPressure,
+  getPreviousDateKey,
+  getSignedPercentChange,
+  getTopSellingItem,
+  summarizeSales,
+} from "@/lib/dukan-insights";
 import { downloadPremiumPdf } from "@/lib/premium-pdf";
 import {
   formatMoney,
@@ -29,14 +39,15 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   AlertTriangle,
+  BarChart3,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   ChevronUp,
   Clock,
   CreditCard,
+  Crown,
   Edit,
-  FileDown,
   Package,
   ShoppingBag,
   Trash2,
@@ -69,7 +80,10 @@ import {
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import { BrandComparison } from "@/app/brand-comparison/components";
+const BrandComparison = dynamic(
+  () => import("@/app/brand-comparison/components").then((module) => module.BrandComparison),
+  { ssr: false, loading: () => <div className="h-48 rounded-2xl border bg-card" /> },
+);
 
 type ReportKey = "today" | "month" | "sixMonths" | "year";
 
@@ -112,21 +126,21 @@ const paymentBadgeStyles: Record<string, string> = {
 };
 
 // Let's make a modified version of SalesTransaction that can edit an existing sale
-function EditSaleDialog({ 
-  sale, 
-  open, 
-  onClose 
-}: { 
-  sale: any; 
-  open: boolean; 
-  onClose: () => void; 
+function EditSaleDialog({
+  sale,
+  open,
+  onClose,
+}: {
+  sale: any;
+  open: boolean;
+  onClose: () => void;
 }) {
   const { currentShopId } = useAuth();
   const { updateSale } = useSales(currentShopId);
   const { customers } = useUdhari(currentShopId);
   const { items: allItems } = useItems(currentShopId);
   const { t } = useLanguage();
-  
+
   // Initialize state from the existing sale
   const [items, setItems] = useState<any[]>([]);
   const [paymentMethod, setPaymentMethod] = useState<string>("cash");
@@ -276,11 +290,15 @@ function EditSaleDialog({
                     Cancel Edit Item
                   </Button>
                 )}
-                <SalesItemSearch 
-                  onItemAdded={handleItemAdded} 
-                  addedItems={items} 
-                  itemToEdit={editingItemIndex !== null ? items[editingItemIndex] : undefined} 
-                  onItemEdited={handleItemEdited} 
+                <SalesItemSearch
+                  onItemAdded={handleItemAdded}
+                  addedItems={items}
+                  itemToEdit={
+                    editingItemIndex !== null
+                      ? items[editingItemIndex]
+                      : undefined
+                  }
+                  onItemEdited={handleItemEdited}
                 />
               </CardContent>
             </Card>
@@ -303,7 +321,9 @@ function EditSaleDialog({
                     {items.map((item, index) => {
                       const profit = item.totalPrice - item.totalCost;
                       const marginPct =
-                        item.totalPrice > 0 ? (profit / item.totalPrice) * 100 : 0;
+                        item.totalPrice > 0
+                          ? (profit / item.totalPrice) * 100
+                          : 0;
                       return (
                         <div
                           key={`${item.itemId}-${index}`}
@@ -330,8 +350,8 @@ function EditSaleDialog({
                                   profit > 0 ? "text-green-700" : "text-red-700"
                                 }
                               >
-                                {t("profit_amount")}: Rs. {formatMoney(profit)} (
-                                {formatPercent(marginPct)}%)
+                                {t("profit_amount")}: Rs. {formatMoney(profit)}{" "}
+                                ({formatPercent(marginPct)}%)
                               </span>
                             </div>
                           </div>
@@ -408,7 +428,9 @@ function EditSaleDialog({
                         <SelectContent>
                           <SelectItem value="cash">{t("cash")}</SelectItem>
                           <SelectItem value="card">{t("card")}</SelectItem>
-                          <SelectItem value="partial">{t("partial")}</SelectItem>
+                          <SelectItem value="partial">
+                            {t("partial")}
+                          </SelectItem>
                           <SelectItem value="udhar">{t("udhar")}</SelectItem>
                         </SelectContent>
                       </Select>
@@ -422,7 +444,9 @@ function EditSaleDialog({
                           </label>
                           <Select
                             value={
-                              creditCustomerId ? creditCustomerId.toString() : "new"
+                              creditCustomerId
+                                ? creditCustomerId.toString()
+                                : "new"
                             }
                             onValueChange={(value) =>
                               setCreditCustomerId(
@@ -453,7 +477,11 @@ function EditSaleDialog({
                     )}
 
                     <div className="flex gap-2">
-                      <Button onClick={onClose} variant="outline" className="flex-1">
+                      <Button
+                        onClick={onClose}
+                        variant="outline"
+                        className="flex-1"
+                      >
                         Cancel
                       </Button>
                       <Button
@@ -486,24 +514,45 @@ const paymentBadgeStylesDashboard: Record<string, string> = {
 
 export function Dashboard() {
   const router = useRouter();
-  const { user, isLoading: authLoading, isAuthenticated, currentShopId, currentShop } = useAuth();
+  const {
+    user,
+    isLoading: authLoading,
+    isAuthenticated,
+    currentShopId,
+    currentShop,
+  } = useAuth();
   const { t, language } = useLanguage();
-  const stats = useDashboardStats(currentShopId);
   const { items } = useItems(currentShopId);
   const { units } = useUnits(currentShopId);
+  const { categories } = useCategories(currentShopId);
+  const { batches } = useBatches(currentShopId);
   const { sales, updateSale, deleteSale } = useSales(currentShopId);
+  const { stockHistory } = useStockHistory(currentShopId);
+  const { staff } = useStaff();
   const { priceTiers } = usePriceTiers(currentShopId);
-  const { totalPending, customers } = useUdhari(currentShopId);
+  const { totalPending, customers, entries } = useUdhari(currentShopId);
   const [isClientReady, setIsClientReady] = useState(false);
+
+  const isPremium = useMemo(
+    () =>
+      Boolean(
+        currentShop?.subscriptionEndDate &&
+        currentShop.subscriptionEndDate > Date.now(),
+      ),
+    [currentShop?.subscriptionEndDate],
+  );
 
   // --- Date navigation state ---
   const [selectedDate, setSelectedDate] = useState(() => new Date());
   const [expandedSaleId, setExpandedSaleId] = useState<number | null>(null);
   const [editingSale, setEditingSale] = useState<any | null>(null);
   const [deleteSaleId, setDeleteSaleId] = useState<number | null>(null);
+  const [showDayActivity, setShowDayActivity] = useState(false);
 
   // --- Report Selection State ---
-  const [selectedReportType, setSelectedReportType] = useState<"today" | "month" | "sixMonths" | "year" | "specificMonth">("today");
+  const [selectedReportType, setSelectedReportType] = useState<
+    "today" | "month" | "sixMonths" | "year" | "specificMonth"
+  >("today");
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; // YYYY-MM format
@@ -526,10 +575,9 @@ export function Dashboard() {
   }, []);
 
   useEffect(() => {
-    if (!authLoading && !isAuthenticated) {
-      router.push("/login");
-    }
-  }, [authLoading, isAuthenticated, router]);
+    if (!isClientReady || authLoading || isAuthenticated) return;
+    router.push("/login");
+  }, [authLoading, isAuthenticated, isClientReady, router]);
 
   // Navigate date
   const goToPreviousDay = useCallback(() => {
@@ -582,9 +630,7 @@ export function Dashboard() {
   }, [sales, selectedDayKey]);
 
   const daySummary = useMemo(() => {
-    const revenue = daySales.reduce((sum, s) => sum + s.subtotal, 0);
-    const cost = daySales.reduce((sum, s) => sum + s.totalCost, 0);
-    const profit = revenue - cost;
+    const summary = summarizeSales(daySales);
     const totalItems = daySales.reduce(
       (sum, s) =>
         sum +
@@ -595,11 +641,7 @@ export function Dashboard() {
       0,
     );
     return {
-      transactions: daySales.length,
-      revenue,
-      cost,
-      profit,
-      margin: revenue > 0 ? (profit / revenue) * 100 : 0,
+      ...summary,
       totalItems,
     };
   }, [daySales]);
@@ -607,6 +649,16 @@ export function Dashboard() {
   // --- Low stock items ---
   const lowStockItems = useMemo(
     () => items.filter((item) => item.quantity <= item.lowStockLimit),
+    [items],
+  );
+
+  const totalStockValue = useMemo(
+    () =>
+      items.reduce(
+        (sum, item) =>
+          sum + Number(item.quantity || 0) * Number(item.buyPrice || 0),
+        0,
+      ),
     [items],
   );
 
@@ -638,10 +690,7 @@ export function Dashboard() {
 
   // --- Generate single report based on selection ---
   const currentReport = useMemo(() => {
-    const makeReport = (
-      label: string,
-      filteredSales: typeof sales,
-    ) => {
+    const makeReport = (label: string, filteredSales: typeof sales) => {
       const itemAgg = new Map<
         string,
         { quantity: number; revenue: number; profit: number }
@@ -693,11 +742,17 @@ export function Dashboard() {
 
     switch (selectedReportType) {
       case "today":
-        filteredSales = sales.filter((sale) => sale.date === selectedDateKey);
+        filteredSales = sales.filter((sale) => {
+          const saleDate = typeof sale?.date === "string" ? sale.date : "";
+          return saleDate === selectedDateKey;
+        });
         reportLabel = t("today");
         break;
       case "month":
-        filteredSales = sales.filter((sale) => sale.date.startsWith(thisMonth));
+        filteredSales = sales.filter((sale) => {
+          const saleDate = typeof sale?.date === "string" ? sale.date : "";
+          return saleDate.startsWith(thisMonth);
+        });
         reportLabel = t("this_month");
         break;
       case "sixMonths":
@@ -707,47 +762,277 @@ export function Dashboard() {
           1,
         );
         const sixMonthStart = dateKey(sixMonthsAgo);
-        filteredSales = sales.filter((sale) => sale.date >= sixMonthStart);
+        filteredSales = sales.filter((sale) => {
+          const saleDate = typeof sale?.date === "string" ? sale.date : "";
+          return saleDate >= sixMonthStart;
+        });
         reportLabel = t("six_months");
         break;
       case "year":
-        filteredSales = sales.filter((sale) => sale.date.startsWith(thisYear));
+        filteredSales = sales.filter((sale) => {
+          const saleDate = typeof sale?.date === "string" ? sale.date : "";
+          return saleDate.startsWith(thisYear);
+        });
         reportLabel = t("this_year");
         break;
       case "specificMonth":
-        filteredSales = sales.filter((sale) => sale.date.startsWith(selectedMonth));
+        filteredSales = sales.filter((sale) => {
+          const saleDate = typeof sale?.date === "string" ? sale.date : "";
+          return saleDate.startsWith(selectedMonth);
+        });
         const [year, monthNum] = selectedMonth.split("-");
         const monthDate = new Date(parseInt(year), parseInt(monthNum) - 1, 1);
-        reportLabel = monthDate.toLocaleDateString(language === "mr" ? "mr-IN" : "en-IN", { 
-          month: "long", 
-          year: "numeric" 
-        });
+        reportLabel = monthDate.toLocaleDateString(
+          language === "mr" ? "mr-IN" : "en-IN",
+          {
+            month: "long",
+            year: "numeric",
+          },
+        );
         break;
       default:
-        filteredSales = sales.filter((sale) => sale.date === selectedDateKey);
+        filteredSales = sales.filter((sale) => {
+          const saleDate = typeof sale?.date === "string" ? sale.date : "";
+          return saleDate === selectedDateKey;
+        });
         reportLabel = t("today");
     }
 
     return makeReport(reportLabel, filteredSales);
   }, [sales, selectedDate, selectedReportType, selectedMonth, t, language]);
 
-  const todayReport = useMemo(() => {
-    // Still keep todayReport for the top cards
-    const selectedDateKey = dateKey(selectedDate);
-    const todaySales = sales.filter((sale) => sale.date === selectedDateKey);
-    
-    const revenue = todaySales.reduce((sum, s) => sum + s.subtotal, 0);
-    const cost = todaySales.reduce((sum, s) => sum + s.totalCost, 0);
-    const profit = revenue - cost;
-    const margin = revenue > 0 ? (profit / revenue) * 100 : 0;
-    
-    return {
-      revenue,
-      profit,
-      margin,
-      transactions: todaySales.length,
-    };
+  const previousDaySummary = useMemo(() => {
+    const previousSales = sales.filter(
+      (sale) => sale.date === getPreviousDateKey(selectedDate),
+    );
+    return summarizeSales(previousSales);
   }, [sales, selectedDate]);
+
+  const profitChangePercent = useMemo(
+    () => getSignedPercentChange(daySummary.profit, previousDaySummary.profit),
+    [daySummary.profit, previousDaySummary.profit],
+  );
+
+  const revenueChangePercent = useMemo(
+    () =>
+      getSignedPercentChange(daySummary.revenue, previousDaySummary.revenue),
+    [daySummary.revenue, previousDaySummary.revenue],
+  );
+
+  const dayTopProduct = useMemo(() => getTopSellingItem(daySales), [daySales]);
+
+  const urgentStockInsight = useMemo(() => {
+    const expiredTarget = [...expiredItems].sort(
+      (a, b) =>
+        new Date(a.expiryDate || 0).getTime() -
+        new Date(b.expiryDate || 0).getTime(),
+    )[0];
+    const expiringTarget = [...expiringItems].sort(
+      (a, b) =>
+        new Date(a.expiryDate || 0).getTime() -
+        new Date(b.expiryDate || 0).getTime(),
+    )[0];
+    const expiringValue = expiringItems.reduce(
+      (sum, item) =>
+        sum + Number(item.quantity || 0) * Number(item.buyPrice || 0),
+      0,
+    );
+    const expiredValue = expiredItems.reduce(
+      (sum, item) =>
+        sum + Number(item.quantity || 0) * Number(item.buyPrice || 0),
+      0,
+    );
+    const lowestStockItem = [...lowStockItems].sort(
+      (a, b) => Number(a.quantity || 0) - Number(b.quantity || 0),
+    )[0];
+
+    return {
+      expiringValue,
+      expiredValue,
+      lowestStockItem,
+      targetItem: expiredTarget || expiringTarget || lowestStockItem || null,
+      targetFilter: expiredTarget
+        ? "expired"
+        : expiringTarget
+          ? "expiring"
+          : lowestStockItem
+            ? "lowStock"
+            : null,
+    };
+  }, [expiredItems, expiringItems, lowStockItems]);
+
+  const udhariPressures = useMemo(
+    () =>
+      customers
+        .filter((customer) => Number(customer.balance || 0) > 0)
+        .map((customer) => ({
+          customer,
+          pressure: getCreditPressure(
+            customer.id,
+            Number(customer.balance || 0),
+            entries,
+          ),
+        }))
+        .sort((a, b) => {
+          if (b.pressure.daysPending !== a.pressure.daysPending) {
+            return b.pressure.daysPending - a.pressure.daysPending;
+          }
+          return (
+            Number(b.customer.balance || 0) - Number(a.customer.balance || 0)
+          );
+        }),
+    [customers, entries],
+  );
+
+  const urgentUdhari = udhariPressures[0] || null;
+
+  const weeklySummary = useMemo(() => {
+    const today = new Date();
+    today.setHours(23, 59, 59, 999);
+    const currentStart = new Date(today);
+    currentStart.setDate(currentStart.getDate() - 6);
+    currentStart.setHours(0, 0, 0, 0);
+
+    const previousEnd = new Date(currentStart);
+    previousEnd.setMilliseconds(previousEnd.getMilliseconds() - 1);
+    const previousStart = new Date(previousEnd);
+    previousStart.setDate(previousStart.getDate() - 6);
+    previousStart.setHours(0, 0, 0, 0);
+
+    const inRange = (key: string, start: Date, end: Date) => {
+      const time = new Date(`${key}T12:00:00`).getTime();
+      return time >= start.getTime() && time <= end.getTime();
+    };
+
+    const currentWeekSales = sales.filter((sale) =>
+      inRange(sale.date, currentStart, today),
+    );
+    const previousWeekSales = sales.filter((sale) =>
+      inRange(sale.date, previousStart, previousEnd),
+    );
+    const currentWeek = summarizeSales(currentWeekSales);
+    const previousWeek = summarizeSales(previousWeekSales);
+    const currentWeekUdhari = entries
+      .filter((entry) => entry.type === "credit")
+      .filter((entry) => {
+        const entryDate = new Date(entry.timestamp);
+        return entryDate >= currentStart && entryDate <= today;
+      })
+      .reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+    const previousWeekUdhari = entries
+      .filter((entry) => entry.type === "credit")
+      .filter((entry) => {
+        const entryDate = new Date(entry.timestamp);
+        return entryDate >= previousStart && entryDate <= previousEnd;
+      })
+      .reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+
+    return {
+      show:
+        new Date().getDay() === 0 &&
+        (currentWeek.transactions > 0 || currentWeekUdhari > 0),
+      salesChange: getSignedPercentChange(
+        currentWeek.revenue,
+        previousWeek.revenue,
+      ),
+      profitChange: getSignedPercentChange(
+        currentWeek.profit,
+        previousWeek.profit,
+      ),
+      udhariChange: getSignedPercentChange(
+        currentWeekUdhari,
+        previousWeekUdhari,
+      ),
+    };
+  }, [entries, sales]);
+
+  const signedPercent = (value: number) =>
+    `${value >= 0 ? "+" : ""}${formatPercent(value)}%`;
+
+  const selectedDayLabel = isToday
+    ? language === "mr"
+      ? "आजचा"
+      : "Today's"
+    : formatDateLabel(selectedDate, language);
+  const comparisonLabel = language === "mr" ? "कालपेक्षा" : "vs yesterday";
+  const profitPraise =
+    daySummary.transactions === 0
+      ? language === "mr"
+        ? "विक्री झाली की नफा दिसेल"
+        : "Profit appears after sales"
+      : daySummary.profit > previousDaySummary.profit
+        ? language === "mr"
+          ? "नफा कालपेक्षा जास्त आहे"
+          : "Profit is higher than yesterday"
+        : language === "mr"
+          ? "आज छान विक्री झाली"
+          : "Good sales recorded today";
+  const stockUnit = urgentStockInsight.lowestStockItem
+    ? units.find(
+        (unit) => unit.id === urgentStockInsight.lowestStockItem?.unitId,
+      )?.shortForm
+    : "";
+  const stockTargetName = urgentStockInsight.targetItem
+    ? language === "mr"
+      ? urgentStockInsight.targetItem.nameMarathi ||
+        urgentStockInsight.targetItem.name
+      : urgentStockInsight.targetItem.name ||
+        urgentStockInsight.targetItem.nameMarathi
+    : "";
+  const stockRiskTitle =
+    urgentStockInsight.expiredValue > 0
+      ? language === "mr"
+        ? `${stockTargetName}: ₹${formatMoney(urgentStockInsight.expiredValue)} चा माल एक्सपायर झाला`
+        : `${stockTargetName}: ₹${formatMoney(urgentStockInsight.expiredValue)} stock expired`
+      : urgentStockInsight.expiringValue > 0
+        ? language === "mr"
+          ? `${stockTargetName}: ₹${formatMoney(urgentStockInsight.expiringValue)} चा माल एक्सपायर होण्याच्या मार्गावर आहे`
+          : `${stockTargetName}: ₹${formatMoney(urgentStockInsight.expiringValue)} stock near expiry`
+        : urgentStockInsight.lowestStockItem
+          ? language === "mr"
+            ? `${stockTargetName}: फक्त ${formatWholeNumber(urgentStockInsight.lowestStockItem.quantity)} ${stockUnit} बाकी`
+            : `${stockTargetName}: Only ${formatWholeNumber(urgentStockInsight.lowestStockItem.quantity)} ${stockUnit} left`
+          : language === "mr"
+            ? "Stock ठीक आहे"
+            : "Stock is healthy";
+  const stockRiskSubtext =
+    urgentStockInsight.expiredValue > 0 || urgentStockInsight.expiringValue > 0
+      ? language === "mr"
+        ? `${expiredItems.length + expiringItems.length} expiry alert`
+        : `${expiredItems.length + expiringItems.length} expiry alerts`
+      : lowStockItems.length > 0
+        ? language === "mr"
+          ? `${lowStockItems.length} माल कमी आहे`
+          : `${lowStockItems.length} low-stock items`
+        : language === "mr"
+          ? "सध्या मोठा धोका नाही"
+          : "No urgent stock risk";
+  const udhariRiskLabel =
+    urgentUdhari?.pressure.riskLevel === "high"
+      ? "🔴 High risk"
+      : urgentUdhari?.pressure.riskLevel === "recover"
+        ? language === "mr"
+          ? "🟠 लवकर वसूल करा"
+          : "🟠 Recover soon"
+        : language === "mr"
+          ? "🟢 Fresh"
+          : "🟢 Fresh";
+  const udhariSubtext = urgentUdhari
+    ? language === "mr"
+      ? `₹${formatMoney(urgentUdhari.customer.balance)} ${urgentUdhari.pressure.daysPending} दिवस pending`
+      : `₹${formatMoney(urgentUdhari.customer.balance)} pending for ${urgentUdhari.pressure.daysPending} days`
+    : language === "mr"
+      ? "उधारी pending नाही"
+      : "No pending udhari";
+  const itemFocusHref = (itemId?: number, filter?: string | null) => {
+    if (!itemId) return "/items";
+    const params = new URLSearchParams({ focusItemId: String(itemId) });
+    if (filter) params.set("filter", filter);
+    return `/items?${params.toString()}`;
+  };
+  const customerFocusHref = (customerId?: number) =>
+    customerId ? `/udhari?focusCustomerId=${customerId}` : "/udhari";
+
   const topMarginItems = useMemo(
     () =>
       [...items]
@@ -760,7 +1045,10 @@ export function Dashboard() {
   const availableMonths = useMemo(() => {
     const months = new Set<string>();
     for (const sale of sales) {
-      months.add(sale.date.slice(0, 7)); // Extract YYYY-MM part
+      const saleDate = typeof sale?.date === "string" ? sale.date : "";
+      if (saleDate.length >= 7) {
+        months.add(saleDate.slice(0, 7)); // Extract YYYY-MM part
+      }
     }
     return Array.from(months).sort().reverse(); // Newest first
   }, [sales]);
@@ -775,12 +1063,14 @@ export function Dashboard() {
 
   const handleDownloadReport = async () => {
     const report = currentReport;
-    const averageBill = report.transactions > 0 ? report.revenue / report.transactions : 0;
+    const averageBill =
+      report.transactions > 0 ? report.revenue / report.transactions : 0;
     const totalItemsSold = report.sales.reduce((sum, sale) => {
       return (
         sum +
         (sale.items || []).reduce(
-          (innerSum: number, item: any) => innerSum + Number(item.quantity || 0),
+          (innerSum: number, item: any) =>
+            innerSum + Number(item.quantity || 0),
           0,
         )
       );
@@ -799,86 +1089,868 @@ export function Dashboard() {
       {} as Record<string, { count: number; amount: number }>,
     );
 
-    try {
-      await downloadPremiumPdf({
-        label: report.label,
-        sales: report.sales,
-        transactions: report.transactions,
-        revenue: report.revenue,
-        cost: report.cost,
-        profit: report.profit,
-        margin: report.margin,
-        topItems: report.topItems,
-        shopName: currentShop?.shopName || "Dukan",
-        totalStockValue: stats.totalStockValue,
-        productsCount: items.length,
-        lowStockItems: lowStockItems.map(item => ({
-          name: item.name,
-          quantity: item.quantity,
-          lowStockLimit: item.lowStockLimit,
-        })),
-        totalPendingUdhari: totalPending,
-        highestUdharCustomer: highestUdharCustomer ? {
-          name: highestUdharCustomer.name,
-          balance: highestUdharCustomer.balance,
-        } : null,
-        paymentBreakdown,
-        totalItemsSold,
-        averageBill,
-      }, `dukan-report-${Date.now()}.pdf`);
-    } catch (error) {
-      console.error("Failed to download premium PDF, falling back to simple PDF:", error);
-      const udharCount = paymentBreakdown.udhar?.count || 0;
-      const udharAmount = paymentBreakdown.udhar?.amount || 0;
-      const paymentRows: PdfSection["rows"] = [
-        ["Cash", `${paymentBreakdown.cash?.count || 0} bills, Rs. ${formatMoney(paymentBreakdown.cash?.amount || 0)}`],
-        ["Card", `${paymentBreakdown.card?.count || 0} bills, Rs. ${formatMoney(paymentBreakdown.card?.amount || 0)}`],
-        ["Partial", `${paymentBreakdown.partial?.count || 0} bills, Rs. ${formatMoney(paymentBreakdown.partial?.amount || 0)}`],
-        ["Udhari", `${udharCount} bills, Rs. ${formatMoney(udharAmount)}`],
-      ];
-      const topItemsRows: PdfSection["rows"] = report.topItems.length
-        ? report.topItems.map((item) => [
-            item.name,
-            `${formatNumber(item.quantity)} sold, Rs. ${formatMoney(item.revenue)} sale, Rs. ${formatMoney(item.profit)} profit`,
-          ])
-        : [["Items", "No sales in this period"]];
-      const sections: PdfSection[] = [
-        { heading: "Financial Summary", rows: [
-            ["Period", report.label],
-            ["Transactions", `${report.transactions}`],
-            ["Items Sold", formatNumber(totalItemsSold)],
-            ["Sales (Revenue)", `Rs. ${formatMoney(report.revenue)}`],
-            ["Cost", `Rs. ${formatMoney(report.cost)}`],
-            ["Profit", `Rs. ${formatMoney(report.profit)}`],
-            ["Margin", `${formatPercent(report.margin)}%`],
-            ["Average Bill", `Rs. ${formatMoney(averageBill)}`],
-          ] },
-        { heading: "Payment Summary", rows: paymentRows },
-        { heading: "Udhari", rows: [
-            ["Udhari Sales", `Rs. ${formatMoney(udharAmount)}`],
-            ["Pending Udhari", `Rs. ${formatMoney(totalPending)}`],
-            ["Highest Udhari", highestUdharCustomer ? `${highestUdharCustomer.name} - Rs. ${formatMoney(highestUdharCustomer.balance)}` : "N/A"],
-          ] },
-        { heading: "Stock Summary", rows: [
-            ["Total Stock Worth", `Rs. ${formatMoney(stats.totalStockValue)}`],
-            ["Products", `${items.length}`],
-            ["Low Stock Items", `${lowStockItems.length}`],
-          ] },
-        { heading: "Top Items", rows: topItemsRows },
-        { heading: "Stock Alerts", rows: lowStockItems.length
-            ? lowStockItems.slice(0, 8).map(item => [item.name, `${item.quantity} left, limit ${item.lowStockLimit}`])
-            : [["Low Stock", "No low stock items"]] },
-      ];
-      downloadSimplePdf({ title: "Dukan Report", subtitle: `${currentShop?.shopName || "Shop"} - ${report.label}`, sections, fileName: `dukan-report-${Date.now()}.pdf` });
+    const getPreviousPeriodSales = () => {
+      const current = new Date(selectedDate);
+      current.setHours(0, 0, 0, 0);
+
+      switch (selectedReportType) {
+        case "today": {
+          const prev = new Date(current);
+          prev.setDate(prev.getDate() - 1);
+          return sales.filter((sale) => sale.date === dateKey(prev));
+        }
+        case "month": {
+          const prev = new Date(current);
+          prev.setMonth(prev.getMonth() - 1);
+          const prevMonthKey = monthKey(prev);
+          return sales.filter((sale) => sale.date.startsWith(prevMonthKey));
+        }
+        case "sixMonths": {
+          const prevEnd = new Date(
+            current.getFullYear(),
+            current.getMonth() - 5,
+            0,
+          );
+          const prevStart = new Date(
+            current.getFullYear(),
+            current.getMonth() - 11,
+            1,
+          );
+          return sales.filter((sale) => {
+            const saleDate = new Date(`${sale.date}T12:00:00`);
+            return saleDate >= prevStart && saleDate <= prevEnd;
+          });
+        }
+        case "year": {
+          const prevYear = current.getFullYear() - 1;
+          const prevStart = new Date(prevYear, 0, 1);
+          const prevEnd = new Date(prevYear, 11, 31);
+          return sales.filter((sale) => {
+            const saleDate = new Date(`${sale.date}T12:00:00`);
+            return saleDate >= prevStart && saleDate <= prevEnd;
+          });
+        }
+        case "specificMonth": {
+          const [year, month] = selectedMonth.split("-").map(Number);
+          const prev = new Date(year, month - 2, 1);
+          const prevMonthKey = monthKey(prev);
+          return sales.filter((sale) => sale.date.startsWith(prevMonthKey));
+        }
+        default:
+          return [];
+      }
+    };
+
+    const previousSales = getPreviousPeriodSales();
+    const previousSummary = summarizeSales(previousSales);
+    const comparisonReportLabel =
+      selectedReportType === "today"
+        ? language === "mr"
+          ? "काल"
+          : "Yesterday"
+        : selectedReportType === "month"
+          ? language === "mr"
+            ? "मागील महिना"
+            : "Previous month"
+          : selectedReportType === "year"
+            ? language === "mr"
+              ? "मागील वर्ष"
+              : "Previous year"
+            : selectedReportType === "specificMonth"
+              ? language === "mr"
+                ? "मागील महिना"
+                : "Previous month"
+              : language === "mr"
+                ? "मागील कालावधी"
+                : "Previous period";
+    const comparison = {
+      label: comparisonReportLabel,
+      revenue: previousSummary.revenue,
+      profit: previousSummary.profit,
+      margin: previousSummary.margin,
+      transactions: previousSummary.transactions,
+      revenueChange: getSignedPercentChange(
+        report.revenue,
+        previousSummary.revenue,
+      ),
+      profitChange: getSignedPercentChange(
+        report.profit,
+        previousSummary.profit,
+      ),
+      marginChange: report.margin - previousSummary.margin,
+    };
+
+    const getSelectedPeriodRange = () => {
+      const current = new Date(selectedDate);
+      current.setHours(0, 0, 0, 0);
+
+      switch (selectedReportType) {
+        case "today": {
+          const end = new Date(current);
+          end.setHours(23, 59, 59, 999);
+          return { start: current, end };
+        }
+        case "month": {
+          const start = new Date(current.getFullYear(), current.getMonth(), 1);
+          const end = new Date(
+            current.getFullYear(),
+            current.getMonth() + 1,
+            0,
+          );
+          end.setHours(23, 59, 59, 999);
+          return { start, end };
+        }
+        case "sixMonths": {
+          const start = new Date(
+            current.getFullYear(),
+            current.getMonth() - 5,
+            1,
+          );
+          const end = new Date(
+            current.getFullYear(),
+            current.getMonth() + 1,
+            0,
+          );
+          end.setHours(23, 59, 59, 999);
+          return { start, end };
+        }
+        case "year": {
+          const start = new Date(current.getFullYear(), 0, 1);
+          const end = new Date(current.getFullYear(), 11, 31);
+          end.setHours(23, 59, 59, 999);
+          return { start, end };
+        }
+        case "specificMonth": {
+          const [year, month] = selectedMonth.split("-").map(Number);
+          const start = new Date(year, month - 1, 1);
+          const end = new Date(year, month, 0);
+          end.setHours(23, 59, 59, 999);
+          return { start, end };
+        }
+        default: {
+          const end = new Date(current);
+          end.setHours(23, 59, 59, 999);
+          return { start: current, end };
+        }
+      }
+    };
+
+    const selectedPeriodRange = getSelectedPeriodRange();
+
+    const expiryAlerts = [
+      ...expiredItems.map((item) => ({
+        name: item.name,
+        expiryDate: item.expiryDate || "",
+        status: "expired" as const,
+        quantity: item.quantity,
+        value: Number(item.quantity || 0) * Number(item.buyPrice || 0),
+      })),
+      ...expiringItems.map((item) => ({
+        name: item.name,
+        expiryDate: item.expiryDate || "",
+        status: "expiring" as const,
+        quantity: item.quantity,
+        value: Number(item.quantity || 0) * Number(item.buyPrice || 0),
+      })),
+    ].sort(
+      (a, b) => a.status.localeCompare(b.status) || b.quantity - a.quantity,
+    );
+
+    const itemLookup = new Map<number, any>();
+    items.forEach((item) => {
+      if (item.id !== undefined) {
+        itemLookup.set(item.id, item);
+      }
+    });
+
+    const unitLookup = new Map<number, string>();
+    units.forEach((unit) => {
+      if (unit.id !== undefined) {
+        unitLookup.set(unit.id, unit.shortForm || unit.name || "");
+      }
+    });
+
+    const uncategorizedLabel =
+      language === "mr" ? "वर्गीकरण नाही" : "Uncategorized";
+
+    const categoryLookup = new Map<number, string>();
+    categories.forEach((category) => {
+      if (category.id !== undefined) {
+        categoryLookup.set(
+          category.id,
+          language === "mr"
+            ? category.nameMarathi || category.name || uncategorizedLabel
+            : category.name || category.nameMarathi || uncategorizedLabel,
+        );
+      }
+    });
+
+    const lastSoldByItemId = new Map<number, string>();
+    sales.forEach((sale) => {
+      const saleDate = typeof sale?.date === "string" ? sale.date : "";
+      (sale.items || []).forEach((saleItem: any) => {
+        const itemId = Number(saleItem.itemId);
+        if (!itemId || !saleDate) return;
+        const previousDate = lastSoldByItemId.get(itemId);
+        if (!previousDate || saleDate > previousDate) {
+          lastSoldByItemId.set(itemId, saleDate);
+        }
+      });
+    });
+
+    const itemPerformanceMap = new Map<
+      string,
+      {
+        name: string;
+        brand?: string;
+        quantity: number;
+        revenue: number;
+        cost: number;
+        profit: number;
+        lastSoldDate?: string;
+      }
+    >();
+
+    report.sales.forEach((sale) => {
+      const saleDate = typeof sale?.date === "string" ? sale.date : "";
+      (sale.items || []).forEach((saleItem: any) => {
+        const item = itemLookup.get(Number(saleItem.itemId));
+        const key = String(saleItem.itemId || saleItem.itemName);
+        const current = itemPerformanceMap.get(key) || {
+          name:
+            item?.name || item?.nameMarathi || saleItem.itemName || "Unknown",
+          brand: item?.brand || item?.brandMarathi || undefined,
+          quantity: 0,
+          revenue: 0,
+          cost: 0,
+          profit: 0,
+          lastSoldDate: saleDate,
+        };
+        const revenueValue = Number(saleItem.totalPrice || 0);
+        const costValue = Number(saleItem.totalCost || 0);
+        current.quantity += Number(saleItem.quantity || 0);
+        current.revenue += revenueValue;
+        current.cost += costValue;
+        current.profit += Number(saleItem.profit ?? revenueValue - costValue);
+        if (
+          saleDate &&
+          (!current.lastSoldDate || saleDate > current.lastSoldDate)
+        ) {
+          current.lastSoldDate = saleDate;
+        }
+        itemPerformanceMap.set(key, current);
+      });
+    });
+
+    const itemPerformance = Array.from(itemPerformanceMap.values())
+      .map((item) => ({
+        ...item,
+        margin: item.revenue > 0 ? (item.profit / item.revenue) * 100 : 0,
+      }))
+      .sort((a, b) => b.revenue - a.revenue);
+
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const nextWeek = new Date(todayStart);
+    nextWeek.setDate(nextWeek.getDate() + 7);
+
+    const stockItems = items
+      .map((item) => {
+        const expiryDate = item.expiryDate ? new Date(item.expiryDate) : null;
+        const expiryStart = expiryDate ? new Date(expiryDate) : null;
+        if (expiryStart) expiryStart.setHours(0, 0, 0, 0);
+        const quantity = Number(item.quantity || 0);
+        const buyPrice = Number(item.buyPrice || 0);
+        const sellPrice = Number(item.sellPrice || 0);
+        const marginAmount =
+          Number(item.marginAmount ?? sellPrice - buyPrice) || 0;
+        const marginPercent =
+          Number(
+            item.marginPercent ??
+              (buyPrice > 0 ? (marginAmount / buyPrice) * 100 : 0),
+          ) || 0;
+        const status =
+          quantity <= 0
+            ? ("out" as const)
+            : expiryStart && expiryStart < todayStart
+              ? ("expired" as const)
+              : expiryStart && expiryStart <= nextWeek
+                ? ("expiring" as const)
+                : quantity <= Number(item.lowStockLimit || 0)
+                  ? ("low" as const)
+                  : ("good" as const);
+
+        return {
+          name:
+            language === "mr"
+              ? item.nameMarathi || item.name || "Unknown"
+              : item.name || item.nameMarathi || "Unknown",
+          brand:
+            language === "mr"
+              ? item.brandMarathi || item.brand || undefined
+              : item.brand || item.brandMarathi || undefined,
+          categoryName:
+            categoryLookup.get(Number(item.categoryId)) || uncategorizedLabel,
+          quantity,
+          unit: unitLookup.get(Number(item.unitId)) || "unit",
+          stockValue: quantity * buyPrice,
+          buyPrice,
+          sellPrice,
+          marginAmount,
+          marginPercent,
+          lowStockLimit: Number(item.lowStockLimit || 0),
+          lastUpdated: item.updatedAt
+            ? new Date(item.updatedAt).toISOString().slice(0, 10)
+            : undefined,
+          lastSoldDate: item.id
+            ? lastSoldByItemId.get(Number(item.id))
+            : undefined,
+          expiryDate: item.expiryDate
+            ? new Date(item.expiryDate).toISOString().slice(0, 10)
+            : undefined,
+          status,
+        };
+      })
+      .sort((a, b) => {
+        const priority = { out: 0, expired: 1, low: 2, expiring: 3, good: 4 };
+        const priorityDiff = priority[a.status] - priority[b.status];
+        if (priorityDiff !== 0) return priorityDiff;
+        return b.stockValue - a.stockValue;
+      });
+
+    const stockMovements = stockHistory
+      .filter((movement) => {
+        const movementTime = Number(movement.createdAt || 0);
+        return (
+          movementTime >= selectedPeriodRange.start.getTime() &&
+          movementTime <= selectedPeriodRange.end.getTime()
+        );
+      })
+      .sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0))
+      .map((movement) => ({
+        date: new Date(movement.createdAt).toISOString().slice(0, 10),
+        itemName: movement.itemName || "Unknown",
+        type: movement.type,
+        quantityChanged: Number(movement.quantityChanged || 0),
+        quantityBefore: Number(movement.quantityBefore || 0),
+        quantityAfter: Number(movement.quantityAfter || 0),
+        reason: movement.reason || movement.reference || undefined,
+        costPerUnit: Number(movement.costPerUnit || 0) || undefined,
+      }));
+
+    const categoryStockSummary = Array.from(
+      stockItems.reduce(
+        (map, item) => {
+          const key = item.categoryName || uncategorizedLabel;
+          const current = map.get(key) || {
+            categoryName: key,
+            itemCount: 0,
+            totalQuantity: 0,
+            stockValue: 0,
+            lowCount: 0,
+            expiringCount: 0,
+          };
+          current.itemCount += 1;
+          current.totalQuantity += item.quantity;
+          current.stockValue += item.stockValue;
+          if (item.status === "low" || item.status === "out")
+            current.lowCount += 1;
+          if (item.status === "expiring" || item.status === "expired") {
+            current.expiringCount += 1;
+          }
+          map.set(key, current);
+          return map;
+        },
+        new Map<
+          string,
+          {
+            categoryName: string;
+            itemCount: number;
+            totalQuantity: number;
+            stockValue: number;
+            lowCount: number;
+            expiringCount: number;
+          }
+        >(),
+      ),
+    )
+      .map(([, value]) => value)
+      .sort((a, b) => b.stockValue - a.stockValue);
+
+    const categorySalesMap = new Map<
+      string,
+      {
+        categoryName: string;
+        quantitySold: number;
+        revenue: number;
+        profit: number;
+      }
+    >();
+    report.sales.forEach((sale) => {
+      (sale.items || []).forEach((saleItem: any) => {
+        const item = itemLookup.get(Number(saleItem.itemId));
+        const categoryName =
+          categoryLookup.get(Number(item?.categoryId)) || uncategorizedLabel;
+        const current = categorySalesMap.get(categoryName) || {
+          categoryName,
+          quantitySold: 0,
+          revenue: 0,
+          profit: 0,
+        };
+        const revenueValue = Number(saleItem.totalPrice || 0);
+        const profitValue = Number(
+          saleItem.profit ?? revenueValue - Number(saleItem.totalCost || 0),
+        );
+        current.quantitySold += Number(saleItem.quantity || 0);
+        current.revenue += revenueValue;
+        current.profit += profitValue;
+        categorySalesMap.set(categoryName, current);
+      });
+    });
+    const categorySalesSummary = Array.from(categorySalesMap.values())
+      .map((entry) => ({
+        ...entry,
+        margin: entry.revenue > 0 ? (entry.profit / entry.revenue) * 100 : 0,
+      }))
+      .sort((a, b) => b.revenue - a.revenue);
+
+    const udhariCustomers = udhariPressures
+      .slice(0, 25)
+      .map(({ customer, pressure }) => ({
+        name: customer.name,
+        phone: customer.phone || undefined,
+        balance: Number(customer.balance || 0),
+        daysPending: pressure.daysPending,
+        riskLevel: pressure.riskLevel,
+      }));
+
+    const saleRegister = [...report.sales]
+      .sort((a, b) => {
+        const dateDiff = String(b.date || "").localeCompare(
+          String(a.date || ""),
+        );
+        if (dateDiff !== 0) return dateDiff;
+        return Number(b.createdAt || 0) - Number(a.createdAt || 0);
+      })
+      .slice(0, 100)
+      .map((sale) => ({
+        date: sale.date,
+        time: sale.createdAt
+          ? new Date(sale.createdAt).toLocaleTimeString(
+              language === "mr" ? "mr-IN" : "en-IN",
+              { hour: "numeric", minute: "2-digit", hour12: true },
+            )
+          : undefined,
+        amount: Number(sale.subtotal || 0),
+        profit: Number(
+          sale.totalProfit ??
+            Number(sale.subtotal || 0) - Number(sale.totalCost || 0),
+        ),
+        paymentMethod: sale.paymentMethod || "cash",
+        itemCount: (sale.items || []).length,
+        totalQuantity: (sale.items || []).reduce(
+          (sum: number, saleItem: any) => sum + Number(saleItem.quantity || 0),
+          0,
+        ),
+        notes: sale.notes || undefined,
+      }));
+
+    const batchInventory = batches
+      .filter((batch) => Number(batch.quantityAvailable || 0) > 0)
+      .map((batch) => {
+        const item = itemLookup.get(Number(batch.itemId));
+        const expiryDate = batch.expiryDate ? new Date(batch.expiryDate) : null;
+        const expiryStart = expiryDate ? new Date(expiryDate) : null;
+        if (expiryStart) expiryStart.setHours(0, 0, 0, 0);
+        const quantityAvailable = Number(batch.quantityAvailable || 0);
+        const costPerUnit = Number(batch.costPerUnit || 0);
+        const status =
+          expiryStart && expiryStart < todayStart
+            ? ("expired" as const)
+            : expiryStart && expiryStart <= nextWeek
+              ? ("expiring" as const)
+              : ("active" as const);
+        return {
+          itemName:
+            language === "mr"
+              ? item?.nameMarathi || item?.name || "Unknown"
+              : item?.name || item?.nameMarathi || "Unknown",
+          batchNumber: batch.batchNumber || undefined,
+          expiryDate: batch.expiryDate
+            ? new Date(batch.expiryDate).toISOString().slice(0, 10)
+            : undefined,
+          quantityAvailable,
+          costPerUnit,
+          stockValue: quantityAvailable * costPerUnit,
+          status,
+        };
+      })
+      .sort((a, b) => {
+        const priority = { expired: 0, expiring: 1, active: 2 };
+        const diff = priority[a.status] - priority[b.status];
+        if (diff !== 0) return diff;
+        return b.stockValue - a.stockValue;
+      })
+      .slice(0, 100);
+
+    const normalizeComparisonKey = (item: any) => {
+      const baseName = String(item?.name || item?.nameMarathi || "")
+        .toLowerCase()
+        .trim();
+      const brandNames = [item?.brand, item?.brandMarathi]
+        .map((brand) =>
+          String(brand || "")
+            .toLowerCase()
+            .trim(),
+        )
+        .filter(Boolean);
+      return brandNames
+        .reduce(
+          (name, brand) =>
+            name.replace(
+              new RegExp(
+                `\\b${brand.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`,
+                "g",
+              ),
+              "",
+            ),
+          baseName,
+        )
+        .replace(/\s+/g, " ")
+        .trim();
+    };
+
+    const productDemand = new Map<
+      string,
+      {
+        productName: string;
+        brandTotals: Map<
+          string,
+          {
+            revenue: number;
+            quantity: number;
+            profit: number;
+            stockValue: number;
+          }
+        >;
+      }
+    >();
+
+    items.forEach((item) => {
+      const productKey = normalizeComparisonKey(item);
+      if (!productKey) return;
+      const productName =
+        language === "mr"
+          ? item.nameMarathi || item.name || "Unknown"
+          : item.name || item.nameMarathi || "Unknown";
+      const brand =
+        language === "mr"
+          ? item.brandMarathi || item.brand || "No brand"
+          : item.brand || item.brandMarathi || "No brand";
+      const product = productDemand.get(productKey) || {
+        productName,
+        brandTotals: new Map(),
+      };
+      const brandTotal = product.brandTotals.get(brand) || {
+        revenue: 0,
+        quantity: 0,
+        profit: 0,
+        stockValue: 0,
+      };
+      brandTotal.stockValue +=
+        Number(item.quantity || 0) * Number(item.buyPrice || 0);
+      product.brandTotals.set(brand, brandTotal);
+      productDemand.set(productKey, product);
+    });
+
+    report.sales.forEach((sale) => {
+      (sale.items || []).forEach((saleItem: any) => {
+        const item = itemLookup.get(Number(saleItem.itemId));
+        if (!item) return;
+        const productKey = normalizeComparisonKey(item);
+        const brand =
+          language === "mr"
+            ? item.brandMarathi || item.brand || "No brand"
+            : item.brand || item.brandMarathi || "No brand";
+        const product = productDemand.get(productKey);
+        const brandTotal = product?.brandTotals.get(brand);
+        if (!product || !brandTotal) return;
+        const revenue = Number(saleItem.totalPrice || 0);
+        const cost = Number(saleItem.totalCost || 0);
+        brandTotal.revenue += revenue;
+        brandTotal.quantity += Number(saleItem.quantity || 0);
+        brandTotal.profit += Number(saleItem.profit ?? revenue - cost);
+      });
+    });
+
+    const brandDemand = Array.from(productDemand.values())
+      .map((group) => {
+        const brandTotals = Array.from(group.brandTotals.entries()).sort(
+          (a, b) =>
+            b[1].revenue - a[1].revenue || b[1].stockValue - a[1].stockValue,
+        );
+        const totalRevenue = brandTotals.reduce(
+          (sum, [, value]) => sum + value.revenue,
+          0,
+        );
+        const topBrandEntry = brandTotals[0];
+        return {
+          productName: group.productName,
+          totalRevenue,
+          topBrand: topBrandEntry?.[0] ?? "Unknown",
+          topBrandRevenue: topBrandEntry?.[1].revenue ?? 0,
+          topBrandShare: totalRevenue
+            ? (topBrandEntry?.[1].revenue ?? 0) / totalRevenue
+            : 0,
+          brandCount: brandTotals.length,
+          topBrands: brandTotals
+            .slice(0, 3)
+            .map(
+              ([brand, value]) => `${brand}: ₹${formatMoney(value.revenue)}`,
+            ),
+        };
+      })
+      .filter((group) => group.brandCount >= 2)
+      .sort(
+        (a, b) =>
+          b.totalRevenue - a.totalRevenue || b.brandCount - a.brandCount,
+      )
+      .slice(0, 5);
+
+    const staffSalesMap = new Map<
+      string,
+      {
+        staffName: string;
+        revenue: number;
+        cost: number;
+        profit: number;
+        transactions: number;
+        udhariAmount: number;
+        totalItems: number;
+      }
+    >();
+    report.sales.forEach((sale) => {
+      const staffId =
+        sale.userId || sale.user_id || sale.createdBy || sale.staffId;
+      if (!staffId) return;
+      const staffKey = String(staffId);
+      const staffName =
+        staff.find((member: any) => member.id === Number(staffId))?.username ||
+        `Staff ${staffKey}`;
+      const currentEntry = staffSalesMap.get(staffKey) || {
+        staffName,
+        revenue: 0,
+        cost: 0,
+        profit: 0,
+        transactions: 0,
+        udhariAmount: 0,
+        totalItems: 0,
+      };
+      currentEntry.revenue += Number(sale.subtotal || 0);
+      currentEntry.cost += Number(sale.totalCost || 0);
+      currentEntry.profit += Number(
+        sale.totalProfit ??
+          Number(sale.subtotal || 0) - Number(sale.totalCost || 0),
+      );
+      currentEntry.transactions += 1;
+      currentEntry.udhariAmount +=
+        sale.paymentMethod === "udhar" ? Number(sale.subtotal || 0) : 0;
+      currentEntry.totalItems += (sale.items || []).reduce(
+        (sum: number, saleItem: any) => sum + Number(saleItem.quantity || 0),
+        0,
+      );
+      staffSalesMap.set(staffKey, currentEntry);
+    });
+
+    const staffSales = Array.from(staffSalesMap.values())
+      .map((entry) => ({
+        ...entry,
+        margin: entry.revenue > 0 ? (entry.profit / entry.revenue) * 100 : 0,
+        averageBill:
+          entry.transactions > 0 ? entry.revenue / entry.transactions : 0,
+      }))
+      .sort((a, b) => b.revenue - a.revenue)
+      .slice(0, 5);
+
+    const lossItems = itemPerformance.filter((item) => item.profit < 0);
+    const lowMarginSoldItems = itemPerformance.filter(
+      (item) => item.profit >= 0 && item.margin < 10,
+    );
+    const strongMarginItems = itemPerformance.filter(
+      (item) => item.margin >= 25 && item.profit > 0,
+    );
+
+    const suggestions: string[] = [];
+    if (report.revenue === 0) {
+      suggestions.push(
+        language === "mr"
+          ? "या कालावधीत विक्री नोंदलेली नाही. विक्री भरली आहे का किंवा दुसरी कालावधी निवडा."
+          : "No sales are recorded for this period. Check whether sales were entered or select another period.",
+      );
     }
+    if (comparison.revenueChange < 0) {
+      suggestions.push(
+        language === "mr"
+          ? `विक्री ${formatPercent(Math.abs(comparison.revenueChange))}% ने ${comparison.label} पेक्षा कमी आहे. मुख्य वस्तू आणि कर्मचारी तपासा.`
+          : `Sales are down ${formatPercent(Math.abs(comparison.revenueChange))}% compared with ${comparison.label}. Review top-selling items and worker coverage.`,
+      );
+    }
+    if (lowStockItems.length > 0) {
+      suggestions.push(
+        language === "mr"
+          ? `${lowStockItems.length} कमी स्टॉक वस्तू पुन्हा मागवा.`
+          : `Reorder ${lowStockItems.length} low-stock item${lowStockItems.length > 1 ? "s" : ""} to avoid stockouts.`,
+      );
+    }
+    if (expiredItems.length > 0) {
+      suggestions.push(
+        language === "mr"
+          ? `${expiredItems.length} कालबाह्य वस्तू काढून टाका किंवा सवलतीत विका.`
+          : `Dispose or discount ${expiredItems.length} expired item${expiredItems.length > 1 ? "s" : ""} to reduce losses.`,
+      );
+    } else if (expiringItems.length > 0) {
+      suggestions.push(
+        language === "mr"
+          ? `${expiringItems.length} लवकर कालबाह्य होणाऱ्या वस्तू लवकर विका.`
+          : `Promote ${expiringItems.length} item${expiringItems.length > 1 ? "s" : ""} nearing expiry to clear stock.`,
+      );
+    }
+    if (urgentUdhari?.pressure.riskLevel === "high") {
+      suggestions.push(
+        language === "mr"
+          ? "उच्च धोक्याच्या उधार ग्राहकांकडून थकबाकी लगेच वसूल करा."
+          : "Collect overdue udhari from high-risk credit customers immediately.",
+      );
+    } else if (urgentUdhari?.pressure.riskLevel === "recover") {
+      suggestions.push(
+        language === "mr"
+          ? "उधार ग्राहकांशी संपर्क करून थकबाकी वसूल करा."
+          : "Follow up with credit customers to recover pending balances soon.",
+      );
+    }
+    if (brandDemand.length > 0) {
+      const topBrandComparison = brandDemand[0];
+      suggestions.push(
+        language === "mr"
+          ? `${topBrandComparison.productName} साठी ${topBrandComparison.topBrands.join(", ")} यांची तुलना करा आणि जास्त विक्री देणारा ब्रँड जास्त ठेवा.`
+          : `Compare ${topBrandComparison.topBrands.join(", ")} for ${topBrandComparison.productName}; keep more stock of the better-selling brand.`,
+      );
+    }
+    if (lossItems.length > 0) {
+      suggestions.push(
+        language === "mr"
+          ? `${lossItems.length} तोटा वस्तूंचे विक्री दर पुढच्या विक्रीपूर्वी बदला.`
+          : `Fix selling price for ${lossItems.length} loss-making item${lossItems.length > 1 ? "s" : ""} before the next sale.`,
+      );
+    } else if (lowMarginSoldItems.length > 0) {
+      suggestions.push(
+        language === "mr"
+          ? `${lowMarginSoldItems.length} कमी मार्जिन वस्तूंचे दर तपासा.`
+          : `Review purchase price or selling price for ${lowMarginSoldItems.length} low-margin item${lowMarginSoldItems.length > 1 ? "s" : ""}.`,
+      );
+    }
+    if (strongMarginItems.length > 0) {
+      suggestions.push(
+        language === "mr"
+          ? `${strongMarginItems[0].name} चा ${formatPercent(strongMarginItems[0].margin)}% मार्जिन चांगला आहे — या वस्तूला प्रोत्साहन द्या.`
+          : `Promote ${strongMarginItems[0].name}; it has a strong ${formatPercent(strongMarginItems[0].margin)}% margin.`,
+      );
+    }
+    if (report.profit < 0) {
+      suggestions.push(
+        language === "mr"
+          ? "खर्च कमी करा किंवा दर वाढवून नफा सुधारा."
+          : "Reduce costs or adjust prices to improve profitability.",
+      );
+    }
+
+    console.info("handleDownloadReport: isPremium", isPremium);
+    if (!isPremium) {
+      toast.error(t("premium_pdf_requires_subscription"));
+      return;
+    }
+
+    console.info("handleDownloadReport: invoking premium PDF export");
+    try {
+      await downloadPremiumPdf(
+        {
+          label: report.label,
+          sales: report.sales,
+          transactions: report.transactions,
+          revenue: report.revenue,
+          cost: report.cost,
+          profit: report.profit,
+          margin: report.margin,
+          topItems: report.topItems,
+          itemPerformance,
+          shopName: currentShop?.shopName || "Dukan",
+          shopAddress: currentShop?.address || undefined,
+          shopPhone: currentShop?.phoneNumber || undefined,
+          ownerName: currentShop?.ownerName || undefined,
+          language,
+          totalStockValue,
+          productsCount: items.length,
+          lowStockItems: lowStockItems.map((item) => ({
+            name:
+              language === "mr"
+                ? item.nameMarathi || item.name
+                : item.name || item.nameMarathi,
+            quantity: item.quantity,
+            lowStockLimit: item.lowStockLimit,
+          })),
+          totalPendingUdhari: totalPending,
+          highestUdharCustomer: highestUdharCustomer
+            ? {
+                name: highestUdharCustomer.name,
+                balance: highestUdharCustomer.balance,
+              }
+            : null,
+          paymentBreakdown,
+          totalItemsSold,
+          averageBill,
+          comparison,
+          expiryAlerts,
+          brandDemand,
+          staffSales,
+          stockItems,
+          stockMovements,
+          categoryStockSummary,
+          categorySalesSummary,
+          udhariCustomers,
+          saleRegister,
+          batchInventory,
+          suggestions,
+          notifications: [],
+        },
+        `dukan-report-premium-${Date.now()}.pdf`,
+      );
+      toast.success(t("premium_pdf_downloaded"));
+    } catch (error) {
+      console.error("Failed to generate premium PDF:", error);
+      toast.error(
+        `Premium report failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      throw error;
+    }
+  };
+
+  const handleViewReport = () => {
+    const params = new URLSearchParams({
+      period: selectedReportType,
+      month: selectedMonth,
+      date: dateKey(selectedDate),
+    });
+    router.push(`/reports/overview?${params.toString()}`);
   };
 
   // --- Loading state ---
   if (!isClientReady || authLoading) {
     return (
-      <div className="space-y-6 pb-24 sm:pb-10">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">{t("home")}</h1>
+      <div className="mx-auto max-w-5xl space-y-6 pb-24 pt-2 sm:pb-10 sm:pt-4">
+        <div className="rounded-2xl border border-border/70 bg-card/70 p-4 shadow-sm backdrop-blur sm:p-5">
+          <h1 className="text-2xl font-semibold tracking-tight">{t("home")}</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             {t("loading_shop_data")}
           </p>
@@ -895,98 +1967,261 @@ export function Dashboard() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6 pb-24 sm:pb-10">
+    <div className="mx-auto flex max-w-5xl flex-col gap-6 pb-24 pt-2 sm:pb-10 sm:pt-4">
       {/* ─── Header ─── */}
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">{t("home")}</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {currentShop?.shopName || "Shop"}
-        </p>
+      <div className="order-1 flex items-center justify-between gap-4 rounded-3xl border border-slate-200/80 bg-card p-5 shadow-[0_8px_24px_rgba(15,23,42,0.05)] sm:p-6">
+        <div className="min-w-0">
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
+            {t("home")}
+          </h1>
+          <p className="mt-1 truncate text-sm leading-6 text-muted-foreground">
+            {currentShop?.shopName || "Shop"}
+          </p>
+        </div>
+        <Button
+          onClick={() => router.push("/sales")}
+          className="shrink-0 rounded-xl bg-indigo-600 px-4 shadow-sm transition-all hover:bg-indigo-700 hover:shadow-md active:scale-[0.97]"
+        >
+          <ShoppingBag className="mr-2 h-4 w-4" />
+          {language === "mr" ? "नवीन विक्री" : "New sale"}
+        </Button>
       </div>
 
       {/* ─── Top 4 Summary Cards ─── */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Card className="border-2">
+      <div className="order-2 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Card className="border border-emerald-200/80 bg-gradient-to-br from-emerald-50 to-white shadow-[0_4px_16px_rgba(16,185,129,0.07)] transition-[transform,box-shadow,border-color] duration-200 hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow-[0_10px_24px_rgba(16,185,129,0.12)] dark:border-green-900/50 dark:bg-green-950/20">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              {t("today_sales")}
+            <CardTitle className="text-sm font-medium tracking-tight">
+              🟢 Today's Profit
             </CardTitle>
             <TrendingUp className="h-4 w-4 text-green-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              Rs. {formatMoney(todayReport.revenue)}
+            <div className="space-y-2">
+              <div className="flex items-baseline justify-between">
+                <span className="text-xs font-medium text-muted-foreground">Sales:</span>
+                <span className="text-lg font-semibold tabular-nums text-blue-700 dark:text-blue-300">
+                  ₹{formatMoney(daySummary.revenue)}
+                </span>
+              </div>
+              <div className="flex items-baseline justify-between">
+                <span className="text-xs font-medium text-muted-foreground">Profit:</span>
+                <span className="text-lg font-semibold tabular-nums text-green-800 dark:text-green-300">
+                  ₹{formatMoney(daySummary.profit)}
+                </span>
+              </div>
+              <p
+                className={`text-xs font-semibold text-right ${
+                  profitChangePercent >= 0
+                    ? "text-green-700 dark:text-green-300"
+                    : "text-red-700 dark:text-red-300"
+                }`}
+              >
+                {comparisonLabel} {signedPercent(profitChangePercent)}
+              </p>
             </div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {todayReport.transactions} {t("transactions")}
-            </p>
           </CardContent>
         </Card>
 
-        <Card className="border-2">
+        <Card className="border border-slate-200/80 bg-card shadow-[0_4px_16px_rgba(15,23,42,0.045)] transition-[transform,box-shadow,border-color] duration-200 hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-[0_10px_24px_rgba(37,99,235,0.10)]">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              {t("today_profit")}
-            </CardTitle>
-            <TrendingUp className="h-4 w-4 text-blue-600" />
+            <CardTitle className="text-sm font-medium">Bills today</CardTitle>
+            <ShoppingBag className="h-4 w-4 text-blue-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              Rs. {formatMoney(todayReport.profit)}
+            <div className="text-2xl font-semibold tabular-nums leading-tight">
+              {daySummary.transactions}
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
-              {formatPercent(todayReport.margin)}% {t("margin")}
+              {daySummary.transactions === 1 ? "sale recorded" : "sales recorded"}
+            </p>
+            <p
+              className={`mt-1 text-xs font-semibold ${
+                revenueChangePercent >= 0
+                  ? "text-green-700 dark:text-green-300"
+                  : "text-red-700 dark:text-red-300"
+              }`}
+            >
+              {comparisonLabel} {signedPercent(revenueChangePercent)}
             </p>
           </CardContent>
         </Card>
 
-        <Card className="border-2">
+        <Card
+          className="cursor-pointer border border-orange-200/80 bg-gradient-to-br from-orange-50 to-white shadow-[0_4px_16px_rgba(249,115,22,0.08)] transition-[transform,box-shadow,border-color] duration-200 hover:-translate-y-0.5 hover:border-orange-300 hover:shadow-[0_10px_24px_rgba(249,115,22,0.14)] active:scale-[0.99] dark:border-orange-900/50 dark:bg-orange-950/20"
+          onClick={() =>
+            router.push(
+              itemFocusHref(
+                urgentStockInsight.targetItem?.id,
+                urgentStockInsight.targetFilter,
+              ),
+            )
+          }
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              router.push(
+                itemFocusHref(
+                  urgentStockInsight.targetItem?.id,
+                  urgentStockInsight.targetFilter,
+                ),
+              );
+            }
+          }}
+          role="button"
+          tabIndex={0}
+        >
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">⚠️ Risk</CardTitle>
+            <AlertTriangle className="h-4 w-4 text-orange-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="line-clamp-2 text-lg font-semibold leading-6 text-orange-900 dark:text-orange-200">
+              {stockRiskTitle}
+            </div>
+            <p className="mt-2 text-xs text-orange-800/80 dark:text-orange-200/80">
+              {stockRiskSubtext}
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card
+          className="cursor-pointer border border-slate-200/80 bg-card shadow-[0_4px_16px_rgba(15,23,42,0.045)] transition-[transform,box-shadow,border-color] duration-200 hover:-translate-y-0.5 hover:border-orange-300 hover:shadow-[0_10px_24px_rgba(249,115,22,0.10)] active:scale-[0.99]"
+          onClick={() =>
+            router.push(customerFocusHref(urgentUdhari?.customer.id))
+          }
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              router.push(customerFocusHref(urgentUdhari?.customer.id));
+            }
+          }}
+          role="button"
+          tabIndex={0}
+        >
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">{t("udhari")}</CardTitle>
             <WalletCards className="h-4 w-4 text-orange-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              Rs. {formatMoney(totalPending)}
-            </div>
-            <p className="mt-1 text-xs text-muted-foreground">{t("pending")}</p>
-          </CardContent>
-        </Card>
-
-        <Card className="border-2">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              {t("total_value_label")}
-            </CardTitle>
-            <Package className="h-4 w-4 text-purple-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              Rs. {formatMoney(stats.totalStockValue)}
-            </div>
+            <div className="text-xl font-semibold tabular-nums">{udhariRiskLabel}</div>
             <p className="mt-1 text-xs text-muted-foreground">
-              {items.length} {t("products")}
+              {udhariSubtext}
             </p>
+            {urgentUdhari && (
+              <p className="mt-1 truncate text-xs font-semibold text-orange-700 dark:text-orange-300">
+                {urgentUdhari.customer.name}
+              </p>
+            )}
           </CardContent>
         </Card>
       </div>
 
+      {weeklySummary.show && (
+        <Card className="order-4 border border-blue-200 bg-blue-50/70 shadow-sm dark:border-blue-900/50 dark:bg-blue-950/20">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">
+              {language === "mr" ? "या आठवड्यात" : "This week"}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-3 gap-2 text-sm">
+              <div>
+                <p className="text-xs text-muted-foreground">Sales</p>
+                <p
+                  className={`font-bold ${
+                    weeklySummary.salesChange >= 0
+                      ? "text-green-700"
+                      : "text-red-700"
+                  }`}
+                >
+                  {signedPercent(weeklySummary.salesChange)}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">
+                  {t("profit_amount")}
+                </p>
+                <p
+                  className={`font-bold ${
+                    weeklySummary.profitChange >= 0
+                      ? "text-green-700"
+                      : "text-red-700"
+                  }`}
+                >
+                  {signedPercent(weeklySummary.profitChange)}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">{t("udhari")}</p>
+                <p
+                  className={`font-bold ${
+                    weeklySummary.udhariChange <= 0
+                      ? "text-green-700"
+                      : "text-orange-700"
+                  }`}
+                >
+                  {signedPercent(weeklySummary.udhariChange)}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      <section className="order-3 rounded-2xl border border-slate-200/80 bg-card p-3 shadow-[0_4px_16px_rgba(15,23,42,0.04)]">
+        <div className="mb-2 flex items-center justify-between px-1">
+          <h2 className="text-sm font-semibold tracking-tight">
+            {language === "mr" ? "लक्ष देण्याच्या गोष्टी" : "Needs attention"}
+          </h2>
+          <span className="text-xs text-muted-foreground">
+            {language === "mr" ? "दुकानासाठी महत्त्वाच्या गोष्टी" : "Important shop actions, updated live"}
+          </span>
+        </div>
+        <div className="grid grid-cols-3 gap-2">
+          <button
+            type="button"
+            onClick={() => router.push(itemFocusHref(undefined, "lowStock"))}
+            className="rounded-xl border border-red-100 bg-red-50 p-2.5 text-left transition-all hover:-translate-y-px hover:shadow-sm active:scale-[0.98]"
+          >
+            <span className="block text-lg font-semibold tabular-nums text-red-700">{lowStockItems.length}</span>
+            <span className="block text-xs font-medium text-red-800">{language === "mr" ? "पुन्हा मागवा" : "Reorder"}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => router.push(itemFocusHref(undefined, urgentStockInsight.targetFilter))}
+            className="rounded-xl border border-amber-100 bg-amber-50 p-2.5 text-left transition-all hover:-translate-y-px hover:shadow-sm active:scale-[0.98]"
+          >
+            <span className="block text-lg font-semibold tabular-nums text-amber-700">{expiredItems.length + expiringItems.length}</span>
+            <span className="block text-xs font-medium text-amber-800">{language === "mr" ? "एक्सपायरी" : "Expiry"}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => router.push(customerFocusHref(urgentUdhari?.customer.id))}
+            className="rounded-xl border border-orange-100 bg-orange-50 p-2.5 text-left transition-all hover:-translate-y-px hover:shadow-sm active:scale-[0.98]"
+          >
+            <span className="block text-lg font-semibold tabular-nums text-orange-700">{udhariPressures.length}</span>
+            <span className="block text-xs font-medium text-orange-800">{language === "mr" ? "उधारी वसूल" : "Collect udhari"}</span>
+          </button>
+        </div>
+      </section>
+
       {/* ═══════════════════════════════════════════════════════ */}
       {/* ─── DAILY SALES TIMELINE (new section) ─── */}
       {/* ═══════════════════════════════════════════════════════ */}
-      <section className="space-y-3">
+      <section className="order-7 space-y-3 [content-visibility:auto] [contain-intrinsic-size:auto_650px]">
         {/* Date navigation header */}
         <div className="flex items-center justify-between gap-2">
           <Button
             variant="ghost"
             size="icon"
             onClick={goToPreviousDay}
-            className="h-9 w-9 shrink-0"
+            className="h-10 w-10 shrink-0 rounded-xl border border-slate-200 bg-white shadow-sm transition-all duration-150 hover:-translate-y-px hover:shadow active:scale-90"
           >
             <ChevronLeft className="h-5 w-5" />
           </Button>
           <div className="text-center">
-            <h2 className="text-lg font-bold leading-tight">
+            <h2 className="text-lg font-semibold leading-tight tracking-tight">
               {formatDateLabel(selectedDate, language)}
             </h2>
             <p className="text-xs text-muted-foreground">
@@ -1006,15 +2241,34 @@ export function Dashboard() {
             size="icon"
             onClick={goToNextDay}
             disabled={isToday}
-            className="h-9 w-9 shrink-0"
+            className="h-10 w-10 shrink-0 rounded-xl border border-slate-200 bg-white shadow-sm transition-all duration-150 hover:-translate-y-px hover:shadow active:scale-90"
           >
             <ChevronRight className="h-5 w-5" />
           </Button>
         </div>
 
+        <button
+          type="button"
+          onClick={() => setShowDayActivity((visible) => !visible)}
+          className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-left transition-all hover:border-indigo-200 hover:bg-indigo-50/50 active:scale-[0.99]"
+        >
+          <span>
+            <span className="block text-sm font-semibold">
+              {language === "mr" ? "दिवसाची विक्री" : "Sales activity"}
+            </span>
+            <span className="block text-xs text-muted-foreground">
+              {daySales.length} {language === "mr" ? "बिले" : daySales.length === 1 ? "bill" : "bills"} · ₹{formatMoney(daySummary.revenue)}
+            </span>
+          </span>
+          {showDayActivity ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+        </button>
+
+        {showDayActivity && (
+          <div className="space-y-3 animate-in fade-in-0 slide-in-from-top-1 duration-200">
+
         {/* Day summary bar */}
         {daySales.length > 0 && (
-          <Card className="border-2 bg-gradient-to-r from-green-50 to-blue-50 dark:from-green-950/30 dark:to-blue-950/30">
+          <Card className="border bg-gradient-to-r from-green-50 to-blue-50 shadow-sm dark:from-green-950/30 dark:to-blue-950/30">
             <CardContent className="py-3">
               <div className="grid grid-cols-4 gap-1 text-center text-xs">
                 <div>
@@ -1044,9 +2298,35 @@ export function Dashboard() {
           </Card>
         )}
 
+        {dayTopProduct && (
+          <Card className="border border-amber-200 bg-amber-50/80 shadow-sm dark:border-amber-900/50 dark:bg-amber-950/20">
+            <CardContent className="flex items-center justify-between gap-3 py-3">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-amber-800 dark:text-amber-200">
+                  🏆{" "}
+                  {language === "mr"
+                    ? "आजचा बेस्ट विकणारा माल"
+                    : "Today's best seller"}
+                </p>
+                <p className="truncate text-base font-bold">
+                  {dayTopProduct.name}
+                </p>
+              </div>
+              <div className="shrink-0 text-right">
+                <p className="text-sm font-bold text-amber-800 dark:text-amber-200">
+                  ₹{formatMoney(dayTopProduct.revenue)}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {formatNumber(dayTopProduct.quantity)} {t("sold")}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Empty state */}
         {daySales.length === 0 && (
-          <Card className="border-2 border-dashed">
+          <Card className="border border-dashed shadow-sm">
             <CardContent className="py-10 text-center">
               <ShoppingBag className="mx-auto mb-3 h-10 w-10 text-muted-foreground/50" />
               <p className="font-medium text-muted-foreground">
@@ -1069,7 +2349,7 @@ export function Dashboard() {
             return (
               <Card
                 key={sale.id ?? index}
-                className={`overflow-hidden border-2 transition-all duration-200 ${
+              className={`overflow-hidden rounded-2xl border border-slate-200/80 bg-card shadow-[0_3px_14px_rgba(15,23,42,0.04)] transition-[transform,box-shadow,border-color] duration-200 hover:border-indigo-200 hover:shadow-[0_8px_20px_rgba(79,70,229,0.08)] ${
                   isUdhar ? "border-orange-200 dark:border-orange-800/50" : ""
                 }`}
               >
@@ -1080,14 +2360,14 @@ export function Dashboard() {
                     onClick={() =>
                       setExpandedSaleId(isExpanded ? null : (sale.id ?? null))
                     }
-                    className="flex items-center gap-2.5 min-w-0 flex-1 text-left transition-colors hover:bg-muted/40 -mx-3 -my-3 px-3 py-3"
+                    className="-mx-3 -my-3 flex min-w-0 flex-1 items-center gap-2.5 rounded-xl px-3 py-3 text-left transition-colors duration-150 hover:bg-slate-50 active:bg-slate-100"
                   >
                     <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-bold text-muted-foreground">
                       <Clock className="h-3.5 w-3.5" />
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <span className="text-sm font-semibold">
+                        <span className="text-sm font-semibold tabular-nums">
                           {formatTime(sale.timestamp)}
                         </span>
                         <span
@@ -1128,7 +2408,7 @@ export function Dashboard() {
                       <Trash2 className="h-4 w-4" />
                     </Button>
                     <div className="text-right">
-                      <p className="text-sm font-bold">
+                      <p className="text-sm font-semibold tabular-nums">
                         ₹{formatMoney(sale.subtotal)}
                       </p>
                       <p className="text-[11px] font-medium text-green-600 dark:text-green-400">
@@ -1234,7 +2514,7 @@ export function Dashboard() {
                           {formatPercent(sale.profitMarginPercent)}%
                         </span>
                       </div>
-                      
+
                       {/* Edit and Delete buttons */}
                       <div className="flex gap-2">
                         <Button
@@ -1263,12 +2543,25 @@ export function Dashboard() {
             );
           })}
         </div>
+          </div>
+        )}
       </section>
 
       {/* ─── Reports Section (Updated) ─── */}
-      <section className="space-y-3">
+      <section className="order-9 space-y-3 [content-visibility:auto] [contain-intrinsic-size:auto_720px] animate-in fade-in-0 slide-in-from-top-1 duration-200">
         <div className="flex items-center justify-between gap-3 flex-wrap">
-          <h2 className="text-xl font-bold">{t("reports")}</h2>
+          <div className="flex items-center gap-2">
+            <div className="flex h-9 w-9 items-center justify-center rounded-md border border-amber-200 bg-amber-50 text-amber-700">
+              <Crown className="h-4 w-4" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold">{t("reports")}</h2>
+              <p className="text-xs text-muted-foreground">
+                Visual report with sales, profit, stock, brand, and udhari
+                insights
+              </p>
+            </div>
+          </div>
         </div>
 
         <Card className="border-2">
@@ -1287,116 +2580,189 @@ export function Dashboard() {
                     <SelectItem value="month">{t("this_month")}</SelectItem>
                     <SelectItem value="sixMonths">{t("six_months")}</SelectItem>
                     <SelectItem value="year">{t("this_year")}</SelectItem>
-                    <SelectItem value="specificMonth">Specific Month</SelectItem>
+                    <SelectItem value="specificMonth">
+                      Specific Month
+                    </SelectItem>
                   </SelectContent>
                 </Select>
 
-                {selectedReportType === "specificMonth" && availableMonths.length > 0 && (
-                  <Select
-                    value={selectedMonth}
-                    onValueChange={setSelectedMonth}
-                  >
-                    <SelectTrigger className="w-40">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {availableMonths.map((month) => {
-                        const [year, monthNum] = month.split("-");
-                        const date = new Date(parseInt(year), parseInt(monthNum) -1, 1);
-                        const monthLabel = date.toLocaleDateString(language === "mr" ? "mr-IN" : "en-IN", {
-                          month: "long",
-                          year: "numeric"
-                        });
-                        return (
-                          <SelectItem key={month} value={month}>
-                            {monthLabel}
-                          </SelectItem>
-                        );
-                      })}
-                    </SelectContent>
-                  </Select>
-                )}
+                {selectedReportType === "specificMonth" &&
+                  availableMonths.length > 0 && (
+                    <Select
+                      value={selectedMonth}
+                      onValueChange={setSelectedMonth}
+                    >
+                      <SelectTrigger className="w-40">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {availableMonths.map((month) => {
+                          const [year, monthNum] = month.split("-");
+                          const date = new Date(
+                            parseInt(year),
+                            parseInt(monthNum) - 1,
+                            1,
+                          );
+                          const monthLabel = date.toLocaleDateString(
+                            language === "mr" ? "mr-IN" : "en-IN",
+                            {
+                              month: "long",
+                              year: "numeric",
+                            },
+                          );
+                          return (
+                            <SelectItem key={month} value={month}>
+                              {monthLabel}
+                            </SelectItem>
+                          );
+                        })}
+                      </SelectContent>
+                    </Select>
+                  )}
               </div>
 
               <div className="flex items-center gap-3">
                 <p className="text-xs text-muted-foreground">
                   {currentReport.transactions} {t("transactions")}
                 </p>
-                <Button
-                  onClick={handleDownloadReport}
-                  variant="outline"
-                  size="sm"
-                  className="h-9 gap-2"
-                >
-                  <FileDown className="h-4 w-4" />
-                  {t("pdf_report")}
-                </Button>
-              </div>
-            </div>
-
-            <CardTitle className="text-lg mt-2">{currentReport.label}</CardTitle>
-          </CardHeader>
-          
-          <CardContent>
-            <div className="grid grid-cols-3 gap-2 text-sm">
-              <div>
-                <p className="text-xs text-muted-foreground">{t("sale")}</p>
-                <p className="font-bold">
-                  Rs. {formatMoney(currentReport.revenue)}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">
-                  {t("profit_amount")}
-                </p>
-                <p className="font-bold text-green-700">
-                  Rs. {formatMoney(currentReport.profit)}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">
-                  {t("margin")}
-                </p>
-                <p className="font-bold">{formatPercent(currentReport.margin)}%</p>
-              </div>
-            </div>
-
-            {/* Top Items */}
-            {currentReport.topItems.length > 0 && (
-              <div className="mt-4">
-                <p className="text-xs text-muted-foreground mb-2 font-semibold">Top Items</p>
-                <div className="space-y-1">
-                  {currentReport.topItems.map((item, index) => (
-                    <div key={index} className="flex justify-between text-sm">
-                      <span className="truncate">{item.name}</span>
-                      <span className="font-bold">
-                        Rs. {formatMoney(item.revenue)}
-                      </span>
-                    </div>
-                  ))}
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <Button
+                    onClick={handleViewReport}
+                    variant="outline"
+                    size="sm"
+                    className="h-9 gap-2 border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 hover:text-blue-800"
+                  >
+                    <BarChart3 className="h-4 w-4" />
+                    View report
+                  </Button>
                 </div>
               </div>
-            )}
+            </div>
+
+            <CardTitle className="mt-2 flex items-center gap-2 text-lg">
+              <BarChart3 className="h-4 w-4 text-blue-600" />
+              {currentReport.label}
+            </CardTitle>
+          </CardHeader>
+
+          <CardContent>
+            <div className="grid gap-4 lg:grid-cols-[1fr_1.05fr]">
+              <div>
+                <div className="grid grid-cols-3 gap-2 text-sm">
+                  <div>
+                    <p className="text-xs text-muted-foreground">{t("sale")}</p>
+                    <p className="font-bold">
+                      Rs. {formatMoney(currentReport.revenue)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">
+                      {t("profit_amount")}
+                    </p>
+                    <p className="font-bold text-green-700">
+                      Rs. {formatMoney(currentReport.profit)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">
+                      {t("margin")}
+                    </p>
+                    <p className="font-bold">
+                      {formatPercent(currentReport.margin)}%
+                    </p>
+                  </div>
+                </div>
+
+                {/* Top Items */}
+                {currentReport.topItems.length > 0 && (
+                  <div className="mt-4">
+                    <p className="text-xs text-muted-foreground mb-2 font-semibold">
+                      Top Items
+                    </p>
+                    <div className="space-y-1">
+                      {currentReport.topItems.map((item, index) => (
+                        <div
+                          key={index}
+                          className="flex justify-between text-sm"
+                        >
+                          <span className="truncate">{item.name}</span>
+                          <span className="font-bold">
+                            Rs. {formatMoney(item.revenue)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="rounded-md border border-blue-100 bg-gradient-to-br from-blue-50 via-white to-emerald-50 p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-blue-950">
+                      Premium visual report
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Overview, sales, stock, payment, and udhari insights for
+                      this period.
+                    </p>
+                  </div>
+                  <BarChart3 className="h-5 w-5 shrink-0 text-blue-700" />
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                  <div className="flex items-center gap-2 rounded-md bg-white/80 px-2 py-2">
+                    <TrendingUp className="h-3.5 w-3.5 text-green-600" />
+                    <span>Sales + profit</span>
+                  </div>
+                  <div className="flex items-center gap-2 rounded-md bg-white/80 px-2 py-2">
+                    <Package className="h-3.5 w-3.5 text-amber-600" />
+                    <span>Stock alerts</span>
+                  </div>
+                  <div className="flex items-center gap-2 rounded-md bg-white/80 px-2 py-2">
+                    <WalletCards className="h-3.5 w-3.5 text-orange-600" />
+                    <span>Udhari control</span>
+                  </div>
+                  <div className="flex items-center gap-2 rounded-md bg-white/80 px-2 py-2">
+                    <BarChart3 className="h-3.5 w-3.5 text-blue-600" />
+                    <span>Brand + staff</span>
+                  </div>
+                </div>
+              </div>
+            </div>
           </CardContent>
         </Card>
       </section>
 
       {/* ─── Brand Comparison Section ─── */}
-      <BrandComparison 
-        showOnlyTop5={true}
-        selectedReportType={selectedReportType}
-        setSelectedReportType={setSelectedReportType}
-        selectedMonth={selectedMonth}
-        setSelectedMonth={setSelectedMonth}
-      />
+      {(
+      <div className="order-9 [content-visibility:auto] [contain-intrinsic-size:auto_500px] animate-in fade-in-0 slide-in-from-top-1 duration-200">
+        <BrandComparison
+          showOnlyTop5={true}
+          selectedReportType={selectedReportType}
+          setSelectedReportType={setSelectedReportType}
+          selectedMonth={selectedMonth}
+          setSelectedMonth={setSelectedMonth}
+        />
+      </div>
+      )}
 
       {/* ─── Highest Udhar Customer ─── */}
       {highestUdharCustomer && (
-        <section className="space-y-3">
+        <section className="order-9 space-y-3 [content-visibility:auto] [contain-intrinsic-size:auto_280px]">
           <h2 className="text-xl font-bold">{t("highest_udhar")}</h2>
-          <Card 
+          <Card
             className="border-2 cursor-pointer hover:border-orange-400 transition-all"
-            onClick={() => router.push('/udhari')}
+            onClick={() =>
+              router.push(customerFocusHref(highestUdharCustomer.id))
+            }
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                router.push(customerFocusHref(highestUdharCustomer.id));
+              }
+            }}
+            role="button"
+            tabIndex={0}
           >
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">
@@ -1418,7 +2784,7 @@ export function Dashboard() {
 
       {/* ─── High Margin Items (unchanged) ─── */}
       {topMarginItems.length > 0 && (
-        <section className="space-y-3">
+        <section className="order-10 space-y-3 [content-visibility:auto] [contain-intrinsic-size:auto_450px]">
           <h2 className="text-xl font-bold">{t("high_margin_items")}</h2>
           <div className="grid gap-2">
             {topMarginItems.map((item, index) => (
@@ -1449,7 +2815,7 @@ export function Dashboard() {
 
       {/* ─── Stock Needed (IMPROVED) ─── */}
       {lowStockItems.length > 0 && (
-        <section className="space-y-3">
+        <section className="order-5 space-y-3 [content-visibility:auto] [contain-intrinsic-size:auto_500px]">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <AlertTriangle className="w-5 h-5 text-red-600" />
@@ -1482,13 +2848,24 @@ export function Dashboard() {
               return (
                 <div
                   key={item.id}
-                  className={`flex items-center justify-between rounded-md border-2 px-3 py-3 ${
+                  className={`flex cursor-pointer items-center justify-between rounded-md border-2 px-3 py-3 transition hover:shadow-sm ${
                     isVeryLow
                       ? "border-red-500 bg-red-50"
                       : isCritical
                         ? "border-orange-400 bg-orange-50"
                         : "border-yellow-300 bg-yellow-50"
                   }`}
+                  onClick={() =>
+                    router.push(itemFocusHref(item.id, "lowStock"))
+                  }
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      router.push(itemFocusHref(item.id, "lowStock"));
+                    }
+                  }}
+                  role="button"
+                  tabIndex={0}
                 >
                   <div className="min-w-0 flex-1">
                     <p
@@ -1564,7 +2941,7 @@ export function Dashboard() {
 
       {/* ─── Expiry Alerts ─── */}
       {(expiredItems.length > 0 || expiringItems.length > 0) && (
-        <section className="space-y-3">
+        <section className="order-6 space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <AlertTriangle className="w-5 h-5 text-orange-600" />
@@ -1598,7 +2975,18 @@ export function Dashboard() {
                   return (
                     <div
                       key={item.id}
-                      className="flex items-center justify-between rounded-md border-2 border-red-400 bg-red-50 px-3 py-3"
+                      className="flex cursor-pointer items-center justify-between rounded-md border-2 border-red-400 bg-red-50 px-3 py-3 transition hover:shadow-sm"
+                      onClick={() =>
+                        router.push(itemFocusHref(item.id, "expired"))
+                      }
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          router.push(itemFocusHref(item.id, "expired"));
+                        }
+                      }}
+                      role="button"
+                      tabIndex={0}
                     >
                       <div className="min-w-0 flex-1">
                         <p className="truncate font-semibold text-red-900">
@@ -1607,7 +2995,10 @@ export function Dashboard() {
                             : item.name}
                         </p>
                         <p className="text-xs text-red-700 mt-1">
-                          Expired on: {expiryDate.toLocaleDateString(language === "mr" ? "mr-IN" : "en-IN")}
+                          Expired on:{" "}
+                          {expiryDate.toLocaleDateString(
+                            language === "mr" ? "mr-IN" : "en-IN",
+                          )}
                         </p>
                       </div>
                       <div className="text-right ml-3 shrink-0">
@@ -1642,12 +3033,26 @@ export function Dashboard() {
                   const expiryDate = new Date(item.expiryDate!);
                   const today = new Date();
                   today.setHours(0, 0, 0, 0);
-                  const daysLeft = Math.ceil((expiryDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-                  
+                  const daysLeft = Math.ceil(
+                    (expiryDate.getTime() - today.getTime()) /
+                      (1000 * 60 * 60 * 24),
+                  );
+
                   return (
                     <div
                       key={item.id}
-                      className="flex items-center justify-between rounded-md border-2 border-orange-400 bg-orange-50 px-3 py-3"
+                      className="flex cursor-pointer items-center justify-between rounded-md border-2 border-orange-400 bg-orange-50 px-3 py-3 transition hover:shadow-sm"
+                      onClick={() =>
+                        router.push(itemFocusHref(item.id, "expiring"))
+                      }
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          router.push(itemFocusHref(item.id, "expiring"));
+                        }
+                      }}
+                      role="button"
+                      tabIndex={0}
                     >
                       <div className="min-w-0 flex-1">
                         <p className="truncate font-semibold text-orange-900">
@@ -1656,7 +3061,10 @@ export function Dashboard() {
                             : item.name}
                         </p>
                         <p className="text-xs text-orange-700 mt-1">
-                          Expires on: {expiryDate.toLocaleDateString(language === "mr" ? "mr-IN" : "en-IN")} 
+                          Expires on:{" "}
+                          {expiryDate.toLocaleDateString(
+                            language === "mr" ? "mr-IN" : "en-IN",
+                          )}
                           <span className="ml-2 font-semibold">
                             ({daysLeft} {daysLeft === 1 ? "day" : "days"} left)
                           </span>
@@ -1702,12 +3110,16 @@ export function Dashboard() {
       />
 
       {/* Delete Confirmation Dialog */}
-      <AlertDialog open={!!deleteSaleId} onOpenChange={(open) => !open && setDeleteSaleId(null)}>
+      <AlertDialog
+        open={!!deleteSaleId}
+        onOpenChange={(open) => !open && setDeleteSaleId(null)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Sale?</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete this sale? This action cannot be undone. Stock levels will be restored.
+              Are you sure you want to delete this sale? This action cannot be
+              undone. Stock levels will be restored.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="flex justify-end gap-3">

@@ -1,42 +1,63 @@
-'use client';
+"use client";
 
-import { useState, useMemo } from 'react';
-import { useLanguage } from '@/providers/language-provider';
-import { useItems as useSupabaseItems, useCategories as useSupabaseCategories, useUnits as useSupabaseUnits, usePriceTiers } from '@/hooks/use-supabase';
-import { useAuth } from '@/providers/auth-provider';
-import { PriceTierManager } from '@/components/price-tier-manager';
-import { toast } from 'sonner';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Card, CardContent } from '@/components/ui/card';
+import { useEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
+import { useLanguage } from "@/providers/language-provider";
+import {
+  useItems as useSupabaseItems,
+  useCategories as useSupabaseCategories,
+  useUnits as useSupabaseUnits,
+  usePriceTiers,
+} from "@/hooks/use-supabase";
+import { useAuth } from "@/providers/auth-provider";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from '@/components/ui/dialog';
+} from "@/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
+  AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Trash2, Edit2, Plus, Search } from 'lucide-react';
-import { HelpTooltip, LabelWithTooltip } from '@/components/help-tooltip';
-import { formatMoney, formatPercent, formatWholeNumber, parseWholeNumberInput } from '@/lib/number-format';
+} from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Trash2, Edit2, Plus, Minus, Package, Copy, ChevronDown, ChevronRight } from "lucide-react";
+import { cn } from "@/lib/utils";
+import {
+  formatMoney,
+  formatPercent,
+  formatWholeNumber,
+  parseWholeNumberInput,
+} from "@/lib/number-format";
+
+const PriceTierManager = dynamic(
+  () => import("@/components/price-tier-manager").then((module) => module.PriceTierManager),
+  {
+    ssr: false,
+    loading: () => <div className="rounded-2xl border bg-muted/10 p-4 text-sm text-muted-foreground">Loading price variants...</div>,
+  },
+);
 
 interface ItemFormData {
   name: string;
@@ -52,72 +73,226 @@ interface ItemFormData {
   lowStockLimit: number;
 }
 
+type ReorderLine = { name: string; quantity: number; unit: string };
+
+const categoryMarathiLabels: Record<string, string> = {
+  Grocery: "किराणा",
+  "Dairy & Milk": "दुग्ध",
+  Beverages: "पेय पदार्थ",
+  "Snacks & Sweets": "स्नॅक्स व मिठाई",
+  "Household Items": "घरगुती वस्तू",
+  "Personal Care": "वैयक्तिक स्वच्छता",
+  "Pooja & Festival": "पूजा व सणासुदीचे साहित्य",
+};
+
 export function ItemsManagement() {
   const { t, language } = useLanguage();
+  const stockCopy = language === "mr"
+    ? {
+        addItem: "वस्तू जोडा", editItem: "वस्तू संपादित करा", duplicate: "प्रत बनवा — नवीन किंमत प्रकार",
+        duplicateHint: "नवीन किंमत प्रकारासाठी खालील खरेदी किंमत, विक्री किंमत किंवा प्रमाण बदला.",
+        details: "वस्तूची माहिती", basicInfo: "मूलभूत माहिती", priceVariants: "किंमत प्रकार",
+        ready: "स्टॉकमध्ये जोडण्यासाठी तयार", category: "श्रेणी", unit: "एकक",
+        quantity: "किती प्रमाण आहे?", currentStock: "सध्याचा स्टॉक", decrease: "प्रमाण कमी करा", increase: "प्रमाण वाढवा",
+        price: "किंमत", buyingPrice: "खरेदी किंमत", sellingPrice: "विक्री किंमत",
+        profitPerItem: "प्रति वस्तू नफा", profitMargin: "नफा मार्जिन", expiry: "कालबाह्यता",
+        noExpiry: "कालबाह्यता नाही", addExpiry: "कालबाह्यता तारीख जोडा", today: "आज",
+        lowStockLimit: "कमी स्टॉक सूचना मर्यादा", noAlert: "0 म्हणजे सूचना नाही",
+        stockValue: "स्टॉक मूल्य", done: "पूर्ण", saveFirst: "किंमत प्रकार व्यवस्थापित करण्यासाठी आधी वस्तू जतन करा.",
+        update: "वस्तू अपडेट करा", cancel: "रद्द करा",
+      }
+    : {
+        addItem: "Add Item", editItem: "Edit Item", duplicate: "Duplicate — New Price Variant",
+        duplicateHint: "Change buying price, selling price, or quantity below to create a new variant.",
+        details: "Product details", basicInfo: "Basic Info", priceVariants: "Price Variants",
+        ready: "Ready to add to stock", category: "Category", unit: "Unit",
+        quantity: "How many do you have?", currentStock: "Current stock", decrease: "Decrease quantity", increase: "Increase quantity",
+        price: "Price", buyingPrice: "Buying price", sellingPrice: "Selling price",
+        profitPerItem: "Profit per item", profitMargin: "Profit margin", expiry: "Expiry",
+        noExpiry: "No expiry", addExpiry: "Add expiry date", today: "Today",
+        lowStockLimit: "Low stock alert limit", noAlert: "0 means no alert",
+        stockValue: "Stock value", done: "Done", saveFirst: "Save the item first to manage price variants.",
+        update: "Update Item", cancel: "Cancel",
+      };
   const { currentShopId } = useAuth();
-  const { items, addItem, updateItem, deleteItem } = useSupabaseItems(currentShopId);
+  const { items, addItem, updateItem, deleteItem } =
+    useSupabaseItems(currentShopId);
   const { categories } = useSupabaseCategories(currentShopId);
   const { units } = useSupabaseUnits(currentShopId);
-  const { priceTiers, addPriceTier: addPriceTierSupabase, deletePriceTier: deletePriceTierSupabase } = usePriceTiers(currentShopId);
+  const {
+    priceTiers,
+    addPriceTier: addPriceTierSupabase,
+    deletePriceTier: deletePriceTierSupabase,
+  } = usePriceTiers(currentShopId);
 
   const handleAddPriceTier = async (tierData: any) => {
     try {
       await addPriceTierSupabase(tierData);
-      toast.success('Price tier added successfully!');
+      toast.success("Price tier added successfully!");
     } catch (error) {
-      console.error('Error adding price tier:', error);
-      toast.error('Failed to add price tier');
+      console.error("Error adding price tier:", error);
+      toast.error("Failed to add price tier");
     }
   };
 
   const handleDeletePriceTier = async (tierId: number) => {
     try {
       await deletePriceTierSupabase(tierId);
-      toast.success('Price tier deleted successfully!');
+      toast.success("Price tier deleted successfully!");
     } catch (error) {
-      console.error('Error deleting price tier:', error);
-      toast.error('Failed to delete price tier');
+      console.error("Error deleting price tier:", error);
+      toast.error("Failed to delete price tier");
     }
   };
 
   const [isOpen, setIsOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [deleteId, setDeleteId] = useState<number | null>(null);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
-  const [selectedExpiryStatus, setSelectedExpiryStatus] = useState<string | null>(null); // null = All, 'expired', 'expiring', 'notExpiring'
-  const [selectedStockStatus, setSelectedStockStatus] = useState<string | null>(null); // null = All, 'lowStock', 'inStock', 'outOfStock'
-  const [sortBy, setSortBy] = useState<string>('name-asc'); // 'name-asc', 'qty-asc', 'expiry-asc', 'margin-desc'
-  const [activeTab, setActiveTab] = useState('basic');
+  const [isCloneMode, setIsCloneMode] = useState(false);
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(
+    null,
+  );
+  const [selectedBrand, setSelectedBrand] = useState<string | null>(null);
+  const [selectedExpiryStatus, setSelectedExpiryStatus] = useState<
+    string | null
+  >(null); // null = All, 'expired', 'expiring', 'notExpiring', 'hasExpiry', 'noExpiry'
+  const [selectedStockStatus, setSelectedStockStatus] = useState<string | null>(
+    null,
+  ); // null = All, 'lowStock', 'inStock', 'outOfStock'
+  const [reorderMode, setReorderMode] = useState(false);
+  const [adjustingItemIds, setAdjustingItemIds] = useState<Set<number>>(new Set());
+  const [optimisticQuantities, setOptimisticQuantities] = useState<Map<number, number>>(new Map());
+  const pendingQuantityUpdates = useRef(new Map<number, Promise<void>>());
+  const pendingQuantityTargets = useRef(new Map<number, number>());
+  const [sortBy, setSortBy] = useState<string>("name-asc"); // 'name-asc', 'qty-asc', 'qty-desc', 'expiry-asc', 'margin-desc'
+  const [activeTab, setActiveTab] = useState("basic");
+  const [showProductDetails, setShowProductDetails] = useState(true);
+  const [showExpiryPicker, setShowExpiryPicker] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [selectedItems, setSelectedItems] = useState<Set<number>>(new Set());
+  const [focusedItemId, setFocusedItemId] = useState<number | null>(null);
 
   const [formData, setFormData] = useState<ItemFormData>({
-    name: '',
-    nameMarathi: '',
-    brand: '',
-    brandMarathi: '',
+    name: "",
+    nameMarathi: "",
+    brand: "",
+    brandMarathi: "",
     categoryId: categories[0]?.id || 1,
     unitId: units[0]?.id || 1,
     quantity: 0,
-    expiryDate: '',
+    expiryDate: "",
     buyPrice: 0,
     sellPrice: 0,
     lowStockLimit: 0,
   });
+  const [formErrors, setFormErrors] = useState<
+    Partial<Record<keyof ItemFormData, string>>
+  >({});
+
+  const brandOptions = useMemo(() => {
+    const brands = new Map<string, string>();
+    for (const item of items) {
+      const key = (item.brand || item.brandMarathi || "").trim().toLocaleLowerCase();
+      if (!key) continue;
+      brands.set(
+        key,
+        language === "mr" ? item.brandMarathi || item.brand : item.brand || item.brandMarathi,
+      );
+    }
+    return Array.from(brands, ([value, label]) => ({ value, label })).sort((a, b) =>
+      a.label.localeCompare(b.label),
+    );
+  }, [items, language]);
+
+  // Card rendering is the hot path on this page. Index related collections once
+  // instead of repeatedly scanning them for every visible product.
+  const categoryNamesById = useMemo(
+    () => new Map(categories.map((category) => [category.id, category.name])),
+    [categories],
+  );
+  const unitNamesById = useMemo(
+    () => new Map(units.map((unit) => [unit.id, unit.shortForm || unit.name])),
+    [units],
+  );
+  const priceTiersByItemId = useMemo(() => {
+    const tiers = new Map<number, typeof priceTiers>();
+    for (const tier of priceTiers) {
+      const itemTiers = tiers.get(tier.itemId) || [];
+      itemTiers.push(tier);
+      tiers.set(tier.itemId, itemTiers);
+    }
+    return tiers;
+  }, [priceTiers]);
+
+  const clearFieldError = (field: keyof ItemFormData) => {
+    setFormErrors((prev) => {
+      if (!prev[field]) return prev;
+      const next = { ...prev };
+      delete next[field];
+      return next;
+    });
+  };
+
+  const validateForm = () => {
+    const errors: Partial<Record<keyof ItemFormData, string>> = {};
+    const name = formData.name.trim();
+    const nameMarathi = formData.nameMarathi.trim();
+    if (!name && !nameMarathi) {
+      errors.name = "Enter item name in English or Marathi.";
+    }
+
+    if (!categories.some((c) => c.id === formData.categoryId)) {
+      errors.categoryId = "Select a valid category.";
+    }
+
+    if (!units.some((u) => u.id === formData.unitId)) {
+      errors.unitId = "Select a valid unit.";
+    }
+
+    if (!Number.isFinite(formData.quantity) || formData.quantity < 0) {
+      errors.quantity = "Enter a valid quantity.";
+    }
+
+    if (formData.expiryDate) {
+      const parsed = Date.parse(`${formData.expiryDate}T00:00:00`);
+      if (Number.isNaN(parsed)) {
+        errors.expiryDate = "Enter a valid expiry date.";
+      }
+    }
+
+    if (!Number.isFinite(formData.buyPrice) || formData.buyPrice <= 0) {
+      errors.buyPrice = "Enter a valid buying price.";
+    }
+
+    if (!Number.isFinite(formData.sellPrice) || formData.sellPrice <= 0) {
+      errors.sellPrice = "Enter a valid selling price.";
+    }
+
+    if (
+      Number.isFinite(formData.buyPrice) &&
+      Number.isFinite(formData.sellPrice) &&
+      formData.sellPrice < formData.buyPrice
+    ) {
+      errors.sellPrice = "Selling price must be greater than buying price.";
+    }
+
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
 
   const filteredItems = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
     let result = items.filter((item) => {
-      // Search filter
-      const searchLower = searchTerm.toLowerCase();
-      const matchesSearch = 
-        (item.name?.toLowerCase().includes(searchLower) || false) || 
-        (item.nameMarathi?.toLowerCase().includes(searchLower) || false);
-      
       // Category filter
-      const matchesCategory = selectedCategoryId === null || item.categoryId === selectedCategoryId;
+      const matchesCategory =
+        selectedCategoryId === null || item.categoryId === selectedCategoryId;
+
+      const matchesBrand =
+        selectedBrand === null ||
+        (item.brand || item.brandMarathi || "").trim().toLocaleLowerCase() === selectedBrand;
 
       // Expiry status filter
       let matchesExpiry = true;
@@ -125,15 +300,21 @@ export function ItemsManagement() {
         const expiryObj = item.expiryDate ? new Date(item.expiryDate) : null;
         const expiryStart = expiryObj ? new Date(expiryObj) : null;
         if (expiryStart) expiryStart.setHours(0, 0, 0, 0);
-        
-        const isExpired = expiryStart ? expiryStart < today : false;
-        const isExpiring = expiryStart ? expiryStart <= new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000) : false;
 
-        if (selectedExpiryStatus === 'expired') matchesExpiry = isExpired;
-        else if (selectedExpiryStatus === 'expiring') matchesExpiry = isExpiring && !isExpired;
-        else if (selectedExpiryStatus === 'notExpiring') matchesExpiry = !isExpired && !isExpiring;
-        else if (selectedExpiryStatus === 'hasExpiry') matchesExpiry = !!item.expiryDate;
-        else if (selectedExpiryStatus === 'noExpiry') matchesExpiry = !item.expiryDate;
+        const isExpired = expiryStart ? expiryStart < today : false;
+        const isExpiring = expiryStart
+          ? expiryStart <= new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000)
+          : false;
+
+        if (selectedExpiryStatus === "expired") matchesExpiry = isExpired;
+        else if (selectedExpiryStatus === "expiring")
+          matchesExpiry = isExpiring && !isExpired;
+        else if (selectedExpiryStatus === "notExpiring")
+          matchesExpiry = !isExpired && !isExpiring;
+        else if (selectedExpiryStatus === "hasExpiry")
+          matchesExpiry = !!item.expiryDate;
+        else if (selectedExpiryStatus === "noExpiry")
+          matchesExpiry = !item.expiryDate;
       }
 
       // Stock status filter
@@ -143,34 +324,48 @@ export function ItemsManagement() {
         const isOutOfStock = item.quantity === 0;
         const isInStock = !isLowStock;
 
-        if (selectedStockStatus === 'lowStock') matchesStock = isLowStock;
-        else if (selectedStockStatus === 'outOfStock') matchesStock = isOutOfStock;
-        else if (selectedStockStatus === 'inStock') matchesStock = isInStock;
+        if (selectedStockStatus === "lowStock") matchesStock = isLowStock;
+        else if (selectedStockStatus === "outOfStock")
+          matchesStock = isOutOfStock;
+        else if (selectedStockStatus === "inStock") matchesStock = isInStock;
       }
 
-      return matchesSearch && matchesCategory && matchesExpiry && matchesStock;
+      const matchesReorder =
+        !reorderMode || Number(item.quantity || 0) <= Number(item.lowStockLimit || 0);
+
+      return matchesCategory && matchesBrand && matchesExpiry && matchesStock && matchesReorder;
     });
 
     // Sorting
     result.sort((a, b) => {
       switch (sortBy) {
-        case 'name-asc': {
-          const nameA = (a.name || a.nameMarathi || '').toLowerCase();
-          const nameB = (b.name || b.nameMarathi || '').toLowerCase();
+        case "name-asc": {
+          const nameA = (a.name || a.nameMarathi || "").toLowerCase();
+          const nameB = (b.name || b.nameMarathi || "").toLowerCase();
           return nameA.localeCompare(nameB);
         }
-        case 'qty-asc':
+        case "qty-asc":
           return a.quantity - b.quantity;
-        case 'qty-desc':
+        case "qty-desc":
           return b.quantity - a.quantity;
-        case 'expiry-asc': {
-          const expiryA = a.expiryDate ? new Date(a.expiryDate).getTime() : Infinity;
-          const expiryB = b.expiryDate ? new Date(b.expiryDate).getTime() : Infinity;
+        case "expiry-asc": {
+          const expiryA = a.expiryDate
+            ? new Date(a.expiryDate).getTime()
+            : Infinity;
+          const expiryB = b.expiryDate
+            ? new Date(b.expiryDate).getTime()
+            : Infinity;
           return expiryA - expiryB;
         }
-        case 'margin-desc': {
-          const marginA = a.buyPrice > 0 ? ((a.sellPrice - a.buyPrice) / a.buyPrice) * 100 : 0;
-          const marginB = b.buyPrice > 0 ? ((b.sellPrice - b.buyPrice) / b.buyPrice) * 100 : 0;
+        case "margin-desc": {
+          const marginA =
+            a.buyPrice > 0
+              ? ((a.sellPrice - a.buyPrice) / a.buyPrice) * 100
+              : 0;
+          const marginB =
+            b.buyPrice > 0
+              ? ((b.sellPrice - b.buyPrice) / b.buyPrice) * 100
+              : 0;
           return marginB - marginA;
         }
         default:
@@ -179,7 +374,15 @@ export function ItemsManagement() {
     });
 
     return result;
-  }, [items, searchTerm, selectedCategoryId, selectedExpiryStatus, selectedStockStatus, sortBy]);
+  }, [
+    items,
+    selectedCategoryId,
+    selectedBrand,
+    selectedExpiryStatus,
+    selectedStockStatus,
+    reorderMode,
+    sortBy,
+  ]);
 
   const totalStockValue = useMemo(() => {
     return items.reduce((sum, item) => {
@@ -189,18 +392,188 @@ export function ItemsManagement() {
     }, 0);
   }, [items]);
 
-  const handleOpenDialog = (item?: (typeof items)[0]) => {
+  const lowStockCount = useMemo(
+    () =>
+      items.filter(
+        (item) =>
+          Number(item.quantity || 0) > 0 &&
+          Number(item.quantity || 0) <= Number(item.lowStockLimit || 0),
+      ).length,
+    [items],
+  );
+
+  const outOfStockCount = useMemo(
+    () => items.filter((item) => Number(item.quantity || 0) === 0).length,
+    [items],
+  );
+
+  const expiringSoonCount = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return items.filter((item) => {
+      if (!item.expiryDate) return false;
+      const expiry = new Date(item.expiryDate);
+      expiry.setHours(0, 0, 0, 0);
+      const diffDays = Math.ceil(
+        (expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24),
+      );
+      return diffDays > 0 && diffDays <= 7;
+    }).length;
+  }, [items]);
+
+  const groupedItems = useMemo(() => {
+    const groups = new Map<string, Array<(typeof filteredItems)[number]>>();
+    const standalone: Array<(typeof filteredItems)[number]> = [];
+
+    for (const item of filteredItems) {
+      // Brand is intentionally distinct from category: it is the useful unit
+      // for a supplier/order list, while category remains the product filter.
+      const brandKey = (item.brand || item.brandMarathi || "")
+        .trim()
+        .toLocaleLowerCase();
+      if (!brandKey) {
+        standalone.push(item);
+        continue;
+      }
+      const groupKey = `brand:${brandKey}`;
+      if (!groups.has(groupKey)) groups.set(groupKey, []);
+      groups.get(groupKey)!.push(item);
+    }
+
+    return { groups: Array.from(groups.entries()), standalone };
+  }, [filteredItems]);
+
+  const toggleGroup = (key: string) => {
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  type RenderEntry =
+    | { kind: "groupHeader"; key: string; brand: string; count: number; reorderCount: number; totalStockValue: number; reorderLines: ReorderLine[] }
+    | { kind: "item"; item: (typeof filteredItems)[number]; groupKey?: string };
+
+  const renderList: RenderEntry[] = useMemo(() => {
+    const list: RenderEntry[] = [];
+    const groupSummaries = groupedItems.groups.map(([groupKey, itemsInBrand]) => {
+      const groupItems = [...itemsInBrand].sort((a, b) => {
+        const urgency = (item: (typeof filteredItems)[number]) =>
+          Number(item.quantity || 0) <= 0
+            ? 0
+            : Number(item.quantity || 0) <= Number(item.lowStockLimit || 0)
+              ? 1
+              : 2;
+        return urgency(a) - urgency(b);
+      });
+      const first = groupItems[0];
+      const brand =
+        (language === "mr" ? first.brandMarathi || first.brand : first.brand || first.brandMarathi) || "";
+      const reorderCount = groupItems.filter(
+        (item) => Number(item.quantity || 0) <= Number(item.lowStockLimit || 0),
+      ).length;
+      const totalStockValue = groupItems.reduce(
+        (sum, item) => sum + Number(item.quantity || 0) * Number(item.buyPrice || 0),
+        0,
+      );
+      const reorderLines = groupItems
+        .filter((item) => Number(item.quantity || 0) <= Number(item.lowStockLimit || 0))
+        .map((item) => {
+          const lowLimit = Number(item.lowStockLimit || 0);
+          const target = Math.max(lowLimit * 2, 1);
+          return {
+            name: (language === "mr" ? item.nameMarathi || item.name : item.name || item.nameMarathi) || (language === "mr" ? "वस्तू" : "Item"),
+            quantity: Math.max(target - Number(item.quantity || 0), 1),
+            unit: unitNamesById.get(item.unitId) || "",
+          };
+        });
+      return { groupKey, groupItems, brand, reorderCount, totalStockValue, reorderLines };
+    }).sort((a, b) => b.reorderCount - a.reorderCount || a.brand.localeCompare(b.brand));
+
+    for (const { groupKey, groupItems, brand, reorderCount, totalStockValue, reorderLines } of groupSummaries) {
+      if (groupItems.length === 0) continue;
+      list.push({
+        kind: "groupHeader",
+        key: groupKey,
+        brand: String(brand),
+        count: groupItems.length,
+        reorderCount,
+        totalStockValue,
+        reorderLines,
+      });
+      for (const gi of groupItems) {
+        list.push({ kind: "item", item: gi, groupKey });
+      }
+    }
+
+    for (const item of groupedItems.standalone) {
+      list.push({ kind: "item", item });
+    }
+
+    return list;
+  }, [groupedItems, language, unitNamesById]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const itemId = Number(params.get("focusItemId"));
+    const filter = params.get("filter");
+
+    if (!Number.isFinite(itemId) || itemId <= 0) return;
+
+    setFocusedItemId(itemId);
+    setSelectedCategoryId(null);
+    setSelectedBrand(null);
+
+    if (filter === "lowStock") {
+      setSelectedStockStatus("lowStock");
+      setSelectedExpiryStatus(null);
+      setSortBy("qty-asc");
+    } else if (filter === "expired" || filter === "expiring") {
+      setSelectedExpiryStatus(filter);
+      setSelectedStockStatus(null);
+      setSortBy("expiry-asc");
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!focusedItemId) return;
+    if (!filteredItems.some((item) => item.id === focusedItemId)) return;
+
+    const scrollTimer = window.setTimeout(() => {
+      document
+        .getElementById(`stock-item-${focusedItemId}`)
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 150);
+    const clearTimer = window.setTimeout(() => setFocusedItemId(null), 5000);
+
+    return () => {
+      window.clearTimeout(scrollTimer);
+      window.clearTimeout(clearTimer);
+    };
+  }, [filteredItems, focusedItemId]);
+
+  const handleOpenDialog = (item?: (typeof items)[0], cloneMode = false) => {
+    setActiveTab("basic");
+    setShowProductDetails(!item);
+    setShowExpiryPicker(Boolean(item?.expiryDate));
+    setIsCloneMode(cloneMode);
     if (item) {
-      setEditingId(item.id || null);
+      if (cloneMode) {
+        setEditingId(null);
+      } else {
+        setEditingId(item.id || null);
+      }
       setFormData({
         name: item.name,
-        nameMarathi: item.nameMarathi || '',
-        brand: item.brand || '',
-        brandMarathi: item.brandMarathi || '',
+        nameMarathi: item.nameMarathi || "",
+        brand: item.brand || "",
+        brandMarathi: item.brandMarathi || "",
         categoryId: item.categoryId,
         unitId: item.unitId,
         quantity: item.quantity,
-        expiryDate: item.expiryDate ? String(item.expiryDate).slice(0, 10) : '',
+        expiryDate: item.expiryDate ? String(item.expiryDate).slice(0, 10) : "",
         buyPrice: item.buyPrice,
         sellPrice: item.sellPrice,
         lowStockLimit: item.lowStockLimit,
@@ -208,92 +581,81 @@ export function ItemsManagement() {
     } else {
       setEditingId(null);
       setFormData({
-        name: '',
-        nameMarathi: '',
-        brand: '',
-        brandMarathi: '',
+        name: "",
+        nameMarathi: "",
+        brand: "",
+        brandMarathi: "",
         categoryId: categories[0]?.id || 1,
         unitId: units[0]?.id || 1,
         quantity: 0,
-        expiryDate: '',
+        expiryDate: "",
         buyPrice: 0,
         sellPrice: 0,
-        lowStockLimit: 5,
+        lowStockLimit: 0,
       });
     }
     setIsOpen(true);
   };
 
+  const handleCloneItem = (item: (typeof items)[0]) => {
+    handleOpenDialog(item, true);
+    const cloneName =
+      language === "mr" ? item.nameMarathi || item.name : item.name || item.nameMarathi;
+    toast.success(`Duplicating ${cloneName}… change buy/sell/qty and save.`);
+  };
+
   const resetForm = () => {
+    setActiveTab("basic");
     setFormData({
-      name: '',
-      nameMarathi: '',
-      brand: '',
-      brandMarathi: '',
+      name: "",
+      nameMarathi: "",
+      brand: "",
+      brandMarathi: "",
       categoryId: categories[0]?.id || 1,
       unitId: units[0]?.id || 1,
       quantity: 0,
-      expiryDate: '',
+      expiryDate: "",
       buyPrice: 0,
       sellPrice: 0,
       lowStockLimit: 0,
     });
     setEditingId(null);
+    setIsCloneMode(false);
+    setShowProductDetails(true);
+    setShowExpiryPicker(false);
     setIsOpen(false);
   };
 
   const handleSave = async () => {
     if (categories.length === 0) {
-      toast.error('Please add a category first.');
+      toast.error("Please add a category first.");
       return;
     }
     if (units.length === 0) {
-      toast.error('Please add a unit first.');
+      toast.error("Please add a unit first.");
       return;
     }
-    if (!categories.some((c) => c.id === formData.categoryId)) {
-      toast.error('Please select a valid category.');
-      return;
-    }
-    if (!units.some((u) => u.id === formData.unitId)) {
-      toast.error('Please select a valid unit.');
-      return;
-    }
-    const name = formData.name.trim();
-    const nameMarathi = formData.nameMarathi.trim();
-    if (!name && !nameMarathi) {
-      toast.error('Please enter item name in English OR Marathi.');
-      return;
-    }
-    if (!Number.isFinite(formData.quantity) || formData.quantity < 0) {
-      toast.error('Please enter a valid quantity.');
-      return;
-    }
-    const expiryDate = formData.expiryDate.trim();
-    if (expiryDate) {
-      const parsed = Date.parse(`${expiryDate}T00:00:00`);
-      if (Number.isNaN(parsed)) {
-        toast.error('Please enter a valid expiry date.');
-        return;
-      }
-    }
-    if (!Number.isFinite(formData.buyPrice) || formData.buyPrice <= 0) {
-      toast.error(`Please enter a valid buying price. Current: Rs. ${formData.buyPrice || 0}`);
-      return;
-    }
-    if (!Number.isFinite(formData.sellPrice) || formData.sellPrice <= 0) {
-      toast.error(`Please enter a valid selling price. Current: Rs. ${formData.sellPrice || 0}`);
-      return;
-    }
-    if (formData.sellPrice < formData.buyPrice) {
-      toast.error(
-        `Selling price must be greater than buying price. Buying: Rs. ${formData.buyPrice}, Selling: Rs. ${formData.sellPrice}`,
-      );
+    if (!validateForm()) {
+      toast.error("Fix the highlighted fields before saving.");
       return;
     }
 
+    const { name, nameMarathi, expiryDate } = formData;
+
     try {
-      const expiryDateIso = expiryDate ? new Date(`${expiryDate}T23:59:59`).toISOString() : null;
+      setIsSaving(true);
+      const expiryDateIso = expiryDate
+        ? new Date(`${expiryDate}T23:59:59`).toISOString()
+        : null;
+      const savedName =
+        language === "mr" ? nameMarathi || name : name || nameMarathi;
+      const lowStockDescription =
+        formData.lowStockLimit > 0 &&
+        formData.quantity <= formData.lowStockLimit
+          ? language === "mr"
+            ? `⚠️ फक्त ${formatWholeNumber(formData.quantity)} बाकी`
+            : `⚠️ Only ${formatWholeNumber(formData.quantity)} left`
+          : undefined;
       if (editingId) {
         await updateItem(editingId, {
           name: formData.name,
@@ -308,7 +670,12 @@ export function ItemsManagement() {
           sellPrice: formData.sellPrice,
           lowStockLimit: formData.lowStockLimit,
         });
-        toast.success('Item updated successfully');
+        toast.success(
+          language === "mr"
+            ? `${savedName} अपडेट झाले`
+            : `${savedName} updated`,
+          { description: lowStockDescription },
+        );
       } else {
         const newId = await addItem({
           name: formData.name,
@@ -324,19 +691,40 @@ export function ItemsManagement() {
           lowStockLimit: formData.lowStockLimit,
         });
         if (!newId) {
-          throw new Error('Item saved but could not be loaded');
+          throw new Error("Item saved but could not be loaded");
         }
-        toast.success('Item added successfully');
+        toast.success(
+          language === "mr"
+            ? isCloneMode
+              ? `${savedName} नवीन किंमत रूपात जोडले`
+              : `${savedName} stock मध्ये जोडले`
+            : isCloneMode
+              ? `${savedName} — new price variant saved`
+              : `${savedName} added to stock`,
+          {
+            description: isCloneMode
+              ? language === "mr"
+                ? "क्लोन केलेले वस्तू आता स्वतंत्र आहे"
+                : "Cloned variant is now independent"
+              : lowStockDescription,
+          },
+        );
       }
       resetForm();
     } catch (error) {
-      console.error('[v0] Error saving item:', error);
+      console.error("[v0] Error saving item:", error);
       const message =
         (error as any)?.message ||
         (error as any)?.details ||
         (error as any)?.hint ||
         (error as any)?.error_description;
-      toast.error(message ? `Error saving item: ${message}` : 'Error saving item. Please try again.');
+      toast.error(
+        message
+          ? `Error saving item: ${message}`
+          : "Error saving item. Please try again.",
+      );
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -345,22 +733,22 @@ export function ItemsManagement() {
       try {
         await deleteItem(deleteId);
         setDeleteId(null);
-        setSelectedItems(prev => {
+        setSelectedItems((prev) => {
           const newSet = new Set(prev);
           newSet.delete(deleteId);
           return newSet;
         });
-        toast.success('Item deleted successfully');
+        toast.success("Item deleted successfully");
       } catch (error) {
-        console.error('[v0] Error deleting item:', error);
-        toast.error('Error deleting item');
+        console.error("[v0] Error deleting item:", error);
+        toast.error("Error deleting item");
       }
     }
   };
 
   const handleBatchDelete = async () => {
     if (selectedItems.size === 0) return;
-    
+
     try {
       const itemsToDelete = Array.from(selectedItems);
       for (const id of itemsToDelete) {
@@ -369,14 +757,14 @@ export function ItemsManagement() {
       setSelectedItems(new Set());
       toast.success(`Deleted ${itemsToDelete.length} item(s)`);
     } catch (error) {
-      console.error('[v0] Error batch deleting items:', error);
-      toast.error('Error deleting items');
+      console.error("[v0] Error batch deleting items:", error);
+      toast.error("Error deleting items");
     }
   };
 
   const toggleItemSelection = (id: number | undefined) => {
     if (!id) return;
-    setSelectedItems(prev => {
+    setSelectedItems((prev) => {
       const newSet = new Set(prev);
       if (newSet.has(id)) {
         newSet.delete(id);
@@ -391,29 +779,94 @@ export function ItemsManagement() {
     if (selectedItems.size === filteredItems.length) {
       setSelectedItems(new Set());
     } else {
-      setSelectedItems(new Set(filteredItems.map(item => item.id || 0)));
+      setSelectedItems(new Set(filteredItems.map((item) => item.id || 0)));
     }
   };
 
+  const clearFilters = () => {
+    setSelectedCategoryId(null);
+    setSelectedBrand(null);
+    setSelectedExpiryStatus(null);
+    setSelectedStockStatus(null);
+    setReorderMode(false);
+    setSortBy("name-asc");
+  };
+
+  const openStockTask = (task: "reorder" | "out" | "expiry") => {
+    clearFilters();
+    if (task === "reorder") setReorderMode(true);
+    if (task === "out") setSelectedStockStatus("outOfStock");
+    if (task === "expiry") setSelectedExpiryStatus("expiring");
+  };
+
+  const adjustStockQuickly = async (item: (typeof items)[number], change: number) => {
+    if (!item.id) return;
+    const currentQuantity = pendingQuantityTargets.current.get(item.id) ?? Number(item.quantity || 0);
+    const quantity = Math.max(0, currentQuantity + change);
+    if (quantity === currentQuantity) return;
+    pendingQuantityTargets.current.set(item.id, quantity);
+    setOptimisticQuantities((previous) => new Map(previous).set(item.id!, quantity));
+    setAdjustingItemIds((previous) => new Set(previous).add(item.id!));
+    const previousRequest = pendingQuantityUpdates.current.get(item.id) || Promise.resolve();
+    let request: Promise<void>;
+    request = previousRequest
+      .then(() => updateItem(item.id!, { quantity }))
+      .catch((error) => {
+        console.error("[Stock] Quick quantity update failed:", error);
+        toast.error(language === "mr" ? "स्टॉक बदलता आला नाही" : "Could not update stock");
+        setOptimisticQuantities((previous) => {
+          const next = new Map(previous);
+          next.delete(item.id!);
+          return next;
+        });
+      })
+      .finally(() => {
+        if (pendingQuantityUpdates.current.get(item.id!) !== request) return;
+        pendingQuantityUpdates.current.delete(item.id!);
+        pendingQuantityTargets.current.delete(item.id!);
+        setAdjustingItemIds((previous) => {
+          const next = new Set(previous);
+          next.delete(item.id!);
+          return next;
+        });
+        setOptimisticQuantities((previous) => {
+          const next = new Map(previous);
+          next.delete(item.id!);
+          return next;
+        });
+      });
+    pendingQuantityUpdates.current.set(item.id, request);
+  };
+
   const getCategoryName = (id: number) => {
-    const category = categories.find((c) => c.id === id);
-    return category?.name || 'Unknown';
+    return categoryNamesById.get(id) || "Unknown";
   };
 
   const getUnitName = (id: number) => {
-    const unit = units.find((u) => u.id === id);
-    return unit?.shortForm || unit?.name || 'N/A';
+    return unitNamesById.get(id) || "N/A";
+  };
+
+  const copyReorderList = async (brand: string, lines: ReorderLine[]) => {
+    const title = language === "mr" ? `${brand} मागणी यादी` : `${brand} reorder list`;
+    const text = [title, ...lines.map((line) => `• ${line.name}: ${formatWholeNumber(line.quantity)} ${line.unit}`)].join("\n");
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success(language === "mr" ? "मागणी यादी कॉपी झाली" : "Reorder list copied");
+    } catch (error) {
+      console.error("[Stock] Unable to copy reorder list:", error);
+      toast.error(language === "mr" ? "यादी कॉपी करता आली नाही" : "Could not copy reorder list");
+    }
   };
 
   const calculateMargin = (buyPrice: number, sellPrice: number): number => {
-    if (buyPrice === 0) return 0;
-    return ((sellPrice - buyPrice) / buyPrice) * 100;
+    if (sellPrice <= 0) return 0;
+    return ((sellPrice - buyPrice) / sellPrice) * 100;
   };
 
   const formatDateInput = (date: Date) => {
     const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
     return `${year}-${month}-${day}`;
   };
 
@@ -425,359 +878,1101 @@ export function ItemsManagement() {
   };
 
   return (
-    <div className="space-y-6 pb-10">
-      <div className="space-y-2">
-        <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">{t('items')}</h1>
-        <p className="text-muted-foreground text-sm sm:text-base">Manage your product inventory</p>
+    <div className="mx-auto max-w-5xl space-y-6 pb-24 pt-2 sm:pb-10 sm:pt-4">
+      <div className="rounded-3xl border border-border/70 bg-card p-5 shadow-sm">
+        <h1 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
+          {t("items")}
+        </h1>
+        <p className="mt-1 text-sm leading-6 text-muted-foreground">
+          {items.length} products in your shop
+        </p>
       </div>
 
-      <Card className="border-2">
-        <CardContent className="p-4 flex items-center justify-between">
+      <div className="grid grid-cols-3 gap-3">
+        <div className="rounded-2xl border bg-card p-3 shadow-sm">
+          <p className="text-xs font-medium leading-5 text-muted-foreground">{stockCopy.stockValue}</p>
+          <p className="mt-1 truncate text-lg font-semibold tabular-nums text-primary">
+            ₹{formatMoney(totalStockValue)}
+          </p>
+        </div>
+        <div className="rounded-2xl border bg-card p-3 shadow-sm">
+          <p className="text-xs font-medium leading-5 text-muted-foreground">{language === "mr" ? "कमी स्टॉक" : "Low stock"}</p>
+          <p className="mt-1 text-xl font-semibold tabular-nums text-orange-700">
+            {lowStockCount}
+          </p>
+        </div>
+        <div className="rounded-2xl border bg-card p-3 shadow-sm">
+          <p className="text-xs font-medium leading-5 text-muted-foreground">{language === "mr" ? "स्टॉक संपला" : "Out of stock"}</p>
+          <p className="mt-1 text-xl font-semibold tabular-nums text-red-700">
+            {outOfStockCount}
+          </p>
+        </div>
+      </div>
+
+      <section className="rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50 to-white p-4 shadow-sm">
+        <div className="flex items-center justify-between gap-3">
           <div>
-            <p className="text-sm font-semibold">{t('total_value_label')}</p>
-            <p className="text-xs text-muted-foreground">
-              {items.length} {t('products')}
+            <p className="text-base font-semibold tracking-tight text-indigo-950">
+              {language === "mr" ? "आजची स्टॉक कामे" : "Today’s stock tasks"}
+            </p>
+            <p className="mt-0.5 text-xs leading-5 text-indigo-700">
+              {outOfStockCount + lowStockCount === 0
+                ? language === "mr" ? "आजचा स्टॉक तपास पूर्ण ✓" : "Stock check complete for today ✓"
+                : language === "mr" ? "आधी तातडीच्या वस्तू तपासा" : "Start with the urgent products"}
             </p>
           </div>
-          <p className="text-xl font-bold text-purple-700">Rs. {formatMoney(totalStockValue)}</p>
-        </CardContent>
-      </Card>
-
-      <Dialog open={isOpen} onOpenChange={setIsOpen}>
-        <DialogTrigger asChild>
-          <Button onClick={() => handleOpenDialog()} className="w-full sm:w-auto gap-2">
-            <Plus className="w-4 h-4" />
-            Add Item
+          <Button
+            type="button"
+            size="sm"
+            variant={reorderMode ? "default" : "outline"}
+            onClick={() => {
+              if (reorderMode) setReorderMode(false);
+              else openStockTask("reorder");
+            }}
+            className="shrink-0"
+          >
+            {reorderMode
+              ? language === "mr" ? "सर्व दाखवा" : "Show all"
+              : language === "mr" ? "ऑर्डर मोड" : "Reorder mode"}
           </Button>
-        </DialogTrigger>
-        <DialogContent className="max-w-full sm:max-w-3xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>{editingId ? 'Edit Item' : 'Add New Item'}</DialogTitle>
-            <DialogDescription>Fill in the details below</DialogDescription>
-          </DialogHeader>
-          
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="basic">Basic Info</TabsTrigger>
-              <TabsTrigger value="pricing" disabled={!editingId}>Price Variants</TabsTrigger>
-            </TabsList>
+        </div>
+        <div className="mt-3 grid grid-cols-3 gap-2">
+          <button type="button" onClick={() => openStockTask("reorder")} className="rounded-xl border border-amber-200 bg-white px-2 py-2 text-left shadow-sm transition-all duration-150 hover:-translate-y-px hover:bg-amber-50 hover:shadow active:scale-[0.97]">
+            <span className="block text-lg font-bold text-amber-700">{outOfStockCount + lowStockCount}</span>
+            <span className="block text-[11px] font-semibold text-amber-900">{language === "mr" ? "मागवायच्या" : "Reorder"}</span>
+          </button>
+          <button type="button" onClick={() => openStockTask("out")} className="rounded-xl border border-red-200 bg-white px-2 py-2 text-left shadow-sm transition-all duration-150 hover:-translate-y-px hover:bg-red-50 hover:shadow active:scale-[0.97]">
+            <span className="block text-lg font-bold text-red-700">{outOfStockCount}</span>
+            <span className="block text-[11px] font-semibold text-red-900">{language === "mr" ? "संपला" : "Out"}</span>
+          </button>
+          <button type="button" onClick={() => openStockTask("expiry")} className="rounded-xl border border-orange-200 bg-white px-2 py-2 text-left shadow-sm transition-all duration-150 hover:-translate-y-px hover:bg-orange-50 hover:shadow active:scale-[0.97]">
+            <span className="block text-lg font-bold text-orange-700">{expiringSoonCount}</span>
+            <span className="block text-[11px] font-semibold text-orange-900">{language === "mr" ? "लवकर एक्सपायर" : "Near expiry"}</span>
+          </button>
+        </div>
+      </section>
 
-            <TabsContent value="basic" className="space-y-4 mt-4">
-              <div>
-                <LabelWithTooltip 
-                  label="Item Name" 
-                  tooltip="Enter the product name as it appears in your shop (e.g., Basmati Rice, Sunflower Oil, Salt). Fill either this OR Marathi name."
-                />
-                <Input
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  placeholder="e.g., Rice, Oil, Salt"
-                  className="mt-1"
-                />
-              </div>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="text-sm text-muted-foreground">
+          {filteredItems.length} {t("products")}
+        </div>
+        <Dialog open={isOpen} onOpenChange={setIsOpen}>
+          <DialogTrigger asChild>
+            <Button
+              onClick={() => handleOpenDialog()}
+              className="h-12 w-full gap-2 rounded-xl text-base font-bold shadow-[0_5px_14px_rgba(79,70,229,0.22)] transition-all duration-150 hover:-translate-y-px hover:shadow-[0_8px_18px_rgba(79,70,229,0.3)] active:scale-[0.98] sm:w-auto"
+            >
+              <Plus className="w-4 h-4" />
+              {stockCopy.addItem}
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="!inset-0 !left-0 !top-0 !h-[100dvh] !w-full !max-w-none !translate-x-0 !translate-y-0 transform-gpu overflow-x-hidden overflow-y-auto overscroll-contain rounded-none border-0 bg-background p-4 pt-12 shadow-2xl [backface-visibility:hidden] [contain:layout_paint] [scrollbar-gutter:stable] data-[state=open]:slide-in-from-bottom-4 data-[state=closed]:slide-out-to-bottom-4 data-[state=open]:zoom-in-100 data-[state=closed]:zoom-out-100 sm:!inset-auto sm:!left-1/2 sm:!top-1/2 sm:!h-auto sm:!max-h-[90vh] sm:!w-full sm:!max-w-lg sm:!-translate-x-1/2 sm:!-translate-y-1/2 sm:rounded-3xl sm:border sm:border-indigo-100 sm:p-6 sm:data-[state=open]:slide-in-from-bottom-2 sm:data-[state=closed]:slide-out-to-bottom-2">
+            <DialogHeader className="rounded-2xl border border-indigo-100/80 bg-white p-4 shadow-sm">
+              <DialogTitle className="text-xl tracking-tight">
+                {editingId ? stockCopy.editItem : isCloneMode ? stockCopy.duplicate : stockCopy.addItem}
+              </DialogTitle>
+              <DialogDescription className="mt-1 text-sm">
+                {isCloneMode
+                  ? stockCopy.duplicateHint
+                  : stockCopy.details}
+              </DialogDescription>
+            </DialogHeader>
 
-              <div>
-                <LabelWithTooltip 
-                  label="Item Name (Marathi)" 
-                  tooltip="Enter the product name in Marathi for better local understanding. Fill either this OR English name."
-                />
-                <Input
-                  value={formData.nameMarathi}
-                  onChange={(e) => setFormData({ ...formData, nameMarathi: e.target.value })}
-                  placeholder="उदा., तांदूळ, तेल, मीठ"
-                  className="mt-1"
-                />
-              </div>
+            <Tabs
+              value={activeTab}
+              onValueChange={setActiveTab}
+              className="w-full"
+            >
+              <TabsList className="grid h-12 w-full grid-cols-2 rounded-2xl bg-indigo-50 p-1">
+                <TabsTrigger value="basic" className="rounded-xl font-semibold transition-all duration-200 data-[state=active]:bg-white data-[state=active]:text-indigo-700 data-[state=active]:shadow-sm">{stockCopy.basicInfo}</TabsTrigger>
+                <TabsTrigger value="pricing" disabled={!editingId}>
+                  {stockCopy.priceVariants}
+                </TabsTrigger>
+              </TabsList>
 
-              <div>
-                <LabelWithTooltip 
-                  label="Brand Name" 
-                  tooltip="Enter the product brand name"
-                />
-                <Input
-                  value={formData.brand}
-                  onChange={(e) => setFormData({ ...formData, brand: e.target.value })}
-                  placeholder="e.g., Parle, Amul, Nestle"
-                  className="mt-1"
-                />
-              </div>
+              <TabsContent value="basic" className="mt-4 space-y-5">
+                <div className="mx-auto max-w-lg">
+                  <div className="rounded-3xl border border-slate-200/80 bg-card p-5 shadow-[0_12px_30px_rgba(15,23,42,0.06)]">
+                    <div className="flex items-start gap-4">
+                      <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-100 to-violet-50 text-primary shadow-inner">
+                        <Package className="h-7 w-7" />
+                      </span>
+                      <div className="min-w-0">
+                        <p className="truncate text-lg font-bold leading-tight">
+                          {language === "mr"
+                            ? formData.nameMarathi ||
+                              formData.name ||
+                              "नवीन वस्तू"
+                            : formData.name ||
+                              formData.nameMarathi ||
+                              "New product"}
+                        </p>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          {language === "mr"
+                            ? "स्टॉकमध्ये जोडण्यासाठी तयार"
+                            : stockCopy.ready}
+                        </p>
+                        <p className="mt-2 text-xs font-semibold text-primary">
+                          {getUnitName(formData.unitId)}
+                        </p>
+                      </div>
+                    </div>
 
-              <div>
-                <LabelWithTooltip 
-                  label="Brand Name (Marathi)" 
-                  tooltip="Enter the product brand name in Marathi"
-                />
-                <Input
-                  value={formData.brandMarathi}
-                  onChange={(e) => setFormData({ ...formData, brandMarathi: e.target.value })}
-                  placeholder="उदा., पार्ले, अमूल, नेस्टले"
-                  className="mt-1"
-                />
-              </div>
+                    <div className="mt-6 space-y-4 rounded-2xl border border-slate-200/80 bg-slate-50 p-4">
+                      <p className="text-sm font-bold">{stockCopy.details}</p>
+                      <label className="block text-sm font-semibold">
+                        {language === "mr" ? "वस्तूचे नाव" : "Item name"}{" "}
+                        <span className="text-destructive">*</span>
+                        <Input
+                          value={
+                            language === "mr"
+                              ? formData.nameMarathi
+                              : formData.name
+                          }
+                          onChange={(event) => {
+                            setFormData({
+                              ...formData,
+                              [language === "mr" ? "nameMarathi" : "name"]:
+                                event.target.value,
+                            });
+                            clearFieldError(
+                              language === "mr" ? "nameMarathi" : "name",
+                            );
+                          }}
+                          className="mt-1.5 rounded-xl border-slate-200 bg-white transition-all duration-200 focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100"
+                          placeholder={
+                            language === "mr"
+                              ? "उदा. आंघोळीचा साबण"
+                              : "e.g. Bathing Soap"
+                          }
+                        />
+                      </label>
+                      <label className="block text-sm font-semibold">
+                        {language === "mr" ? "ब्रँड नाव" : "Brand name"}
+                        <Input
+                          value={
+                            language === "mr"
+                              ? formData.brandMarathi
+                              : formData.brand
+                          }
+                          onChange={(event) =>
+                            setFormData({
+                              ...formData,
+                              [language === "mr" ? "brandMarathi" : "brand"]:
+                                event.target.value,
+                            })
+                          }
+                          className="mt-1.5 rounded-xl border-slate-200 bg-white transition-all duration-200 focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100"
+                          placeholder={
+                            language === "mr" ? "उदा. संतूर" : "e.g. Santoor"
+                          }
+                        />
+                      </label>
+                      <div className="grid grid-cols-2 gap-3">
+                        <label className="min-w-0 text-xs font-semibold sm:text-sm">
+                          {stockCopy.category}
+                          <Select
+                            value={formData.categoryId.toString()}
+                            onValueChange={(value) =>
+                              setFormData({
+                                ...formData,
+                                categoryId: Number(value),
+                              })
+                            }
+                          >
+                            <SelectTrigger className="mt-1.5 min-w-0 rounded-xl border-slate-200 bg-white transition-colors focus:border-indigo-400">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {categories.map((category) => (
+                                <SelectItem
+                                  key={category.id}
+                                  value={category.id!.toString()}
+                                >
+                                  {language === "mr"
+                                    ? categoryMarathiLabels[category.name] ||
+                                      category.nameMarathi ||
+                                      category.name
+                                    : category.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </label>
+                        <label className="min-w-0 text-xs font-semibold sm:text-sm">
+                          {stockCopy.unit}
+                          <Select
+                            value={formData.unitId.toString()}
+                            onValueChange={(value) =>
+                              setFormData({
+                                ...formData,
+                                unitId: Number(value),
+                              })
+                            }
+                          >
+                            <SelectTrigger className="mt-1.5 min-w-0 rounded-xl border-slate-200 bg-white transition-colors focus:border-indigo-400">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {units.map((unit) => (
+                                <SelectItem
+                                  key={unit.id}
+                                  value={unit.id!.toString()}
+                                >
+                                  {unit.name} ({unit.shortForm})
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </label>
+                      </div>
+                    </div>
 
-              <div>
-                <LabelWithTooltip 
-                  label="Category" 
-                  tooltip="Organize products by type (Grains, Oils, Spices, etc.) for better inventory management"
-                  required
-                />
-                <Select
-                  value={formData.categoryId.toString()}
-                  onValueChange={(value) => setFormData({ ...formData, categoryId: Number(value) })}
-                >
-                  <SelectTrigger className="mt-1">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {categories.map((cat) => (
-                      <SelectItem key={cat.id} value={cat.id!.toString()}>
-                        {cat.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+                    <section className="mt-7">
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm font-bold">
+                          {stockCopy.quantity}
+                        </p>
+                        <span className="text-xs font-medium text-muted-foreground">
+                          {stockCopy.currentStock}
+                        </span>
+                      </div>
+                      <div className="mt-3 flex items-center justify-between rounded-2xl border border-indigo-100 bg-gradient-to-r from-indigo-50/80 via-white to-violet-50/70 p-2 shadow-inner">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          aria-label={stockCopy.decrease}
+                          className="h-11 w-11 touch-manipulation rounded-xl border border-slate-200 bg-white shadow-sm transition-all duration-100 hover:-translate-y-px hover:shadow active:scale-90"
+                          onClick={() =>
+                            setFormData((value) => ({
+                              ...value,
+                              quantity: Math.max(0, value.quantity - 1),
+                            }))
+                          }
+                        >
+                          <Minus className="h-5 w-5" />
+                        </Button>
+                        <span key={formData.quantity} className="rounded-xl bg-white px-4 py-2 text-2xl font-bold tabular-nums text-indigo-800 shadow-sm animate-in zoom-in-95 duration-150">
+                          {formatWholeNumber(formData.quantity)}{" "}
+                          <span className="text-sm font-medium text-muted-foreground">
+                            {getUnitName(formData.unitId)}
+                          </span>
+                        </span>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          aria-label={stockCopy.increase}
+                          className="h-11 w-11 touch-manipulation rounded-xl bg-primary text-primary-foreground shadow-[0_4px_10px_rgba(79,70,229,0.28)] transition-all duration-100 hover:-translate-y-px hover:bg-primary/90 hover:shadow-[0_7px_15px_rgba(79,70,229,0.32)] hover:text-primary-foreground active:scale-90"
+                          onClick={() =>
+                            setFormData((value) => ({
+                              ...value,
+                              quantity: value.quantity + 1,
+                            }))
+                          }
+                        >
+                          <Plus className="h-5 w-5" />
+                        </Button>
+                      </div>
+                    </section>
 
-              <div>
-                <LabelWithTooltip 
-                  label="Unit" 
-                  tooltip="The measurement unit for this product (kg, L, pcs, g, ml, etc.). Used to track and sell quantities"
-                  required
-                />
-                <Select
-                  value={formData.unitId.toString()}
-                  onValueChange={(value) => setFormData({ ...formData, unitId: Number(value) })}
-                >
-                  <SelectTrigger className="mt-1">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {units.map((unit) => (
-                      <SelectItem key={unit.id} value={unit.id!.toString()}>
-                        {unit.name} ({unit.shortForm})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+                    <section className="mt-7 border-t border-slate-100 pt-6">
+                      <p className="text-sm font-bold">{stockCopy.price}</p>
+                      <div className="mt-3 grid grid-cols-2 gap-3">
+                        <label className="min-w-0 text-xs font-semibold sm:text-sm">
+                          {stockCopy.buyingPrice}{" "}
+                          <span className="text-destructive">*</span>
+                          <div className="relative mt-2">
+                            <span className="absolute left-3 top-2.5 text-muted-foreground">
+                              ₹
+                            </span>
+                            <Input
+                              inputMode="numeric"
+                              value={formData.buyPrice || ""}
+                              onChange={(event) => {
+                                setFormData({
+                                  ...formData,
+                                  buyPrice: parseWholeNumberInput(
+                                    event.target.value,
+                                  ),
+                                });
+                                clearFieldError("buyPrice");
+                              }}
+                              className="min-w-0 rounded-xl border-slate-200 bg-white pl-7 text-base transition-all duration-200 focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100"
+                              placeholder="0"
+                            />
+                          </div>
+                        </label>
+                        <label className="min-w-0 text-xs font-semibold sm:text-sm">
+                          {stockCopy.sellingPrice}{" "}
+                          <span className="text-destructive">*</span>
+                          <div className="relative mt-2">
+                            <span className="absolute left-3 top-2.5 text-muted-foreground">
+                              ₹
+                            </span>
+                            <Input
+                              inputMode="numeric"
+                              value={formData.sellPrice || ""}
+                              onChange={(event) => {
+                                setFormData({
+                                  ...formData,
+                                  sellPrice: parseWholeNumberInput(
+                                    event.target.value,
+                                  ),
+                                });
+                                clearFieldError("sellPrice");
+                              }}
+                              className="min-w-0 rounded-xl border-slate-200 bg-white pl-7 text-base transition-all duration-200 focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100"
+                              placeholder="0"
+                            />
+                          </div>
+                        </label>
+                      </div>
+                      {formData.buyPrice > 0 && formData.sellPrice > 0 && (
+                        <div className="mt-3 grid grid-cols-2 gap-2 rounded-2xl border border-emerald-100 bg-emerald-50 p-3 text-emerald-800">
+                          <div className="min-w-0 rounded-lg bg-white/70 px-3 py-2">
+                            <p className="text-xs font-medium text-emerald-700">
+                              {stockCopy.profitPerItem}
+                            </p>
+                            <p className="mt-0.5 text-base font-bold tabular-nums">
+                              ₹
+                              {formatMoney(
+                                Math.max(
+                                  0,
+                                  formData.sellPrice - formData.buyPrice,
+                                ),
+                              )}
+                            </p>
+                          </div>
+                          <div className="min-w-0 rounded-lg bg-white/70 px-3 py-2">
+                            <p className="text-xs font-medium text-emerald-700">
+                              {stockCopy.profitMargin}
+                            </p>
+                            <p className="mt-0.5 text-base font-bold tabular-nums">
+                              {formatPercent(
+                                calculateMargin(
+                                  formData.buyPrice,
+                                  formData.sellPrice,
+                                ),
+                              )}
+                              %
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </section>
 
-              <div>
-                <LabelWithTooltip 
-                  label="Current Quantity" 
-                  tooltip="How much stock you have right now in the shop"
-                  required
-                />
-                <Input
-                  type="text"
-                  inputMode="numeric"
-                  pattern="[0-9]*"
-                  value={formData.quantity || ''}
-                  onChange={(e) => setFormData({ ...formData, quantity: parseWholeNumberInput(e.target.value) })}
-                  placeholder="0"
-                  className="mt-1"
-                />
-              </div>
+                    <section className="mt-7 border-t border-slate-100 pt-6">
+                      <p className="text-sm font-bold">{stockCopy.expiry}</p>
+                      <div className="mt-3 grid grid-cols-2 gap-2">
+                        <Button
+                          type="button"
+                          className="min-w-0 rounded-xl px-2 text-xs transition-all duration-150 active:scale-[0.97] sm:text-sm"
+                          variant={!showExpiryPicker ? "default" : "outline"}
+                          onClick={() => {
+                            setShowExpiryPicker(false);
+                            setFormData((value) => ({
+                              ...value,
+                              expiryDate: "",
+                            }));
+                          }}
+                        >
+                          {stockCopy.noExpiry}
+                        </Button>
+                        <Button
+                          type="button"
+                          className="min-w-0 rounded-xl px-2 text-xs transition-all duration-150 active:scale-[0.97] sm:text-sm"
+                          variant={showExpiryPicker ? "default" : "outline"}
+                          onClick={() => setShowExpiryPicker(true)}
+                        >
+                          {stockCopy.addExpiry}
+                        </Button>
+                      </div>
+                      {showExpiryPicker && (
+                        <div className="mt-3 space-y-3">
+                          <div className="grid grid-cols-3 gap-2">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setExpiryInDays(0)}
+                            >
+                              {stockCopy.today}
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setExpiryInDays(7)}
+                            >
+                              +7 days
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setExpiryInDays(30)}
+                            >
+                              +30 days
+                            </Button>
+                          </div>
+                          <Input
+                            type="date"
+                            value={formData.expiryDate}
+                            onChange={(event) =>
+                              setFormData({
+                                ...formData,
+                                expiryDate: event.target.value,
+                              })
+                            }
+                          />
+                        </div>
+                      )}
+                    </section>
 
-              <div>
-                <LabelWithTooltip
-                  label="Expiry Date"
-                  tooltip="Optional. If set, the system can show expiry alerts for this item."
-                />
-                <div className="mt-1 flex flex-col gap-2 sm:flex-row sm:items-center">
-                  <Input
-                    type="date"
-                    value={formData.expiryDate}
-                    onChange={(e) => setFormData({ ...formData, expiryDate: e.target.value })}
-                    className="sm:w-[200px]"
-                  />
-                  <div className="flex flex-wrap gap-2">
-                    <Button type="button" variant="outline" size="sm" onClick={() => setExpiryInDays(0)}>
-                      Today
-                    </Button>
-                    <Button type="button" variant="outline" size="sm" onClick={() => setExpiryInDays(7)}>
-                      +7 days
-                    </Button>
-                    <Button type="button" variant="outline" size="sm" onClick={() => setExpiryInDays(30)}>
-                      +30 days
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setFormData((prev) => ({ ...prev, expiryDate: '' }))}
-                      disabled={!formData.expiryDate}
-                    >
-                      Clear
-                    </Button>
+                    <section className="mt-7 border-t border-slate-100 pt-6">
+                      <label className="block text-sm font-bold">
+                        {stockCopy.lowStockLimit}
+                        <div className="mt-2 flex items-center gap-2">
+                          <Input
+                            type="number"
+                            min="0"
+                            value={formData.lowStockLimit || ""}
+                            onChange={(event) =>
+                              setFormData({
+                                ...formData,
+                                lowStockLimit: parseWholeNumberInput(
+                                  event.target.value,
+                                ),
+                              })
+                            }
+                            className="max-w-24"
+                            placeholder="0"
+                          />
+                          <span className="min-w-0 truncate text-sm text-muted-foreground">
+                            {getUnitName(formData.unitId)}
+                          </span>
+                        </div>
+                        <span className="mt-2 block text-xs font-normal text-muted-foreground">
+                          {stockCopy.noAlert}
+                        </span>
+                      </label>
+                    </section>
+                    <div className="mt-5 grid grid-cols-2 gap-3">
+                      <div className="min-w-0 rounded-xl bg-muted p-3">
+                        <p className="text-xs text-muted-foreground">
+                          {stockCopy.stockValue}
+                        </p>
+                        <p className="mt-1 truncate font-semibold">
+                          ₹ {formatMoney(formData.quantity * formData.buyPrice)}
+                        </p>
+                      </div>
+                      <div className="min-w-0 rounded-xl bg-muted p-3">
+                        <p className="text-xs text-muted-foreground">
+                          {stockCopy.profitMargin}
+                        </p>
+                        <p className="mt-1 font-semibold text-green-600">
+                          {formData.buyPrice > 0
+                            ? `${formatPercent(calculateMargin(formData.buyPrice, formData.sellPrice))}%`
+                            : "—"}
+                        </p>
+                      </div>
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <div>
-                <LabelWithTooltip 
-                  label="Buying Price" 
-                  tooltip="The cost price - how much you pay to buy this item from your supplier (in Rs.)"
-                  required
-                />
-                <Input
-                  type="text"
-                  inputMode="numeric"
-                  pattern="[0-9]*"
-                  value={formData.buyPrice || ''}
-                  onChange={(e) => setFormData({ ...formData, buyPrice: parseWholeNumberInput(e.target.value) })}
-                  placeholder="0"
-                  className="mt-1"
-                />
-              </div>
+                {/* Previous form markup retained temporarily while the item form is validated.
+                  <div className="overflow-hidden rounded-3xl border bg-card p-5 shadow-sm">
+                    <div className="flex items-start gap-4">
+                      <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary"><Package className="h-7 w-7" /></span>
+                      <div className="min-w-0"><p className="text-lg font-bold leading-tight">{formData.name || "New product"}</p><p className="mt-1 text-base text-muted-foreground">{formData.nameMarathi || "नवीन वस्तू"}</p><p className="mt-2 text-xs font-semibold text-primary">{getUnitName(formData.unitId)} · Ready to add</p></div>
+                    </div>
+                    <div className="mt-6 grid grid-cols-2 gap-3 rounded-2xl border bg-muted/30 p-4 [&>label:nth-child(-n+2)]:col-span-2 [&>label]:min-w-0">
+                      <label className="text-sm font-semibold">Item name <span className="text-destructive">*</span><Input value={formData.name} onChange={(e) => { setFormData({ ...formData, name: e.target.value }); clearFieldError("name"); }} className="mt-1.5" placeholder="e.g. Santoor Soap" /></label>
+                      <label className="text-sm font-semibold">वस्तूचे नाव<Input value={formData.nameMarathi} onChange={(e) => setFormData({ ...formData, nameMarathi: e.target.value })} className="mt-1.5" placeholder="उदा. संतूर साबण" /></label>
+                      <label className="text-sm font-semibold">Brand name<Input value={formData.brand} onChange={(e) => setFormData({ ...formData, brand: e.target.value })} className="mt-1.5" placeholder="e.g. Santoor" /></label>
+                      <label className="text-sm font-semibold">ब्रँड नाव<Input value={formData.brandMarathi} onChange={(e) => setFormData({ ...formData, brandMarathi: e.target.value })} className="mt-1.5" placeholder="उदा. संतूर" /></label>
+                      <label className="text-sm font-semibold">Category<Select value={formData.categoryId.toString()} onValueChange={(value) => setFormData({ ...formData, categoryId: Number(value) })}><SelectTrigger className="mt-1.5"><SelectValue /></SelectTrigger><SelectContent>{categories.map((cat) => <SelectItem key={cat.id} value={cat.id!.toString()}>{cat.nameMarathi || cat.name}</SelectItem>)}</SelectContent></Select></label>
+                      <label className="text-sm font-semibold">Unit<Select value={formData.unitId.toString()} onValueChange={(value) => setFormData({ ...formData, unitId: Number(value) })}><SelectTrigger className="mt-1.5"><SelectValue /></SelectTrigger><SelectContent>{units.map((unit) => <SelectItem key={unit.id} value={unit.id!.toString()}>{unit.name} ({unit.shortForm})</SelectItem>)}</SelectContent></Select></label>
+                    </div>
 
-              <div>
-                <LabelWithTooltip 
-                  label="Selling Price" 
-                  tooltip="The retail price - how much you sell this item for to customers (in Rs.)"
-                  required
-                />
-                <Input
-                  type="text"
-                  inputMode="numeric"
-                  pattern="[0-9]*"
-                  value={formData.sellPrice || ''}
-                  onChange={(e) => setFormData({ ...formData, sellPrice: parseWholeNumberInput(e.target.value) })}
-                  placeholder="0"
-                  className="mt-1"
-                />
-                {formData.buyPrice > 0 && formData.sellPrice > 0 && (
-                  <p className="text-xs text-green-600 mt-1">
-                    Margin: {formatPercent(calculateMargin(formData.buyPrice, formData.sellPrice))}%
-                  </p>
-                )}
-              </div>
+                    <section className="mt-7"><p className="text-sm font-bold">How many do you have?</p><div className="mt-3 flex items-center justify-between rounded-2xl bg-muted p-2"><Button type="button" variant="ghost" size="icon" aria-label="Decrease quantity" onClick={() => setFormData((prev) => ({ ...prev, quantity: Math.max(0, prev.quantity - 1) }))}><Minus className="h-5 w-5" /></Button><span className="text-2xl font-bold">{formatWholeNumber(formData.quantity)} <span className="text-sm font-medium text-muted-foreground">{getUnitName(formData.unitId)}</span></span><Button type="button" variant="ghost" size="icon" aria-label="Increase quantity" onClick={() => setFormData((prev) => ({ ...prev, quantity: prev.quantity + 1 }))}><Plus className="h-5 w-5" /></Button></div></section>
 
-              <div>
-                <div className="flex items-center gap-1.5">
-                  <label className="text-sm font-semibold">Low Stock Alert Limit</label>
-                  <HelpTooltip text="When stock goes below this level, you'll get an alert to reorder. Leave empty to disable alerts" />
+                  <div className="grid grid-cols-2 gap-3"><label className="text-sm font-semibold">Buying price <span className="text-destructive">*</span><div className="relative mt-2"><span className="absolute left-3 top-2.5 text-muted-foreground">₹</span><Input inputMode="numeric" value={formData.buyPrice || ""} onChange={(e) => { setFormData({ ...formData, buyPrice: parseWholeNumberInput(e.target.value) }); clearFieldError("buyPrice"); }} className="pl-7 text-base" placeholder="0" /></div></label><label className="text-sm font-semibold">Selling price <span className="text-destructive">*</span><div className="relative mt-2"><span className="absolute left-3 top-2.5 text-muted-foreground">₹</span><Input inputMode="numeric" value={formData.sellPrice || ""} onChange={(e) => { setFormData({ ...formData, sellPrice: parseWholeNumberInput(e.target.value) }); clearFieldError("sellPrice"); }} className="pl-7 text-base" placeholder="0" /></div>{formData.buyPrice > 0 && formData.sellPrice > 0 && <p className="mt-2 text-xs text-green-600">Margin: {formatPercent(calculateMargin(formData.buyPrice, formData.sellPrice))}%</p>}</label></div>
+
+                  <section className="mt-7 border-t pt-6"><p className="text-sm font-bold">Expiry</p><div className="mt-3 grid grid-cols-2 gap-2"><Button type="button" variant={!showExpiryPicker ? "default" : "outline"} onClick={() => { setShowExpiryPicker(false); setFormData((prev) => ({ ...prev, expiryDate: "" })); }}>No expiry</Button><Button type="button" variant={showExpiryPicker ? "default" : "outline"} onClick={() => setShowExpiryPicker(true)}>Add expiry date</Button></div>{showExpiryPicker && <div className="mt-3 space-y-3"><div className="grid grid-cols-3 gap-2"><Button type="button" variant="outline" size="sm" onClick={() => setExpiryInDays(0)}>Today</Button><Button type="button" variant="outline" size="sm" onClick={() => setExpiryInDays(7)}>+7 days</Button><Button type="button" variant="outline" size="sm" onClick={() => setExpiryInDays(30)}>+30 days</Button></div><Input type="date" value={formData.expiryDate} onChange={(e) => setFormData({ ...formData, expiryDate: e.target.value })} /></div>}</section>
+
+                  <div className="rounded-3xl border bg-card p-5 shadow-sm"><label className="text-sm font-bold">Low stock alert limit<div className="mt-2 flex items-center gap-2"><Input type="number" min="0" value={formData.lowStockLimit || ""} onChange={(e) => setFormData({ ...formData, lowStockLimit: parseWholeNumberInput(e.target.value) })} className="max-w-28" placeholder="Disabled" /><span className="text-sm text-muted-foreground">{getUnitName(formData.unitId)}</span></div></label><div className="mt-5 grid grid-cols-2 gap-3"><div className="rounded-xl bg-muted p-3"><p className="text-xs text-muted-foreground">Stock value</p><p className="mt-1 font-semibold">₹ {formatMoney(formData.quantity * formData.buyPrice)}</p></div><div className="rounded-xl bg-muted p-3"><p className="text-xs text-muted-foreground">Profit margin</p><p className="mt-1 font-semibold text-green-600">{formData.buyPrice > 0 ? `${formatPercent(calculateMargin(formData.buyPrice, formData.sellPrice))}%` : "—"}</p></div></div></div>
                 </div>
-                <div className="flex gap-2 mt-1">
-                  <Input
-                    type="text"
-                    inputMode="numeric"
-                    pattern="[0-9]*"
-                    value={formData.lowStockLimit === 0 ? '' : formData.lowStockLimit}
-                    onChange={(e) => {
-                      setFormData({ ...formData, lowStockLimit: parseWholeNumberInput(e.target.value) });
-                    }}
-                    placeholder="Leave empty to disable alerts"
-                    className="mt-0"
+
+                <div className="hidden">
+                <div className="rounded-3xl border border-border/70 bg-card p-5 shadow-sm">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-3">
+                    <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                      <Package className="h-6 w-6" />
+                    </span>
+                    <div>
+                      <p className="font-semibold">{formData.name || "New product"}</p>
+                      <p className="text-xs text-muted-foreground">{formData.nameMarathi || "नवीन वस्तू"}</p>
+                      <p className="mt-0.5 text-xs font-medium text-primary">Product details</p>
+                    </div>
+                    </div>
+                    {editingId && (
+                      <Button type="button" variant="outline" size="sm" onClick={() => setShowProductDetails((value) => !value)}>
+                        {showProductDetails ? "Done" : "Edit details"}
+                      </Button>
+                    )}
+                  </div>
+                  {showProductDetails && <div className="mt-4 space-y-4">
+                    <div>
+                      <LabelWithTooltip
+                        label="Item Name"
+                        tooltip="Enter the product name as it appears in your shop (e.g., Basmati Rice, Sunflower Oil, Salt)."
+                      />
+                      <Input
+                        value={formData.name}
+                        onChange={(e) => {
+                          setFormData({ ...formData, name: e.target.value });
+                          clearFieldError("name");
+                        }}
+                        placeholder="e.g., Rice, Oil, Salt"
+                        className={cn(
+                          "mt-1",
+                          formErrors.name &&
+                            "border-destructive focus:border-destructive focus:ring-destructive/50",
+                        )}
+                        aria-invalid={!!formErrors.name}
+                      />
+                      {formErrors.name && (
+                        <p className="mt-1 text-xs text-destructive">
+                          {formErrors.name}
+                        </p>
+                      )}
+                    </div>
+
+                    <div>
+                      <LabelWithTooltip
+                        label="Category"
+                        tooltip="Organize products by type (Grains, Oils, Spices, etc.) for better inventory management"
+                        required
+                      />
+                      <Select
+                        value={formData.categoryId.toString()}
+                        onValueChange={(value) =>
+                          setFormData({
+                            ...formData,
+                            categoryId: Number(value),
+                          })
+                        }
+                      >
+                        <SelectTrigger className="mt-1">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {categories.map((cat) => (
+                            <SelectItem key={cat.id} value={cat.id!.toString()}>
+                              {cat.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div>
+                      <LabelWithTooltip
+                        label="Unit"
+                        tooltip="The measurement unit for this product (kg, L, pcs, g, ml, etc.). Used to track and sell quantities"
+                        required
+                      />
+                      <Select
+                        value={formData.unitId.toString()}
+                        onValueChange={(value) =>
+                          setFormData({ ...formData, unitId: Number(value) })
+                        }
+                      >
+                        <SelectTrigger className="mt-1">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {units.map((unit) => (
+                            <SelectItem
+                              key={unit.id}
+                              value={unit.id!.toString()}
+                            >
+                              {unit.name} ({unit.shortForm})
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="hidden">
+                      <LabelWithTooltip label="Current Quantity" tooltip="How much stock you have right now in the shop" required />
+                      <div className="mt-2 flex items-center justify-between rounded-2xl bg-muted p-2">
+                        <Button type="button" variant="ghost" size="icon" onClick={() => setFormData((prev) => ({ ...prev, quantity: Math.max(0, prev.quantity - 1) }))} aria-label="Decrease quantity"><Minus className="h-5 w-5" /></Button>
+                        <span className="text-2xl font-bold">{formatWholeNumber(formData.quantity)} <span className="text-sm font-medium text-muted-foreground">{getUnitName(formData.unitId)}</span></span>
+                        <Button type="button" variant="ghost" size="icon" onClick={() => setFormData((prev) => ({ ...prev, quantity: prev.quantity + 1 }))} aria-label="Increase quantity"><Plus className="h-5 w-5" /></Button>
+                      </div>
+                    </div>
+
+                    <div>
+                      <LabelWithTooltip
+                        label="Item Name (Marathi)"
+                        tooltip="Enter the product name in Marathi for better local understanding. Fill either this OR English name."
+                      />
+                      <Input
+                        value={formData.nameMarathi}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            nameMarathi: e.target.value,
+                          })
+                        }
+                        placeholder="उदा., तांदूळ, तेल, मीठ"
+                        className="mt-1"
+                      />
+                    </div>
+
+                    <div>
+                      <LabelWithTooltip
+                        label="Brand Name"
+                        tooltip="Enter the product brand name"
+                      />
+                      <Input
+                        value={formData.brand}
+                        onChange={(e) =>
+                          setFormData({ ...formData, brand: e.target.value })
+                        }
+                        placeholder="e.g., Parle, Amul, Nestle"
+                        className="mt-1"
+                      />
+                    </div>
+
+                    <div>
+                      <LabelWithTooltip
+                        label="Brand Name (Marathi)"
+                        tooltip="Enter the product brand name in Marathi"
+                      />
+                      <Input
+                        value={formData.brandMarathi}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            brandMarathi: e.target.value,
+                          })
+                        }
+                        placeholder="उदा., पार्ले, अमूल, नेस्टले"
+                        className="mt-1"
+                      />
+                    </div>
+                  </div>}
+                </div>
+
+                <div className="rounded-3xl border border-border/70 bg-card p-5 shadow-sm">
+                  <p className="text-sm font-semibold">How many do you have?</p>
+                  <div className="mt-3 flex items-center justify-between rounded-2xl bg-muted p-2">
+                    <Button type="button" variant="ghost" size="icon" onClick={() => setFormData((prev) => ({ ...prev, quantity: Math.max(0, prev.quantity - 1) }))} aria-label="Decrease quantity"><Minus className="h-5 w-5" /></Button>
+                    <span className="text-2xl font-bold">{formatWholeNumber(formData.quantity)} <span className="text-sm font-medium text-muted-foreground">{getUnitName(formData.unitId)}</span></span>
+                    <Button type="button" variant="ghost" size="icon" onClick={() => setFormData((prev) => ({ ...prev, quantity: prev.quantity + 1 }))} aria-label="Increase quantity"><Plus className="h-5 w-5" /></Button>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-border/70 bg-card p-5 shadow-sm">
+                  <div className="flex items-center justify-between gap-3">
+                    <LabelWithTooltip
+                      label="Expiry Date"
+                      tooltip="Optional. If set, the system can show expiry alerts for this item."
+                    />
+                    <span className="text-xs text-muted-foreground">Optional</span>
+                  </div>
+                  <div className="mt-1 flex flex-col gap-2 sm:flex-row sm:items-center">
+                    <Input
+                      type="date"
+                      value={formData.expiryDate}
+                      onChange={(e) =>
+                        setFormData({ ...formData, expiryDate: e.target.value })
+                      }
+                      className="sm:w-[200px]"
+                    />
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setExpiryInDays(0)}
+                      >
+                        Today
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setExpiryInDays(7)}
+                      >
+                        +7 days
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setExpiryInDays(30)}
+                      >
+                        +30 days
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          setFormData((prev) => ({ ...prev, expiryDate: "" }))
+                        }
+                        disabled={!formData.expiryDate}
+                      >
+                        Clear
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <div className="rounded-2xl border border-border/70 bg-card p-5 shadow-sm">
+                    <p className="text-sm font-semibold">Pricing</p>
+                    <div className="mt-4 space-y-4">
+                      <div>
+                        <LabelWithTooltip
+                          label="Buying Price"
+                          tooltip="The cost price - how much you pay to buy this item from your supplier (in Rs.)"
+                          required
+                        />
+                        <Input
+                          type="text"
+                          inputMode="numeric"
+                          pattern="[0-9]*"
+                          value={formData.buyPrice || ""}
+                          onChange={(e) => {
+                            setFormData({
+                              ...formData,
+                              buyPrice: parseWholeNumberInput(e.target.value),
+                            });
+                            clearFieldError("buyPrice");
+                          }}
+                          placeholder="0"
+                          className={cn(
+                            "mt-1",
+                            formErrors.buyPrice &&
+                              "border-destructive focus:border-destructive focus:ring-destructive/50",
+                          )}
+                          aria-invalid={!!formErrors.buyPrice}
+                        />
+                        {formErrors.buyPrice && (
+                          <p className="mt-1 text-xs text-destructive">
+                            {formErrors.buyPrice}
+                          </p>
+                        )}
+                      </div>
+
+                      <div>
+                        <LabelWithTooltip
+                          label="Selling Price"
+                          tooltip="The retail price - how much you sell this item for to customers (in Rs.)"
+                          required
+                        />
+                        <Input
+                          type="text"
+                          inputMode="numeric"
+                          pattern="[0-9]*"
+                          value={formData.sellPrice || ""}
+                          onChange={(e) => {
+                            setFormData({
+                              ...formData,
+                              sellPrice: parseWholeNumberInput(e.target.value),
+                            });
+                            clearFieldError("sellPrice");
+                          }}
+                          placeholder="0"
+                          className={cn(
+                            "mt-1",
+                            formErrors.sellPrice &&
+                              "border-destructive focus:border-destructive focus:ring-destructive/50",
+                          )}
+                          aria-invalid={!!formErrors.sellPrice}
+                        />
+                        {formErrors.sellPrice && (
+                          <p className="mt-1 text-xs text-destructive">
+                            {formErrors.sellPrice}
+                          </p>
+                        )}
+                        {formData.buyPrice > 0 && formData.sellPrice > 0 && (
+                          <p className="text-xs text-green-600 mt-1">
+                            Margin:{" "}
+                            {formatPercent(
+                              calculateMargin(
+                                formData.buyPrice,
+                                formData.sellPrice,
+                              ),
+                            )}
+                            %
+                          </p>
+                        )}
+                      </div>
+
+                      <div>
+                        <div className="flex items-center gap-1.5">
+                          <label className="text-sm font-semibold">
+                            Low Stock Alert Limit
+                          </label>
+                          <HelpTooltip text="When stock goes below this level, you'll get an alert to reorder. Leave empty to disable alerts" />
+                        </div>
+                        <div className="flex gap-2 mt-1">
+                          <Input
+                            type="text"
+                            inputMode="numeric"
+                            pattern="[0-9]*"
+                            value={
+                              formData.lowStockLimit === 0
+                                ? ""
+                                : formData.lowStockLimit
+                            }
+                            onChange={(e) => {
+                              setFormData({
+                                ...formData,
+                                lowStockLimit: parseWholeNumberInput(
+                                  e.target.value,
+                                ),
+                              });
+                            }}
+                            placeholder="Leave empty to disable alerts"
+                            className="mt-0"
+                          />
+                          {formData.lowStockLimit > 0 && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() =>
+                                setFormData({ ...formData, lowStockLimit: 0 })
+                              }
+                              className="whitespace-nowrap"
+                            >
+                              Clear
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-border/70 bg-card p-4 text-sm text-slate-700 shadow-sm">
+                    <p className="text-sm font-semibold">Inventory preview</p>
+                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                      <div className="rounded-xl bg-white p-3 shadow-sm">
+                        <p className="text-xs text-muted-foreground">
+                          Estimated stock value
+                        </p>
+                        <p className="mt-1 font-semibold">
+                          Rs.{" "}
+                          {formatMoney(formData.quantity * formData.buyPrice)}
+                        </p>
+                      </div>
+                      <div className="rounded-xl bg-white p-3 shadow-sm">
+                        <p className="text-xs text-muted-foreground">
+                          Profit margin
+                        </p>
+                        <p className="mt-1 font-semibold text-green-600">
+                          {formData.buyPrice > 0
+                            ? `${formatPercent(
+                                calculateMargin(
+                                  formData.buyPrice,
+                                  formData.sellPrice,
+                                ),
+                              )}%`
+                            : "—"}
+                        </p>
+                      </div>
+                      <div className="rounded-xl bg-white p-3 shadow-sm">
+                        <p className="text-xs text-muted-foreground">
+                          Expiry status
+                        </p>
+                        <p className="mt-1 font-semibold">
+                          {formData.expiryDate
+                            ? new Date(
+                                `${formData.expiryDate}T00:00:00`,
+                              ).toLocaleDateString(
+                                language === "mr" ? "mr-IN" : "en-IN",
+                              )
+                            : "None"}
+                        </p>
+                      </div>
+                      <div className="rounded-xl bg-white p-3 shadow-sm">
+                        <p className="text-xs text-muted-foreground">
+                          Reorder alert
+                        </p>
+                        <p className="mt-1 font-semibold">
+                          {formData.lowStockLimit > 0
+                            ? `${formatWholeNumber(formData.lowStockLimit)} ${getUnitName(formData.unitId)} or less`
+                            : "Disabled"}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                */}
+              </TabsContent>
+
+              <TabsContent value="pricing" className="mt-4">
+                {editingId && (
+                  <PriceTierManager
+                    itemId={editingId}
+                    priceTiers={priceTiers.filter(
+                      (tier) => tier.itemId === editingId,
+                    )}
+                    units={units}
+                    wholesaleCost={formData.buyPrice}
+                    wholesaleUnitId={formData.unitId}
+                    onAdd={handleAddPriceTier}
+                    onDelete={handleDeletePriceTier}
                   />
-                  {formData.lowStockLimit > 0 && (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setFormData({ ...formData, lowStockLimit: 0 })}
-                      className="whitespace-nowrap"
-                    >
-                      Clear
-                    </Button>
-                  )}
-                </div>
-              </div>
-
-              <Button onClick={handleSave} className="w-full">
-                {editingId ? 'Update Item' : 'Add Item'}
-              </Button>
-            </TabsContent>
-
-            <TabsContent value="pricing" className="mt-4">
-              {editingId && (
-                <PriceTierManager
-                  itemId={editingId}
-                  priceTiers={priceTiers.filter(tier => tier.itemId === editingId)}
-                  units={units}
-                  wholesaleCost={formData.buyPrice}
-                  wholesaleQty={formData.quantity}
-                  wholesaleUnitId={formData.unitId}
-                  onAdd={handleAddPriceTier}
-                  onDelete={handleDeletePriceTier}
-                />
+                )}
+                {!editingId && (
+                  <div className="rounded-2xl border border-border/70 bg-muted/10 p-4 text-sm text-muted-foreground">
+                    {stockCopy.saveFirst}
+                  </div>
+                )}
+              </TabsContent>
+            </Tabs>
+            <DialogFooter className="sticky bottom-0 -mx-4 mt-5 gap-2 border-t border-indigo-100 bg-white px-4 py-3 shadow-[0_-8px_20px_rgba(15,23,42,0.04)] sm:-mx-6 sm:px-6">
+              {activeTab === "pricing" ? (
+                <Button
+                  type="button"
+                  onClick={resetForm}
+                  className="h-12 w-full rounded-xl text-base font-bold shadow-[0_5px_14px_rgba(79,70,229,0.22)] transition-all duration-150 hover:-translate-y-px hover:shadow-[0_8px_18px_rgba(79,70,229,0.28)] active:scale-[0.98]"
+                >
+                  {stockCopy.done}
+                </Button>
+              ) : (
+                <>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={resetForm}
+                    className="h-12 rounded-xl border-slate-200 transition-all duration-150 hover:-translate-y-px hover:bg-slate-50 active:scale-[0.98]"
+                  >
+                    {stockCopy.cancel}
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={handleSave}
+                    disabled={isSaving}
+                    className="h-12 flex-1 rounded-xl text-base font-bold shadow-[0_5px_14px_rgba(79,70,229,0.24)] transition-all duration-150 hover:-translate-y-px hover:shadow-[0_8px_18px_rgba(79,70,229,0.3)] active:scale-[0.98] disabled:translate-y-0 disabled:opacity-70"
+                  >
+                    {isSaving
+                      ? language === "mr" ? "जतन होत आहे..." : "Saving..."
+                      : editingId
+                      ? stockCopy.update
+                      : isCloneMode
+                        ? language === "mr"
+                          ? "नवीन रूपात जोडा"
+                          : "Save as New Variant"
+                        : stockCopy.addItem}
+                  </Button>
+                </>
               )}
-            </TabsContent>
-          </Tabs>
-        </DialogContent>
-      </Dialog>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
 
       <div className="space-y-3">
-        <div className="flex gap-2">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input
-              placeholder={t('search_items')}
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10"
-            />
-          </div>
+        <div className="flex gap-2 overflow-x-auto rounded-2xl border bg-card p-2 pb-2 shadow-sm">
+          <button
+            type="button"
+            onClick={() => setSelectedCategoryId(null)}
+            className={cn(
+              "shrink-0 rounded-xl border px-4 py-2 text-sm font-semibold transition-colors",
+              selectedCategoryId === null
+                ? "border-primary bg-primary text-primary-foreground"
+                : "bg-card text-muted-foreground hover:bg-accent",
+            )}
+          >
+            {language === "mr" ? "सर्व" : "All"}
+          </button>
+          {categories.map((category) => (
+            <button
+              key={category.id}
+              type="button"
+              onClick={() => setSelectedCategoryId(category.id)}
+              className={cn(
+                "shrink-0 rounded-xl border px-4 py-2 text-sm font-semibold transition-colors",
+                selectedCategoryId === category.id
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "bg-card text-muted-foreground hover:bg-accent",
+              )}
+            >
+              {language === "mr"
+                ? categoryMarathiLabels[category.name] ||
+                  category.nameMarathi ||
+                  category.name
+                : category.name}
+            </button>
+          ))}
         </div>
 
-        <div className="flex flex-wrap gap-2">
-          {/* Category Filter */}
+        <div className="grid grid-cols-2 gap-2">
           <Select
-            value={selectedCategoryId?.toString() || 'all'}
-            onValueChange={(value) => setSelectedCategoryId(value === 'all' ? null : Number(value))}
+            value={selectedBrand || "all"}
+            onValueChange={(value) => setSelectedBrand(value === "all" ? null : value)}
           >
-            <SelectTrigger className="w-full sm:w-40">
-              <SelectValue placeholder="Category" />
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder={language === "mr" ? "ब्रँड" : "Brand"} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Categories</SelectItem>
-              {categories.map((cat) => (
-                <SelectItem key={cat.id} value={cat.id!.toString()}>
-                  {cat.name}
-                </SelectItem>
+              <SelectItem value="all">{language === "mr" ? "सर्व ब्रँड" : "All brands"}</SelectItem>
+              {brandOptions.map((brand) => (
+                <SelectItem key={brand.value} value={brand.value}>{brand.label}</SelectItem>
               ))}
             </SelectContent>
           </Select>
 
-          {/* Expiry Status Filter */}
           <Select
-            value={selectedExpiryStatus || 'all'}
-            onValueChange={(value) => setSelectedExpiryStatus(value === 'all' ? null : value)}
+            value={selectedExpiryStatus || "all"}
+            onValueChange={(value) =>
+              setSelectedExpiryStatus(value === "all" ? null : value)
+            }
           >
-            <SelectTrigger className="w-full sm:w-40">
-              <SelectValue placeholder="Expiry Status" />
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder={language === "mr" ? "कालबाह्यता" : "Expiry"} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All</SelectItem>
-              <SelectItem value="expired">Expired</SelectItem>
-              <SelectItem value="expiring">Near Expiry</SelectItem>
-              <SelectItem value="notExpiring">Not Expiring Soon</SelectItem>
-              <SelectItem value="hasExpiry">Has Expiry Date</SelectItem>
-              <SelectItem value="noExpiry">No Expiry Date</SelectItem>
+              <SelectItem value="all">{language === "mr" ? "सर्व कालबाह्यता" : "All expiry"}</SelectItem>
+              <SelectItem value="expired">{language === "mr" ? "कालबाह्य" : "Expired"}</SelectItem>
+              <SelectItem value="expiring">{language === "mr" ? "लवकर कालबाह्य" : "Near expiry"}</SelectItem>
+              <SelectItem value="notExpiring">{language === "mr" ? "लवकर कालबाह्य नाही" : "Not expiring soon"}</SelectItem>
+              <SelectItem value="hasExpiry">{language === "mr" ? "कालबाह्यता तारीख आहे" : "Has expiry date"}</SelectItem>
+              <SelectItem value="noExpiry">{language === "mr" ? "कालबाह्यता तारीख नाही" : "No expiry date"}</SelectItem>
             </SelectContent>
           </Select>
 
-          {/* Stock Status Filter */}
           <Select
-            value={selectedStockStatus || 'all'}
-            onValueChange={(value) => setSelectedStockStatus(value === 'all' ? null : value)}
+            value={selectedStockStatus || "all"}
+            onValueChange={(value) =>
+              setSelectedStockStatus(value === "all" ? null : value)
+            }
           >
-            <SelectTrigger className="w-full sm:w-40">
-              <SelectValue placeholder="Stock Status" />
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder={language === "mr" ? "स्टॉक स्थिती" : "Stock status"} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All</SelectItem>
-              <SelectItem value="lowStock">Low Stock</SelectItem>
-              <SelectItem value="outOfStock">Out of Stock</SelectItem>
-              <SelectItem value="inStock">In Stock</SelectItem>
+              <SelectItem value="all">{language === "mr" ? "सर्व स्टॉक" : "All stock"}</SelectItem>
+              <SelectItem value="lowStock">{language === "mr" ? "कमी स्टॉक" : "Low stock"}</SelectItem>
+              <SelectItem value="outOfStock">{language === "mr" ? "स्टॉक संपला" : "Out of stock"}</SelectItem>
+              <SelectItem value="inStock">{language === "mr" ? "स्टॉक उपलब्ध" : "In stock"}</SelectItem>
             </SelectContent>
           </Select>
 
-          {/* Sort By */}
-          <Select
-            value={sortBy}
-            onValueChange={(value) => setSortBy(value)}
-          >
-            <SelectTrigger className="w-full sm:w-44">
+          <Select value={sortBy} onValueChange={(value) => setSortBy(value)}>
+            <SelectTrigger className="w-full">
               <SelectValue placeholder="Sort By" />
             </SelectTrigger>
             <SelectContent>
@@ -785,15 +1980,73 @@ export function ItemsManagement() {
               <SelectItem value="qty-asc">Quantity (Low → High)</SelectItem>
               <SelectItem value="qty-desc">Quantity (High → Low)</SelectItem>
               <SelectItem value="expiry-asc">Expiry (Soonest First)</SelectItem>
-              <SelectItem value="margin-desc">Profit Margin (High → Low)</SelectItem>
+              <SelectItem value="margin-desc">
+                Profit Margin (High → Low)
+              </SelectItem>
             </SelectContent>
           </Select>
+
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={clearFilters}
+            className="col-span-2 w-full"
+            disabled={
+              selectedCategoryId === null &&
+              selectedBrand === null &&
+              selectedExpiryStatus === null &&
+              selectedStockStatus === null &&
+              !reorderMode &&
+              sortBy === "name-asc"
+            }
+          >
+            Clear filters
+          </Button>
         </div>
+
+        {(selectedCategoryId ||
+          selectedBrand ||
+          selectedExpiryStatus ||
+          selectedStockStatus ||
+          reorderMode ||
+          sortBy !== "name-asc") && (
+          <div className="hidden">
+            {selectedCategoryId !== null && (
+              <span className="rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-sm text-slate-700">
+                Category: {getCategoryName(selectedCategoryId)}
+              </span>
+            )}
+            {selectedExpiryStatus && (
+              <span className="rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-sm text-slate-700">
+                Expiry: {selectedExpiryStatus.replace(/([A-Z])/g, " $1")}
+              </span>
+            )}
+            {selectedStockStatus && (
+              <span className="rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-sm text-slate-700">
+                Stock:{" "}
+                {selectedStockStatus === "lowStock"
+                  ? "Low"
+                  : selectedStockStatus === "outOfStock"
+                    ? "Out"
+                    : "In"}
+              </span>
+            )}
+            {sortBy !== "name-asc" && (
+              <span className="rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-sm text-slate-700">
+                Sort:{" "}
+                {sortBy
+                  .replace(/-/g, " ")
+                  .replace(/\b\w/g, (c) => c.toUpperCase())}
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Batch Operations Toolbar */}
       {selectedItems.size > 0 && (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-center justify-between">
+        <div className="hidden">
           <div className="flex items-center gap-2">
             <input
               type="checkbox"
@@ -801,21 +2054,17 @@ export function ItemsManagement() {
               onChange={toggleSelectAll}
               className="w-4 h-4 cursor-pointer"
             />
-            <span className="font-semibold text-sm">{selectedItems.size} item(s) selected</span>
+            <span className="font-semibold text-sm">
+              {selectedItems.size} item(s) selected
+            </span>
           </div>
           <div className="flex gap-2">
-            <Button
-              onClick={toggleSelectAll}
-              variant="outline"
-              size="sm"
-            >
-              {selectedItems.size === filteredItems.length ? 'Deselect All' : 'Select All'}
+            <Button onClick={toggleSelectAll} variant="outline" size="sm">
+              {selectedItems.size === filteredItems.length
+                ? "Deselect All"
+                : "Select All"}
             </Button>
-            <Button
-              onClick={handleBatchDelete}
-              variant="destructive"
-              size="sm"
-            >
+            <Button onClick={handleBatchDelete} variant="destructive" size="sm">
               Delete Selected
             </Button>
           </div>
@@ -825,171 +2074,415 @@ export function ItemsManagement() {
       {filteredItems.length === 0 ? (
         <Card className="border-dashed">
           <CardContent className="pt-8 pb-8 text-center">
-            <p className="text-muted-foreground">{searchTerm ? 'No items found' : 'No items added yet'}</p>
+            <p className="text-muted-foreground">
+              {language === "mr" ? "कोणतीही वस्तू मिळाली नाही" : "No items found"}
+            </p>
           </CardContent>
         </Card>
       ) : (
         <div className="grid grid-cols-1 gap-3">
-          {filteredItems.map((item) => {
-            const itemPriceTiers = priceTiers.filter(tier => tier.itemId === item.id);
+          {renderList.map((entry, listIndex) => {
+            if (entry.kind === "groupHeader") {
+              const isCollapsed = collapsedGroups.has(entry.key);
+              return (
+                <div
+                  key={`gh-${entry.key}-${listIndex}`}
+                  className="group flex items-center justify-between gap-3 rounded-2xl border border-indigo-200/80 bg-gradient-to-r from-indigo-50 via-white to-indigo-50/70 p-3 text-left shadow-[0_4px_14px_rgba(79,70,229,0.08)] transition-all duration-200 hover:-translate-y-0.5 hover:border-indigo-300 hover:shadow-[0_10px_22px_rgba(79,70,229,0.13)]"
+                >
+                  <button
+                    type="button"
+                    onClick={() => toggleGroup(entry.key)}
+                    className="min-w-0 flex flex-1 items-center gap-3 rounded-xl text-left transition-transform duration-150 active:scale-[0.99]"
+                  >
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-100 text-indigo-700 shadow-inner transition-transform duration-200 group-hover:scale-105">
+                      {isCollapsed ? (
+                        <ChevronRight className="h-5 w-5" />
+                      ) : (
+                        <ChevronDown className="h-5 w-5" />
+                      )}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-bold text-indigo-900">
+                        {entry.brand}
+                      </p>
+                      <p className="truncate text-xs font-medium text-indigo-700">
+                        {entry.count} {language === "mr" ? "वस्तू" : "products"} · {language === "mr" ? "स्टॉक" : "Stock"} ₹{formatMoney(entry.totalStockValue)}
+                      </p>
+                    </div>
+                  </button>
+                  {entry.reorderCount > 0 && (
+                    <div className="flex shrink-0 flex-col items-end gap-1.5">
+                      <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-bold text-amber-800">
+                        {entry.reorderCount} {language === "mr" ? "पुन्हा मागवायच्या" : "to reorder"}
+                      </span>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-7 border-indigo-200 bg-white px-2 text-[11px] text-indigo-800 hover:bg-indigo-100"
+                        onClick={() => copyReorderList(entry.brand, entry.reorderLines)}
+                      >
+                        {language === "mr" ? "यादी कॉपी" : "Copy list"}
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              );
+            }
+            if (entry.groupKey && collapsedGroups.has(entry.groupKey)) {
+              return null;
+            }
+            const item = entry.item;
+            const displayedQuantity = optimisticQuantities.get(item.id || 0) ?? item.quantity;
+            const itemPriceTiers = priceTiersByItemId.get(item.id || 0) || [];
             const isSelected = selectedItems.has(item.id || 0);
             const todayStart = new Date();
             todayStart.setHours(0, 0, 0, 0);
-            const expiryObj = item.expiryDate ? new Date(item.expiryDate) : null;
+            const expiryObj = item.expiryDate
+              ? new Date(item.expiryDate)
+              : null;
             const expiryStart = expiryObj ? new Date(expiryObj) : null;
             if (expiryStart) expiryStart.setHours(0, 0, 0, 0);
             const expiryStatus =
               expiryStart && expiryStart.getTime() < todayStart.getTime()
-                ? 'expired'
-                : expiryStart && expiryStart.getTime() <= todayStart.getTime() + 7 * 24 * 60 * 60 * 1000
-                ? 'expiring'
-                : null;
-            
-            // Calculate days left
-            let daysLeftText = '';
+                ? "expired"
+                : expiryStart &&
+                    expiryStart.getTime() <=
+                      todayStart.getTime() + 7 * 24 * 60 * 60 * 1000
+                  ? "expiring"
+                  : null;
+            const primaryItemName =
+              language === "mr"
+                ? item.nameMarathi || item.name
+                : item.name || item.nameMarathi;
+            const secondaryItemName =
+              language === "mr" ? item.name : item.nameMarathi;
+            const showSecondaryItemName =
+              Boolean(secondaryItemName) &&
+              secondaryItemName !== primaryItemName;
+            const primaryBrandName =
+              language === "mr"
+                ? item.brandMarathi || item.brand
+                : item.brand || item.brandMarathi;
+            const secondaryBrandName =
+              language === "mr" ? item.brand : item.brandMarathi;
+            const showSecondaryBrandName =
+              Boolean(secondaryBrandName) &&
+              secondaryBrandName !== primaryBrandName;
+            const itemUnitName = getUnitName(item.unitId);
+            const itemStockValue =
+              Number(item.quantity || 0) * Number(item.buyPrice || 0);
+            const isLowStock = item.quantity <= item.lowStockLimit;
+            const stockUrgencyText =
+              item.quantity <= 0
+                ? language === "mr"
+                  ? "स्टॉक संपला"
+                  : "Out of stock"
+                : language === "mr"
+                  ? `फक्त ${formatWholeNumber(item.quantity)} ${itemUnitName} बाकी`
+                  : `Only ${formatWholeNumber(item.quantity)} ${itemUnitName} left`;
+            const expiryUrgencyText =
+              expiryStatus === "expired"
+                ? language === "mr"
+                  ? `₹${formatMoney(itemStockValue)} चा माल एक्सपायर झाला`
+                  : `₹${formatMoney(itemStockValue)} stock expired`
+                : expiryStatus === "expiring"
+                  ? language === "mr"
+                    ? `₹${formatMoney(itemStockValue)} चा माल एक्सपायर होण्याच्या मार्गावर आहे`
+                    : `₹${formatMoney(itemStockValue)} stock near expiry`
+                  : "";
+
+            let expiryPeriodText = "";
             if (expiryStart && expiryStatus) {
-              if (expiryStatus === 'expired') {
-                const daysAgo = Math.floor((todayStart.getTime() - expiryStart.getTime()) / (1000 * 60 * 60 * 24));
-                daysLeftText = ` (${daysAgo} day${daysAgo !== 1 ? 's' : ''} ago)`;
-              } else if (expiryStatus === 'expiring') {
-                const daysLeft = Math.ceil((expiryStart.getTime() - todayStart.getTime()) / (1000 * 60 * 60 * 24));
-                daysLeftText = ` (${daysLeft} day${daysLeft !== 1 ? 's' : ''} left)`;
+              if (expiryStatus === "expired") {
+                const daysAgo = Math.floor(
+                  (todayStart.getTime() - expiryStart.getTime()) /
+                    (1000 * 60 * 60 * 24),
+                );
+                expiryPeriodText = language === "mr"
+                  ? `${formatWholeNumber(daysAgo)} दिवसांपूर्वी कालबाह्य`
+                  : `Expired ${daysAgo} day${daysAgo !== 1 ? "s" : ""} ago`;
+              } else if (expiryStatus === "expiring") {
+                const daysLeft = Math.ceil(
+                  (expiryStart.getTime() - todayStart.getTime()) /
+                    (1000 * 60 * 60 * 24),
+                );
+                expiryPeriodText = language === "mr"
+                  ? `${formatWholeNumber(daysLeft)} दिवसांत कालबाह्य`
+                  : `${daysLeft} day${daysLeft !== 1 ? "s" : ""} to expire`;
               }
             }
-            
+            const lastStockUpdate = item.updatedAt
+              ? new Date(item.updatedAt).toLocaleString(language === "mr" ? "mr-IN" : "en-IN", {
+                  day: "numeric",
+                  month: "short",
+                  hour: "numeric",
+                  minute: "2-digit",
+                })
+              : null;
+
             return (
-              <div key={item.id} className={`flex gap-2 items-start ${isSelected ? 'opacity-75' : ''}`}>
+              <div
+                key={item.id}
+                className={`flex gap-2 items-start ${isSelected ? "opacity-75" : ""}`}
+              >
                 <input
                   type="checkbox"
                   checked={isSelected}
                   onChange={() => toggleItemSelection(item.id)}
                   className="w-4 h-4 cursor-pointer mt-4"
                 />
-                <Card className={`flex-1 overflow-hidden ${isSelected ? 'border-blue-300 bg-blue-50' : ''}`}>
-                <CardContent className="p-4">
-                  <div className="space-y-2">
-                    {/* Item Name and Category */}
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <h3 className="font-bold text-base">
-                          {language === 'mr' 
-                            ? (item.nameMarathi || item.name) 
-                            : (item.name || item.nameMarathi)}
-                        </h3>
-                        {(item.brand || item.brandMarathi) && (
-                          <p className="text-xs text-gray-500">
-                            {language === 'mr' 
-                              ? (item.brandMarathi || item.brand) 
-                              : (item.brand || item.brandMarathi)}
+                <Card
+                  id={`stock-item-${item.id}`}
+                  className={`group flex-1 overflow-hidden rounded-2xl border-slate-200/80 bg-gradient-to-br from-card via-card to-slate-50/70 shadow-[0_2px_10px_rgba(15,23,42,0.035)] transition-[transform,box-shadow,border-color,background-color] duration-200 ease-out will-change-transform hover:-translate-y-0.5 hover:border-indigo-200 hover:shadow-[0_12px_26px_rgba(79,70,229,0.10)] active:translate-y-0 [content-visibility:auto] [contain-intrinsic-size:auto_230px] ${
+                    isSelected ? "border-blue-300 bg-blue-50 shadow-[0_10px_24px_rgba(37,99,235,0.12)]" : ""
+                  } ${
+                    focusedItemId === item.id
+                      ? "ring-4 ring-orange-300 border-orange-400 bg-orange-50 shadow-[0_12px_28px_rgba(249,115,22,0.16)]"
+                    : ""
+                  }`}
+                >
+                  <CardContent className="p-4 sm:p-4.5">
+                    <div className="space-y-2.5">
+                      {/* Item Name and Category */}
+                      <div className="flex items-start justify-between">
+                        <div className="min-w-0 flex-1">
+                          <h3 className="text-[15px] font-semibold leading-6 tracking-tight text-slate-900">
+                            {primaryItemName}
+                          </h3>
+                          {showSecondaryItemName && (
+                            <p className="text-sm leading-5 text-muted-foreground">
+                              {secondaryItemName}
+                            </p>
+                          )}
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            <span className="rounded-full border border-slate-200 bg-slate-100/80 px-2 py-0.5 text-xs font-medium tracking-normal text-slate-700">
+                              {getCategoryName(item.categoryId)}
+                            </span>
+                            {primaryBrandName && (
+                              <span className="rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">
+                                {primaryBrandName}
+                              </span>
+                            )}
+                            {item.quantity === 0 ? (
+                              <span className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700 shadow-sm">
+                                {language === "mr" ? "स्टॉक संपला" : "Out of stock"}
+                              </span>
+                            ) : isLowStock ? (
+                              <span className="rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-xs font-medium text-orange-700 shadow-sm">
+                                {language === "mr" ? "कमी स्टॉक" : "Low stock"}
+                              </span>
+                            ) : (
+                              <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 shadow-sm">
+                                {language === "mr" ? "स्टॉक उपलब्ध" : "In stock"}
+                              </span>
+                            )}
+                          </div>
+                          {expiryStart && (
+                            <p
+                              className={
+                                expiryStatus === "expired"
+                                  ? "text-xs font-semibold text-red-600"
+                                  : expiryStatus === "expiring"
+                                    ? "text-xs font-semibold text-orange-600"
+                                    : "text-xs text-muted-foreground"
+                              }
+                            >
+                              {language === "mr" ? "कालबाह्यता:" : "Expiry:"}{" "}
+                              {expiryStart.toLocaleDateString(
+                                language === "mr" ? "mr-IN" : "en-IN",
+                              )}
+                              {expiryPeriodText && ` · ${expiryPeriodText}`}
+                            </p>
+                          )}
+                          {expiryUrgencyText && (
+                            <p
+                              className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-xs font-bold ${
+                                expiryStatus === "expired"
+                                  ? "bg-red-100 text-red-700"
+                                  : "bg-orange-100 text-orange-700"
+                              }`}
+                            >
+                              ⚠️ {expiryUrgencyText}
+                            </p>
+                          )}
+                          {lastStockUpdate && (
+                            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                              {language === "mr" ? "शेवटचा स्टॉक बदल:" : "Last stock update:"} {lastStockUpdate}
+                            </p>
+                          )}
+                        </div>
+                        <div className="text-right">
+                          <p className="rounded-lg bg-indigo-50 px-2 py-1 text-base font-semibold tabular-nums text-indigo-700">
+                            <span className="inline-block animate-in zoom-in-95 duration-150">{formatWholeNumber(displayedQuantity)}</span> {itemUnitName}
                           </p>
-                        )}
-                        <p className="text-xs text-muted-foreground">{getCategoryName(item.categoryId)}</p>
-                        {expiryStart && (
-                          <p
-                            className={
-                              expiryStatus === 'expired'
-                                ? 'text-xs font-semibold text-red-600'
-                                : expiryStatus === 'expiring'
-                                ? 'text-xs font-semibold text-orange-600'
-                                : 'text-xs text-muted-foreground'
-                            }
-                          >
-                            Expiry: {expiryStart.toLocaleDateString(language === 'mr' ? 'mr-IN' : 'en-IN')}
-                            {expiryStatus === 'expired' ? ' (Expired)' : expiryStatus === 'expiring' ? ' (Near Expiry)' : ''}
-                            {daysLeftText}
-                          </p>
-                        )}
-                      </div>
-                      <div className="text-right">
-                        <p className="text-sm font-semibold text-blue-600">{formatWholeNumber(item.quantity)} {getUnitName(item.unitId)}</p>
-                        {item.quantity <= item.lowStockLimit && (
-                          <p className="text-xs font-semibold text-orange-600">{t('low_stock_alert')}</p>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Default Prices */}
-                    <div className="grid grid-cols-3 gap-2 text-xs">
-                      <div>
-                        <span className="text-muted-foreground">{t('buy')}:</span>
-                        <p className="font-semibold">Rs. {formatMoney(item.buyPrice)}</p>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">{t('sell')}:</span>
-                        <p className="font-semibold">Rs. {formatMoney(item.sellPrice)}</p>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">{t('margin')}:</span>
-                        <p className="font-semibold text-green-600">{formatPercent(calculateMargin(item.buyPrice, item.sellPrice))}%</p>
-                      </div>
-                    </div>
-
-                    {/* Price Tiers */}
-                    {itemPriceTiers.length > 0 && (
-                      <div className="pt-2 border-t">
-                        <p className="text-xs font-semibold text-muted-foreground mb-2">{t('price_variants')}</p>
-                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                          {itemPriceTiers.map((tier) => (
-                            <div key={tier.id} className="bg-amber-50 p-2 rounded border border-amber-200">
-                              <p className="text-xs font-semibold text-amber-900">
-                                {formatWholeNumber(tier.quantity)}{getUnitName(tier.unitId)}
-                              </p>
-                              <p className="text-xs text-amber-700">Rs. {formatMoney(tier.price || 0)}</p>
-                            </div>
-                          ))}
+                          <div className="mt-1 flex items-center justify-end gap-1">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="icon"
+                              className="h-8 w-8 rounded-xl border-slate-200 bg-white shadow-sm transition-all duration-150 hover:-translate-y-px hover:border-slate-300 hover:bg-slate-50 hover:shadow active:scale-90"
+                              aria-label={language === "mr" ? "एक प्रमाण कमी करा" : "Decrease stock by one"}
+                              disabled={displayedQuantity <= 0}
+                              onClick={() => adjustStockQuickly(item, -1)}
+                            >
+                              <Minus className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="icon"
+                              className="h-8 w-8 rounded-xl border-primary/25 bg-primary text-primary-foreground shadow-[0_3px_8px_rgba(79,70,229,0.25)] transition-all duration-150 hover:-translate-y-px hover:bg-primary/90 hover:shadow-[0_6px_14px_rgba(79,70,229,0.30)] active:scale-90"
+                              aria-label={language === "mr" ? "एक प्रमाण जोडा" : "Add one to stock"}
+                              onClick={() => adjustStockQuickly(item, 1)}
+                            >
+                              <Plus className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                          {isLowStock && (
+                            <p
+                              className={`mt-1 text-xs font-semibold leading-5 ${
+                                item.quantity <= 0
+                                  ? "text-red-600"
+                                  : "text-orange-600"
+                              }`}
+                            >
+                              ⚠️ {stockUrgencyText}
+                            </p>
+                          )}
                         </div>
                       </div>
-                    )}
 
-                    {/* Stock Value */}
-                    <div className="pt-2 border-t">
-                      <p className="text-xs text-muted-foreground">
-                        {t('total_value_label')}: <span className="font-semibold text-foreground">Rs. {formatMoney(item.quantity * item.buyPrice)}</span>
-                      </p>
-                    </div>
+                      {/* Default Prices */}
+                      <div className="grid grid-cols-3 gap-2 rounded-xl border border-slate-100 bg-slate-50/70 p-2.5 text-xs">
+                        <div className="min-w-0">
+                          <span className="text-muted-foreground">
+                            {t("buy")}:
+                          </span>
+                          <p className="font-semibold">
+                            Rs. {formatMoney(item.buyPrice)}
+                          </p>
+                        </div>
+                        <div className="min-w-0 border-x border-slate-200 px-2">
+                          <span className="text-muted-foreground">
+                            {t("sell")}:
+                          </span>
+                          <p className="font-semibold">
+                            Rs. {formatMoney(item.sellPrice)}
+                          </p>
+                        </div>
+                        <div className="min-w-0 pl-1">
+                          <span className="text-muted-foreground">
+                            {t("margin")}:
+                          </span>
+                          <p className="font-semibold text-green-600">
+                            {formatPercent(
+                              calculateMargin(item.buyPrice, item.sellPrice),
+                            )}
+                            %
+                          </p>
+                        </div>
+                      </div>
 
-                    {/* Action Buttons */}
-                    <div className="flex gap-2 pt-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleOpenDialog(item)}
-                        className="flex-1 gap-1 h-8"
-                      >
-                        <Edit2 className="w-3 h-3" />
-                        {t('edit')}
-                      </Button>
-                      <AlertDialog>
-                        <AlertDialog open={deleteId === item.id} onOpenChange={(open) => {
-                          if (!open) setDeleteId(null);
-                        }}>
-                          <Button
-                            variant="destructive"
-                            size="sm"
-                            onClick={() => setDeleteId(item.id || null)}
-                            className="flex-1 gap-1 h-8"
-                          >
-                            <Trash2 className="w-3 h-3" />
-                            {t('delete')}
-                          </Button>
+                      {/* Price Tiers */}
+                      {itemPriceTiers.length > 0 && (
+                        <div className="pt-2 border-t">
+                          <p className="text-xs font-semibold text-muted-foreground mb-2">
+                            {t("price_variants")}
+                          </p>
+                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                            {itemPriceTiers.map((tier) => (
+                              <div
+                                key={tier.id}
+                                className="bg-amber-50 p-2 rounded border border-amber-200"
+                              >
+                                <p className="text-xs font-semibold text-amber-900">
+                                  {formatWholeNumber(tier.quantity)}
+                                  {getUnitName(tier.unitId)}
+                                </p>
+                                <p className="text-xs text-amber-700">
+                                  Rs. {formatMoney(tier.price || 0)}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Stock Value */}
+                      <div className="pt-2 border-t">
+                        <p className="text-xs text-muted-foreground">
+                          {t("total_value_label")}:{" "}
+                          <span className="font-semibold text-foreground">
+                            Rs. {formatMoney(item.quantity * item.buyPrice)}
+                          </span>
+                        </p>
+                      </div>
+
+                      {/* Action Buttons */}
+                      <div className="flex gap-2 border-t border-slate-100 pt-3">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleOpenDialog(item)}
+                          className="h-9 flex-1 gap-1 rounded-xl border-slate-200 bg-white text-xs shadow-sm transition-all duration-150 hover:-translate-y-px hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700 hover:shadow active:scale-[0.97]"
+                        >
+                          <Edit2 className="w-3 h-3" />
+                          {t("edit")}
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleCloneItem(item)}
+                          className="h-9 flex-1 gap-1 rounded-xl border-indigo-200 bg-indigo-50/50 text-xs text-indigo-700 shadow-sm transition-all duration-150 hover:-translate-y-px hover:bg-indigo-100 hover:text-indigo-800 hover:shadow active:scale-[0.97]"
+                        >
+                          <Copy className="w-3 h-3" />
+                          {language === "mr" ? "प्रत" : "Clone"}
+                        </Button>
+                        <AlertDialog
+                          open={deleteId === item.id}
+                          onOpenChange={(open) => {
+                            if (!open) setDeleteId(null);
+                          }}
+                        >
+                          <AlertDialogTrigger asChild>
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              onClick={() => setDeleteId(item.id || null)}
+                              className="h-9 flex-1 gap-1 rounded-xl text-xs shadow-sm transition-all duration-150 hover:-translate-y-px hover:shadow active:scale-[0.97]"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                              {t("delete")}
+                            </Button>
+                          </AlertDialogTrigger>
                           <AlertDialogContent>
                             <AlertDialogHeader>
-                              <AlertDialogTitle>{t('confirm_delete')}</AlertDialogTitle>
+                              <AlertDialogTitle>
+                                {t("confirm_delete")}
+                              </AlertDialogTitle>
                               <AlertDialogDescription>
-                                Are you sure you want to delete &quot;{language === 'mr' && item.nameMarathi ? item.nameMarathi : item.name}&quot;? This action cannot be undone.
+                                Are you sure you want to delete &quot;
+                                {language === "mr" && item.nameMarathi
+                                  ? item.nameMarathi
+                                  : item.name}
+                                &quot;? This action cannot be undone.
                               </AlertDialogDescription>
                             </AlertDialogHeader>
-                            <div className="flex gap-2">
-                              <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
-                              <AlertDialogAction onClick={handleDelete}>{t('delete')}</AlertDialogAction>
-                            </div>
+                            <AlertDialogFooter className="gap-2">
+                              <AlertDialogCancel>
+                                {t("cancel")}
+                              </AlertDialogCancel>
+                              <AlertDialogAction onClick={handleDelete}>
+                                {t("delete")}
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
                           </AlertDialogContent>
                         </AlertDialog>
-                      </AlertDialog>
+                      </div>
                     </div>
-                  </div>
-                </CardContent>
-              </Card>
+                  </CardContent>
+                </Card>
               </div>
             );
           })}

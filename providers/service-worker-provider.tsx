@@ -8,16 +8,8 @@ export function ServiceWorkerProvider({ children }: { children: React.ReactNode 
       return;
     }
 
-    if (process.env.NODE_ENV !== 'production') {
-      navigator.serviceWorker.getRegistrations().then((registrations) => {
-        registrations.forEach((registration) => registration.unregister());
-      }).catch((error) => {
-        console.warn('[Dukan] Failed to unregister development service worker:', error);
-      });
-      return;
-    }
-
-    navigator.serviceWorker.register('/sw.js').then(
+    const workerUrl = process.env.NODE_ENV === 'production' ? '/sw.js' : '/sw.js?dev=1';
+    navigator.serviceWorker.register(workerUrl, { updateViaCache: 'none' }).then(
       (registration) => {
         console.log('[Dukan] Service Worker registered:', registration);
       },

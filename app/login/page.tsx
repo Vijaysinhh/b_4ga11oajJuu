@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { useAuth } from '@/providers/auth-provider';
+import { getUserLandingPath, useAuth } from '@/providers/auth-provider';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Lock, User, Store } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
@@ -28,7 +28,7 @@ export default function LoginPage() {
           if (parsedUser.role === 'super_admin') {
             redirectPath = '/super-admin';
           } else if (parsedUser.role === 'worker') {
-            redirectPath = '/sales';
+            redirectPath = getUserLandingPath(parsedUser);
           }
         } catch (e) {
           console.error('Failed to parse user:', e);
@@ -59,7 +59,7 @@ export default function LoginPage() {
             if (parsedUser.role === 'super_admin') {
               router.push('/super-admin');
             } else if (parsedUser.role === 'worker') {
-              router.push('/sales');
+              router.push(getUserLandingPath(parsedUser));
             } else {
               router.push('/dashboard');
             }
@@ -91,14 +91,14 @@ export default function LoginPage() {
           <div className="space-y-4">
             <form onSubmit={handleLogin} className="space-y-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium">Mobile Number / Email</label>
+                <label className="text-sm font-medium">Username or Mobile Number</label>
                 <div className="relative">
                   <User className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
                   <input
                     type="text"
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
-                    placeholder="Enter mobile number or email"
+                    placeholder="Enter username or mobile number"
                     className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
                   />
                 </div>

@@ -11,7 +11,9 @@ export function useVoiceSearch(options: UseVoiceSearchOptions = {}) {
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [isSupported, setIsSupported] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const recognitionRef = useRef<any>(null);
+  const shouldKeepListeningRef = useRef(false);
 
   useEffect(() => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -20,13 +22,14 @@ export function useVoiceSearch(options: UseVoiceSearchOptions = {}) {
     if (!SpeechRecognition) return;
 
     const recognition = new SpeechRecognition();
-    recognition.continuous = false;
+    recognition.continuous = true;
     recognition.interimResults = true;
     recognition.lang = language;
 
     recognition.onstart = () => {
       setIsListening(true);
       setTranscript('');
+      setError(null);
     };
 
     recognition.onresult = (event: any) => {
@@ -42,29 +45,53 @@ export function useVoiceSearch(options: UseVoiceSearchOptions = {}) {
     };
 
     recognition.onerror = (event: any) => {
-      console.error('[Dukan] Speech recognition error:', event.error);
+      const messages: Record<string, string> = {
+        'not-allowed': 'Microphone permission is blocked.',
+        'audio-capture': 'No microphone was found.',
+        network: 'Voice service is unavailable. Please type your question or try again later.',
+      };
+      if (event.error === 'aborted' || event.error === 'no-speech') return;
+      shouldKeepListeningRef.current = false;
+      setIsListening(false);
+      setError(messages[event.error] || 'Voice input stopped. Please try again.');
     };
 
     recognition.onend = () => {
-      setIsListening(false);
+      if (shouldKeepListeningRef.current) {
+        try {
+          recognition.start();
+        } catch {
+          setIsListening(false);
+        }
+      } else {
+        setIsListening(false);
+      }
     };
 
     recognitionRef.current = recognition;
 
     return () => {
+      shouldKeepListeningRef.current = false;
       recognition.abort();
     };
   }, [language]);
 
   const startListening = () => {
     if (recognitionRef.current) {
+      shouldKeepListeningRef.current = true;
       setTranscript('');
-      recognitionRef.current.start();
+      setError(null);
+      try {
+        recognitionRef.current.start();
+      } catch {
+        setIsListening(true);
+      }
     }
   };
 
   const stopListening = () => {
     if (recognitionRef.current) {
+      shouldKeepListeningRef.current = false;
       recognitionRef.current.stop();
     }
   };
@@ -76,6 +103,7 @@ export function useVoiceSearch(options: UseVoiceSearchOptions = {}) {
   return {
     isListening,
     transcript,
+    error,
     isSupported,
     startListening,
     stopListening,

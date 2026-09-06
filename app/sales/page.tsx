@@ -4,9 +4,16 @@ import { SalesTransaction } from "./components";
 import { HelpTooltip } from "@/components/help-tooltip";
 import { PageContainer, PageHeader } from "@/components/page-shell";
 import { useLanguage } from "@/providers/language-provider";
-import { useAuth } from "@/providers/auth-provider";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { useSales, useItems, useUnits, usePriceTiers, useUdhari } from "@/hooks/use-supabase";
+import { normalizeUserPermissions, useAuth } from "@/providers/auth-provider";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import {
+  useSales,
+  useItems,
+  useUnits,
+  usePriceTiers,
+  useUdhari,
+} from "@/hooks/use-supabase";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -22,7 +29,12 @@ import {
   Search,
 } from "lucide-react";
 import { dateKey } from "@/lib/utils";
-import { formatMoney, formatPercent, formatWholeNumber, cleanWholeNumberInput } from "@/lib/number-format";
+import {
+  formatMoney,
+  formatPercent,
+  formatWholeNumber,
+  cleanWholeNumberInput,
+} from "@/lib/number-format";
 import {
   formatSaleLineSubtitle,
   inferSaleLineDisplayFields,
@@ -54,21 +66,21 @@ import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 
 // Let's make a modified version of SalesTransaction that can edit an existing sale
-function EditSaleDialog({ 
-  sale, 
-  open, 
-  onClose 
-}: { 
-  sale: any; 
-  open: boolean; 
-  onClose: () => void; 
+function EditSaleDialog({
+  sale,
+  open,
+  onClose,
+}: {
+  sale: any;
+  open: boolean;
+  onClose: () => void;
 }) {
   const { currentShopId } = useAuth();
   const { updateSale, updateStockAfterSale } = useSales(currentShopId);
   const { customers, addCustomer, addCredit } = useUdhari(currentShopId);
   const { items: allItems } = useItems(currentShopId);
   const { t } = useLanguage();
-  
+
   // Initialize state from the existing sale
   const [items, setItems] = useState<any[]>([]);
   const [paymentMethod, setPaymentMethod] = useState<string>("cash");
@@ -102,12 +114,12 @@ function EditSaleDialog({
     totals.subtotal > 0 ? (totals.totalProfit / totals.subtotal) * 100 : 0;
 
   const handleItemAdded = (item: any) => {
-    setItems([...items, item]);
+    setItems((prev) => [...prev, item]);
     toast.success(`${item.itemName} ${t("success")}`);
   };
 
   const handleRemoveItem = (index: number) => {
-    setItems(items.filter((_, i) => i !== index));
+    setItems((prev) => prev.filter((_, i) => i !== index));
   };
 
   const handleEditItem = (index: number) => {
@@ -116,9 +128,11 @@ function EditSaleDialog({
 
   const handleItemEdited = (newItem: any) => {
     if (editingItemIndex === null) return;
-    const updatedItems = [...items];
-    updatedItems[editingItemIndex] = newItem;
-    setItems(updatedItems);
+    setItems((prev) => {
+      const updatedItems = [...prev];
+      updatedItems[editingItemIndex] = newItem;
+      return updatedItems;
+    });
     setEditingItemIndex(null);
   };
 
@@ -227,11 +241,15 @@ function EditSaleDialog({
                     Cancel Edit Item
                   </Button>
                 )}
-                <SalesItemSearch 
-                  onItemAdded={handleItemAdded} 
-                  addedItems={items} 
-                  itemToEdit={editingItemIndex !== null ? items[editingItemIndex] : undefined} 
-                  onItemEdited={handleItemEdited} 
+                <SalesItemSearch
+                  onItemAdded={handleItemAdded}
+                  addedItems={items}
+                  itemToEdit={
+                    editingItemIndex !== null
+                      ? items[editingItemIndex]
+                      : undefined
+                  }
+                  onItemEdited={handleItemEdited}
                 />
               </CardContent>
             </Card>
@@ -254,7 +272,9 @@ function EditSaleDialog({
                     {items.map((item, index) => {
                       const profit = item.totalPrice - item.totalCost;
                       const marginPct =
-                        item.totalPrice > 0 ? (profit / item.totalPrice) * 100 : 0;
+                        item.totalPrice > 0
+                          ? (profit / item.totalPrice) * 100
+                          : 0;
                       return (
                         <div
                           key={`${item.itemId}-${index}`}
@@ -281,8 +301,8 @@ function EditSaleDialog({
                                   profit > 0 ? "text-green-700" : "text-red-700"
                                 }
                               >
-                                {t("profit_amount")}: Rs. {formatMoney(profit)} (
-                                {formatPercent(marginPct)}%)
+                                {t("profit_amount")}: Rs. {formatMoney(profit)}{" "}
+                                ({formatPercent(marginPct)}%)
                               </span>
                             </div>
                           </div>
@@ -361,7 +381,9 @@ function EditSaleDialog({
                         <SelectContent>
                           <SelectItem value="cash">{t("cash")}</SelectItem>
                           <SelectItem value="card">{t("card")}</SelectItem>
-                          <SelectItem value="partial">{t("partial")}</SelectItem>
+                          <SelectItem value="partial">
+                            {t("partial")}
+                          </SelectItem>
                           <SelectItem value="udhar">{t("udhar")}</SelectItem>
                         </SelectContent>
                       </Select>
@@ -375,7 +397,9 @@ function EditSaleDialog({
                           </label>
                           <Select
                             value={
-                              creditCustomerId ? creditCustomerId.toString() : "new"
+                              creditCustomerId
+                                ? creditCustomerId.toString()
+                                : "new"
                             }
                             onValueChange={(value) =>
                               setCreditCustomerId(
@@ -440,7 +464,11 @@ function EditSaleDialog({
                     )}
 
                     <div className="flex gap-2">
-                      <Button onClick={onClose} variant="outline" className="flex-1">
+                      <Button
+                        onClick={onClose}
+                        variant="outline"
+                        className="flex-1"
+                      >
                         Cancel
                       </Button>
                       <Button
@@ -496,10 +524,13 @@ function formatDateLabel(date: Date, lang: "en" | "mr") {
   });
 }
 
-export default function SalesPage() {
+function SalesPageContent() {
   const { t } = useLanguage();
   const { user, currentShopId } = useAuth();
-  const isWorker = user?.role === "worker";
+  const searchParams = useSearchParams();
+  const permissions = normalizeUserPermissions(user?.role, user?.permissions);
+  const canCreateSales = permissions.canCreateSales;
+  const canViewSales = permissions.canViewSales;
   const { sales, deleteSale } = useSales(currentShopId);
   const { items } = useItems(currentShopId);
   const { units } = useUnits(currentShopId);
@@ -509,16 +540,45 @@ export default function SalesPage() {
   // --- Date navigation state ---
   const [selectedDate, setSelectedDate] = useState(() => new Date());
   const [expandedSaleId, setExpandedSaleId] = useState<number | null>(null);
+  const [focusedSaleId, setFocusedSaleId] = useState<number | null>(null);
   const [editingSale, setEditingSale] = useState<any | null>(null);
   const [deleteSaleId, setDeleteSaleId] = useState<number | null>(null);
+  const focusSaleId = searchParams?.get("focusSaleId");
 
   // --- Search & Filter state ---
-  const [searchQuery, setSearchQuery] = useState('');
-  const [dateRangePreset, setDateRangePreset] = useState<'today' | 'yesterday' | 'last7' | 'custom'>('today');
-  const [customStartDate, setCustomStartDate] = useState<string>('');
-  const [customEndDate, setCustomEndDate] = useState<string>('');
-  const [paymentMethodFilter, setPaymentMethodFilter] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [dateRangePreset, setDateRangePreset] = useState<
+    "today" | "yesterday" | "last7" | "custom"
+  >("today");
+  const [customStartDate, setCustomStartDate] = useState<string>("");
+  const [customEndDate, setCustomEndDate] = useState<string>("");
+  const [paymentMethodFilter, setPaymentMethodFilter] = useState<string | null>(
+    null,
+  );
   const [customerFilter, setCustomerFilter] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!focusSaleId) return;
+    const id = Number(focusSaleId);
+    if (!Number.isFinite(id) || id <= 0) return;
+
+    setFocusedSaleId(id);
+    setExpandedSaleId(id);
+    setSearchQuery("");
+    setPaymentMethodFilter(null);
+    setCustomerFilter(null);
+
+    const sale = sales.find((item) => item.id === id);
+    if (!sale?.date) return;
+
+    const saleDate = new Date(`${sale.date}T00:00:00`);
+    if (!Number.isNaN(saleDate.getTime())) {
+      setSelectedDate(saleDate);
+      setDateRangePreset("custom");
+      setCustomStartDate(sale.date);
+      setCustomEndDate(sale.date);
+    }
+  }, [focusSaleId, sales]);
 
   const isToday = dateKey(selectedDate) === dateKey(new Date());
   const selectedDayKey = dateKey(selectedDate);
@@ -547,24 +607,28 @@ export default function SalesPage() {
 
     // --- Date range filter ---
     const today = new Date();
-    today.setHours(0,0,0,0);
+    today.setHours(0, 0, 0, 0);
     let minDate: Date | null = null;
     let maxDate: Date | null = null;
 
-    if (dateRangePreset === 'today') {
+    if (dateRangePreset === "today") {
       minDate = new Date(today);
       maxDate = new Date(today);
-    } else if (dateRangePreset === 'yesterday') {
+    } else if (dateRangePreset === "yesterday") {
       const yesterday = new Date(today);
       yesterday.setDate(yesterday.getDate() - 1);
       minDate = new Date(yesterday);
       maxDate = new Date(yesterday);
-    } else if (dateRangePreset === 'last7') {
+    } else if (dateRangePreset === "last7") {
       const last7 = new Date(today);
       last7.setDate(last7.getDate() - 6);
       minDate = last7;
       maxDate = new Date(today);
-    } else if (dateRangePreset === 'custom' && customStartDate && customEndDate) {
+    } else if (
+      dateRangePreset === "custom" &&
+      customStartDate &&
+      customEndDate
+    ) {
       minDate = new Date(customStartDate);
       maxDate = new Date(customEndDate);
     }
@@ -572,24 +636,35 @@ export default function SalesPage() {
     if (minDate && maxDate) {
       const minKey = dateKey(minDate);
       const maxKey = dateKey(maxDate);
-      filtered = filtered.filter(sale => sale.date >= minKey && sale.date <= maxKey);
-    } else if (dateRangePreset === 'today') {
-      filtered = filtered.filter(sale => sale.date === selectedDayKey);
+      filtered = filtered.filter(
+        (sale) => sale.date >= minKey && sale.date <= maxKey,
+      );
+    } else if (dateRangePreset === "today") {
+      filtered = filtered.filter((sale) => sale.date === selectedDayKey);
     }
 
     // --- Payment method filter ---
     if (paymentMethodFilter) {
-      filtered = filtered.filter(sale => sale.paymentMethod === paymentMethodFilter);
+      filtered = filtered.filter(
+        (sale) => sale.paymentMethod === paymentMethodFilter,
+      );
     }
 
     // --- Search filter ---
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
-      filtered = filtered.filter(sale => {
+      filtered = filtered.filter((sale) => {
         // Check customer name
-        if (sale.creditCustomerName && sale.creditCustomerName.toLowerCase().includes(q)) return true;
+        if (
+          sale.creditCustomerName &&
+          sale.creditCustomerName.toLowerCase().includes(q)
+        )
+          return true;
         // Check item names
-        const itemsMatch = sale.items?.some((item: any) => item.itemName.toLowerCase().includes(q)) || false;
+        const itemsMatch =
+          sale.items?.some((item: any) =>
+            item.itemName.toLowerCase().includes(q),
+          ) || false;
         if (itemsMatch) return true;
         // Check amount
         const amountStr = sale.subtotal.toString();
@@ -600,13 +675,13 @@ export default function SalesPage() {
 
     // --- Customer filter ---
     if (customerFilter) {
-      if (customerFilter === 'all') {
+      if (customerFilter === "all") {
         // no filter
-      } else if (customerFilter === 'udhari-only') {
-        filtered = filtered.filter(sale => sale.paymentMethod === 'udhar');
+      } else if (customerFilter === "udhari-only") {
+        filtered = filtered.filter((sale) => sale.paymentMethod === "udhar");
       } else {
-        filtered = filtered.filter(sale => 
-          sale.creditCustomerId === Number(customerFilter)
+        filtered = filtered.filter(
+          (sale) => sale.creditCustomerId === Number(customerFilter),
         );
       }
     }
@@ -621,7 +696,7 @@ export default function SalesPage() {
     paymentMethodFilter,
     customerFilter,
     searchQuery,
-    selectedDayKey
+    selectedDayKey,
   ]);
 
   const filteredSummary = useMemo(() => {
@@ -646,6 +721,25 @@ export default function SalesPage() {
       totalItems,
     };
   }, [filteredSales]);
+
+  useEffect(() => {
+    if (!focusedSaleId) return;
+    if (!filteredSales.some((sale) => sale.id === focusedSaleId)) return;
+
+    setExpandedSaleId(focusedSaleId);
+
+    const scrollTimer = window.setTimeout(() => {
+      document
+        .getElementById(`sale-${focusedSaleId}`)
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 150);
+    const clearTimer = window.setTimeout(() => setFocusedSaleId(null), 5000);
+
+    return () => {
+      window.clearTimeout(scrollTimer);
+      window.clearTimeout(clearTimer);
+    };
+  }, [filteredSales, focusedSaleId]);
 
   const goToPreviousDay = useCallback(() => {
     setSelectedDate((prev) => {
@@ -680,6 +774,17 @@ export default function SalesPage() {
     }
   };
 
+  if (!canCreateSales && !canViewSales) {
+    return (
+      <PageContainer size="wide">
+        <PageHeader
+          title="Access Denied"
+          description="You do not have permission to access sales."
+        />
+      </PageContainer>
+    );
+  }
+
   return (
     <PageContainer size="wide">
       <PageHeader
@@ -689,368 +794,400 @@ export default function SalesPage() {
       />
 
       <div className="space-y-6">
-        <SalesTransaction />
+        {canCreateSales && <SalesTransaction />}
 
-        {/* Search & Filters section */}
-        <section className="space-y-3">
-          <div className="flex gap-2 flex-wrap">
-            <div className="relative flex-1 min-w-[200px]">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                placeholder="Search sales, customers, items..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10"
-              />
-              {searchQuery && (
-                <button
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-3 top-1/2 -translate-y-1/2"
-                >
-                  <X className="w-4 h-4 text-muted-foreground" />
-                </button>
-              )}
-            </div>
-          </div>
-
-          <div className="flex gap-2 flex-wrap">
-            {/* Date Range */}
-            <Select
-              value={dateRangePreset}
-              onValueChange={(v: any) => setDateRangePreset(v)}
-            >
-              <SelectTrigger className="w-full sm:w-[180px]">
-                <SelectValue placeholder="Date Range" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="today">Today</SelectItem>
-                <SelectItem value="yesterday">Yesterday</SelectItem>
-                <SelectItem value="last7">Last 7 Days</SelectItem>
-                <SelectItem value="custom">Custom</SelectItem>
-              </SelectContent>
-            </Select>
-
-            {dateRangePreset === 'custom' && (
-              <div className="flex gap-2 flex-wrap">
-                <Input
-                  type="date"
-                  value={customStartDate}
-                  onChange={(e) => setCustomStartDate(e.target.value)}
-                  className="w-full sm:w-auto"
-                />
-                <span className="self-center text-muted-foreground">to</span>
-                <Input
-                  type="date"
-                  value={customEndDate}
-                  onChange={(e) => setCustomEndDate(e.target.value)}
-                  className="w-full sm:w-auto"
-                />
-              </div>
-            )}
-
-            {/* Payment Method */}
-            <Select
-              value={paymentMethodFilter || 'all'}
-              onValueChange={(v) => setPaymentMethodFilter(v === 'all' ? null : v)}
-            >
-              <SelectTrigger className="w-full sm:w-[160px]">
-                <SelectValue placeholder="Payment Method" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All</SelectItem>
-                <SelectItem value="cash">Cash</SelectItem>
-                <SelectItem value="card">Card</SelectItem>
-                <SelectItem value="partial">Partial</SelectItem>
-                <SelectItem value="udhar">Udhari</SelectItem>
-              </SelectContent>
-            </Select>
-
-            {/* Customer Filter */}
-            <Select
-              value={customerFilter || 'all'}
-              onValueChange={(v) => setCustomerFilter(v === 'all' ? null : v)}
-            >
-              <SelectTrigger className="w-full sm:w-[200px]">
-                <SelectValue placeholder="Customer" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Customers</SelectItem>
-                <SelectItem value="udhari-only">Udhari Only</SelectItem>
-                {customers.map((customer) => (
-                  <SelectItem key={customer.id} value={customer.id.toString()}>
-                    {customer.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </section>
-
-        {/* Recent sales section for everyone */}
-        <section className="space-y-3">
-            {/* Filtered summary bar */}
-            {filteredSales.length > 0 && (
-              <Card className="border-2 bg-gradient-to-r from-green-50 to-blue-50">
-                <CardContent className="py-3">
-                  <div className="grid grid-cols-4 gap-1 text-center text-xs">
-                    <div>
-                      <p className="text-muted-foreground">Revenue</p>
-                      <p className="text-sm font-bold">
-                        ₹{formatMoney(filteredSummary.revenue)}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground">Profit</p>
-                      <p className="text-sm font-bold text-green-700">
-                        ₹{formatMoney(filteredSummary.profit)}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground">Margin</p>
-                      <p className="text-sm font-bold">
-                        {formatPercent(filteredSummary.margin)}%
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground">Transactions</p>
-                      <p className="text-sm font-bold">
-                        {filteredSummary.transactions}
-                      </p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Empty state */}
-            {filteredSales.length === 0 && (
-              <Card className="border-2 border-dashed">
-                <CardContent className="py-10 text-center">
-                  <ShoppingBag className="mx-auto mb-3 h-10 w-10 text-muted-foreground/50" />
-                  <p className="font-medium text-muted-foreground">
-                    {searchQuery || paymentMethodFilter || customerFilter || dateRangePreset !== 'today' 
-                      ? "No sales found for selected filters" 
-                      : t("no_sales_day")}
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground/70">
-                    {t("no_sales_day_desc")}
-                  </p>
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Transaction list */}
-            <div className="space-y-2">
-              {filteredSales.map((sale, index) => {
-                const isExpanded = expandedSaleId === sale.id;
-                const saleItems = sale.items || [];
-                const isUdhar = sale.paymentMethod === "udhar";
-
-                return (
-                  <Card
-                    key={sale.id ?? index}
-                    className={`overflow-hidden border-2 transition-all duration-200 ${
-                      isUdhar ? "border-orange-200" : ""
-                    }`}
-                  >
-                    {/* Collapsed header – always visible */}
-                    <div className="flex w-full items-center justify-between gap-3 px-3 py-3">
+        {canViewSales && (
+          <>
+            {/* Search & Filters section */}
+            <section className="rounded-2xl border border-border/70 bg-card/70 p-4 shadow-sm">
+              <div className="space-y-3">
+                <div className="flex flex-wrap gap-2">
+                  <div className="relative min-w-[200px] flex-1">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Search sales, customers, items..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="pl-10"
+                    />
+                    {searchQuery && (
                       <button
-                        type="button"
-                        onClick={() =>
-                          setExpandedSaleId(isExpanded ? null : (sale.id ?? null))
-                        }
-                        className="flex items-center gap-2.5 min-w-0 flex-1 text-left transition-colors hover:bg-muted/40 -mx-3 -my-3 px-3 py-3"
+                        onClick={() => setSearchQuery("")}
+                        className="absolute right-3 top-1/2 -translate-y-1/2"
                       >
-                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-bold text-muted-foreground">
-                          <Clock className="h-3.5 w-3.5" />
-                        </div>
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-semibold">
-                              {formatTime(sale.timestamp)}
-                            </span>
-                            <span
-                              className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
-                                paymentBadgeStyles[sale.paymentMethod] ||
-                                paymentBadgeStyles.cash
-                              }`}
-                            >
-                              {sale.paymentMethod === "udhar" &&
-                              sale.creditCustomerName
-                                ? sale.creditCustomerName
-                                : t(
-                                    sale.paymentMethod === "udhar"
-                                      ? "udhar"
-                                      : sale.paymentMethod,
-                                  )}
-                            </span>
-                          </div>
-                          <p className="truncate text-xs text-muted-foreground">
-                            {saleItems.length} {t("items_sold")} · ₹
-                            {formatMoney(sale.subtotal)}
-                          </p>
-                        </div>
+                        <X className="w-4 h-4 text-muted-foreground" />
                       </button>
+                    )}
+                  </div>
+                </div>
 
-                      <div className="flex items-center gap-2 shrink-0">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-blue-600"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setEditingSale(sale);
-                          }}
-                        >
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-red-600"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setDeleteSaleId(sale.id);
-                          }}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                        <div className="text-right mr-2">
-                          <p className="text-sm font-bold">
-                            ₹{formatMoney(sale.subtotal)}
-                          </p>
-                          <p className="text-[11px] font-medium text-green-600">
-                            +₹{formatMoney(sale.totalProfit)}
-                          </p>
-                        </div>
+                <div className="flex flex-wrap gap-2">
+                  {/* Date Range */}
+                  <Select
+                    value={dateRangePreset}
+                    onValueChange={(v: any) => setDateRangePreset(v)}
+                  >
+                  <SelectTrigger className="w-full sm:w-[180px]">
+                    <SelectValue placeholder="Date Range" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="today">Today</SelectItem>
+                    <SelectItem value="yesterday">Yesterday</SelectItem>
+                    <SelectItem value="last7">Last 7 Days</SelectItem>
+                    <SelectItem value="custom">Custom</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                {dateRangePreset === "custom" && (
+                  <div className="flex gap-2 flex-wrap">
+                    <Input
+                      type="date"
+                      value={customStartDate}
+                      onChange={(e) => setCustomStartDate(e.target.value)}
+                      className="w-full sm:w-auto"
+                    />
+                    <span className="self-center text-muted-foreground">
+                      to
+                    </span>
+                    <Input
+                      type="date"
+                      value={customEndDate}
+                      onChange={(e) => setCustomEndDate(e.target.value)}
+                      className="w-full sm:w-auto"
+                    />
+                  </div>
+                )}
+
+                {/* Payment Method */}
+                <Select
+                  value={paymentMethodFilter || "all"}
+                  onValueChange={(v) =>
+                    setPaymentMethodFilter(v === "all" ? null : v)
+                  }
+                >
+                  <SelectTrigger className="w-full sm:w-[160px]">
+                    <SelectValue placeholder="Payment Method" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All</SelectItem>
+                    <SelectItem value="cash">Cash</SelectItem>
+                    <SelectItem value="card">Card</SelectItem>
+                    <SelectItem value="partial">Partial</SelectItem>
+                    <SelectItem value="udhar">Udhari</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                {/* Customer Filter */}
+                <Select
+                  value={customerFilter || "all"}
+                  onValueChange={(v) =>
+                    setCustomerFilter(v === "all" ? null : v)
+                  }
+                >
+                  <SelectTrigger className="w-full sm:w-[200px]">
+                    <SelectValue placeholder="Customer" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Customers</SelectItem>
+                    <SelectItem value="udhari-only">Udhari Only</SelectItem>
+                    {customers.map((customer) => (
+                      <SelectItem
+                        key={customer.id}
+                        value={customer.id.toString()}
+                      >
+                        {customer.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              </div>
+            </section>
+
+            {/* Recent sales section for everyone */}
+            <section className="space-y-3">
+              {/* Filtered summary bar */}
+              {filteredSales.length > 0 && (
+                <Card className="border bg-gradient-to-r from-green-50 to-blue-50 shadow-sm">
+                  <CardContent className="py-3">
+                    <div className="grid grid-cols-4 gap-1 text-center text-xs">
+                      <div>
+                        <p className="text-muted-foreground">Revenue</p>
+                        <p className="text-sm font-bold">
+                          ₹{formatMoney(filteredSummary.revenue)}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Profit</p>
+                        <p className="text-sm font-bold text-green-700">
+                          ₹{formatMoney(filteredSummary.profit)}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Margin</p>
+                        <p className="text-sm font-bold">
+                          {formatPercent(filteredSummary.margin)}%
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Transactions</p>
+                        <p className="text-sm font-bold">
+                          {filteredSummary.transactions}
+                        </p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Empty state */}
+              {filteredSales.length === 0 && (
+                <Card className="border border-dashed shadow-sm">
+                  <CardContent className="py-10 text-center">
+                    <ShoppingBag className="mx-auto mb-3 h-10 w-10 text-muted-foreground/50" />
+                    <p className="font-medium text-muted-foreground">
+                      {searchQuery ||
+                      paymentMethodFilter ||
+                      customerFilter ||
+                      dateRangePreset !== "today"
+                        ? "No sales found for selected filters"
+                        : t("no_sales_day")}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground/70">
+                      {t("no_sales_day_desc")}
+                    </p>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Transaction list */}
+              <div className="space-y-2">
+                {filteredSales.map((sale, index) => {
+                  const isExpanded = expandedSaleId === sale.id;
+                  const saleItems = sale.items || [];
+                  const isUdhar = sale.paymentMethod === "udhar";
+
+                  return (
+                    <Card
+                      key={sale.id ?? index}
+                      id={sale.id ? `sale-${sale.id}` : undefined}
+                      className={`overflow-hidden border shadow-sm transition-all duration-200 ${
+                        isUdhar ? "border-orange-200" : ""
+                      } ${
+                        focusedSaleId === sale.id
+                          ? "border-green-400 bg-green-50 ring-2 ring-green-200"
+                          : ""
+                      }`}
+                    >
+                      {/* Collapsed header – always visible */}
+                      <div className="flex w-full items-center justify-between gap-3 px-3 py-3">
                         <button
                           type="button"
                           onClick={() =>
-                            setExpandedSaleId(isExpanded ? null : (sale.id ?? null))
+                            setExpandedSaleId(
+                              isExpanded ? null : (sale.id ?? null),
+                            )
                           }
+                          className="flex items-center gap-2.5 min-w-0 flex-1 text-left transition-colors hover:bg-muted/40 -mx-3 -my-3 px-3 py-3"
                         >
-                          {isExpanded ? (
-                            <ChevronUp className="h-4 w-4 text-muted-foreground" />
-                          ) : (
-                            <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                          )}
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Expanded detail – per-item breakdown */}
-                    {isExpanded && (
-                      <div className="border-t bg-muted/20 px-3 pb-3 pt-2">
-                        <div className="space-y-2">
-                          {saleItems.map((saleItem: any, idx: number) => {
-                            const displayItem = inferSaleLineDisplayFields(
-                              saleItem,
-                              priceTiers,
-                              units,
-                              saleItem.itemId,
-                            );
-                            const currentStock = saleItem.itemId
-                              ? itemMap.get(saleItem.itemId)
-                              : null;
-                            const itemProfit = Number(saleItem.profit || 0);
-                            const itemMargin =
-                              Number(saleItem.totalPrice) > 0
-                                ? (itemProfit / Number(saleItem.totalPrice)) * 100
-                                : 0;
-
-                            return (
-                              <div
-                                key={idx}
-                                className="rounded-lg border bg-background p-2.5"
-                              >
-                                <div className="flex items-start justify-between gap-2">
-                                  <div className="min-w-0 flex-1">
-                                    <p className="truncate text-sm font-semibold">
-                                      {t("english") &&
-                                      currentStock?.nameMarathi
-                                        ? currentStock.nameMarathi
-                                        : saleItem.itemName}
-                                    </p>
-                                    <p className="text-xs text-muted-foreground">
-                                      {formatSaleLineSubtitle(displayItem)}
-                                    </p>
-                                  </div>
-                                  <p className="shrink-0 text-sm font-bold">
-                                    ₹{formatMoney(saleItem.totalPrice)}
-                                  </p>
-                                </div>
-
-                                <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
-                                  <span className="text-green-600">
-                                    {t("profit_amount")}: ₹{formatMoney(itemProfit)}
-                                  </span>
-                                  <span className="text-muted-foreground">
-                                    {t("margin")}: {formatPercent(itemMargin)}%
-                                  </span>
-                                  {currentStock && (
-                                    <span className="text-blue-600">
-                                      {t("stock_left")}:{" "}
-                                      {formatWholeNumber(currentStock.quantity)}
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-
-                        {/* Transaction-level footer with Edit/Delete buttons */}
-                        <div className="mt-2 space-y-2">
-                          <div className="flex items-center justify-between rounded-md bg-muted/60 px-2.5 py-2 text-xs">
-                            <div className="flex gap-3">
-                              <span>
-                                {t("cost")}:{" "}
-                                <span className="font-semibold">
-                                  ₹{formatMoney(sale.totalCost)}
-                                </span>
+                          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-bold text-muted-foreground">
+                            <Clock className="h-3.5 w-3.5" />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-semibold">
+                                {formatTime(sale.timestamp)}
                               </span>
-                              <span className="text-green-700">
-                                {t("profit_amount")}:{" "}
-                                <span className="font-semibold">
-                                  ₹{formatMoney(sale.totalProfit)}
-                                </span>
+                              <span
+                                className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
+                                  paymentBadgeStyles[sale.paymentMethod] ||
+                                  paymentBadgeStyles.cash
+                                }`}
+                              >
+                                {sale.paymentMethod === "udhar" &&
+                                sale.creditCustomerName
+                                  ? sale.creditCustomerName
+                                  : t(
+                                      sale.paymentMethod === "udhar"
+                                        ? "udhar"
+                                        : sale.paymentMethod,
+                                    )}
                               </span>
                             </div>
-                            <span className="font-semibold">
-                              {formatPercent(sale.profitMarginPercent)}%
-                            </span>
+                            <p className="truncate text-xs text-muted-foreground">
+                              {saleItems.length} {t("items_sold")} · ₹
+                              {formatMoney(sale.subtotal)}
+                            </p>
                           </div>
-                          
-                          {/* Edit and Delete buttons */}
-                          <div className="flex gap-2">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="flex-1"
-                              onClick={() => setEditingSale(sale)}
-                            >
-                              <Edit className="h-4 w-4 mr-1" />
-                              Edit
-                            </Button>
-                            <Button
-                              variant="destructive"
-                              size="sm"
-                              className="flex-1"
-                              onClick={() => setDeleteSaleId(sale.id)}
-                            >
-                              <Trash2 className="h-4 w-4 mr-1" />
-                              Delete
-                            </Button>
+                        </button>
+
+                        <div className="flex items-center gap-2 shrink-0">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-blue-600"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditingSale(sale);
+                            }}
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-red-600"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDeleteSaleId(sale.id);
+                            }}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                          <div className="text-right mr-2">
+                            <p className="text-sm font-bold">
+                              ₹{formatMoney(sale.subtotal)}
+                            </p>
+                            <p className="text-[11px] font-medium text-green-600">
+                              +₹{formatMoney(sale.totalProfit)}
+                            </p>
                           </div>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setExpandedSaleId(
+                                isExpanded ? null : (sale.id ?? null),
+                              )
+                            }
+                          >
+                            {isExpanded ? (
+                              <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                            ) : (
+                              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                            )}
+                          </button>
                         </div>
                       </div>
-                    )}
-                  </Card>
-                );
-              })}
-            </div>
-          </section>
+
+                      {/* Expanded detail – per-item breakdown */}
+                      {isExpanded && (
+                        <div className="border-t bg-muted/20 px-3 pb-3 pt-2">
+                          <div className="space-y-2">
+                            {saleItems.map((saleItem: any, idx: number) => {
+                              const displayItem = inferSaleLineDisplayFields(
+                                saleItem,
+                                priceTiers,
+                                units,
+                                saleItem.itemId,
+                              );
+                              const currentStock = saleItem.itemId
+                                ? itemMap.get(saleItem.itemId)
+                                : null;
+                              const itemProfit = Number(saleItem.profit || 0);
+                              const itemMargin =
+                                Number(saleItem.totalPrice) > 0
+                                  ? (itemProfit / Number(saleItem.totalPrice)) *
+                                    100
+                                  : 0;
+
+                              return (
+                                <div
+                                  key={idx}
+                                  className="rounded-lg border bg-background p-2.5"
+                                >
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div className="min-w-0 flex-1">
+                                      <p className="truncate text-sm font-semibold">
+                                        {t("english") &&
+                                        currentStock?.nameMarathi
+                                          ? currentStock.nameMarathi
+                                          : saleItem.itemName}
+                                      </p>
+                                      <p className="text-xs text-muted-foreground">
+                                        {formatSaleLineSubtitle(displayItem)}
+                                      </p>
+                                    </div>
+                                    <p className="shrink-0 text-sm font-bold">
+                                      ₹{formatMoney(saleItem.totalPrice)}
+                                    </p>
+                                  </div>
+
+                                  <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
+                                    <span className="text-green-600">
+                                      {t("profit_amount")}: ₹
+                                      {formatMoney(itemProfit)}
+                                    </span>
+                                    <span className="text-muted-foreground">
+                                      {t("margin")}: {formatPercent(itemMargin)}
+                                      %
+                                    </span>
+                                    {currentStock && (
+                                      <span className="text-blue-600">
+                                        {t("stock_left")}:{" "}
+                                        {formatWholeNumber(
+                                          currentStock.quantity,
+                                        )}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+
+                          {/* Transaction-level footer with Edit/Delete buttons */}
+                          <div className="mt-2 space-y-2">
+                            <div className="flex items-center justify-between rounded-md bg-muted/60 px-2.5 py-2 text-xs">
+                              <div className="flex gap-3">
+                                <span>
+                                  {t("cost")}:{" "}
+                                  <span className="font-semibold">
+                                    ₹{formatMoney(sale.totalCost)}
+                                  </span>
+                                </span>
+                                <span className="text-green-700">
+                                  {t("profit_amount")}:{" "}
+                                  <span className="font-semibold">
+                                    ₹{formatMoney(sale.totalProfit)}
+                                  </span>
+                                </span>
+                              </div>
+                              <span className="font-semibold">
+                                {formatPercent(sale.profitMarginPercent)}%
+                              </span>
+                            </div>
+
+                            {/* Edit and Delete buttons */}
+                            <div className="flex gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="flex-1"
+                                onClick={() => setEditingSale(sale)}
+                              >
+                                <Edit className="h-4 w-4 mr-1" />
+                                Edit
+                              </Button>
+                              <Button
+                                variant="destructive"
+                                size="sm"
+                                className="flex-1"
+                                onClick={() => setDeleteSaleId(sale.id)}
+                              >
+                                <Trash2 className="h-4 w-4 mr-1" />
+                                Delete
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </Card>
+                  );
+                })}
+              </div>
+            </section>
+          </>
+        )}
       </div>
 
       {editingSale && (
@@ -1061,22 +1198,38 @@ export default function SalesPage() {
         />
       )}
 
-      <AlertDialog open={!!deleteSaleId} onOpenChange={(open) => !open && setDeleteSaleId(null)}>
+      <AlertDialog
+        open={!!deleteSaleId}
+        onOpenChange={(open) => !open && setDeleteSaleId(null)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Are you sure you want to delete this sale?</AlertDialogTitle>
+            <AlertDialogTitle>
+              Are you sure you want to delete this sale?
+            </AlertDialogTitle>
             <AlertDialogDescription>
               This will restore the stock and reverse any udhari entries.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="flex justify-end gap-2">
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDeleteSale} className="bg-red-600 hover:bg-red-700">
+            <AlertDialogAction
+              onClick={handleDeleteSale}
+              className="bg-red-600 hover:bg-red-700"
+            >
               Delete
             </AlertDialogAction>
           </div>
         </AlertDialogContent>
       </AlertDialog>
     </PageContainer>
+  );
+}
+
+export default function SalesPage() {
+  return (
+    <Suspense fallback={<div className="p-6 text-sm text-muted-foreground">Loading sales...</div>}>
+      <SalesPageContent />
+    </Suspense>
   );
 }

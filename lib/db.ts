@@ -228,6 +228,28 @@ export interface CreditEntry {
   createdAt: number;
 }
 
+export type OfflineSyncOperation = 'upsert' | 'delete';
+
+export interface SyncQueueEntry {
+  id?: number;
+  shopId: number;
+  table: string;
+  operation: OfflineSyncOperation;
+  row?: Record<string, unknown>;
+  matchId?: number;
+  createdAt: number;
+  attempts: number;
+  lastError?: string;
+}
+
+export interface CloudCacheEntry {
+  key: string;
+  shopId: number;
+  table: string;
+  rows: Record<string, unknown>[];
+  updatedAt: number;
+}
+
 export class DukanDB extends Dexie {
   items!: Table<Item>;
   priceTiers!: Table<PriceTier>;
@@ -247,6 +269,8 @@ export class DukanDB extends Dexie {
   // New tables for subscription system
   subscriptions!: Table<Subscription>;
   shopPaymentInfo!: Table<ShopPaymentInfo>;
+  syncQueue!: Table<SyncQueueEntry>;
+  cloudCache!: Table<CloudCacheEntry>;
 
   constructor() {
     super('DukanDB');
@@ -311,6 +335,27 @@ export class DukanDB extends Dexie {
       users: '++id, shopId, username, role, updatedAt',
       subscriptions: '++id, shopId, status, startDate, endDate, updatedAt',
       shopPaymentInfo: '++id, shopId, updatedAt',
+    });
+    // Local-first cloud snapshots and mutations waiting for connectivity.
+    this.version(5).stores({
+      items: '++id, categoryId, updatedAt',
+      priceTiers: '++id, itemId, updatedAt',
+      categories: '++id, updatedAt',
+      units: '++id, updatedAt',
+      appSettings: '++id',
+      sales: '++id, date, timestamp',
+      saleItems: '++id, saleId, itemId',
+      stockHistory: '++id, itemId, createdAt',
+      batches: '++id, itemId, expiryDate',
+      alerts: '++id, itemId, alertType, createdAt',
+      creditCustomers: '++id, name, updatedAt',
+      creditEntries: '++id, customerId, date, timestamp',
+      shops: '++id, shopName, ownerName, isPaused, subscriptionEndDate, updatedAt',
+      users: '++id, shopId, username, role, updatedAt',
+      subscriptions: '++id, shopId, status, startDate, endDate, updatedAt',
+      shopPaymentInfo: '++id, shopId, updatedAt',
+      syncQueue: '++id, shopId, table, createdAt',
+      cloudCache: '&key, shopId, table, updatedAt',
     });
   }
 }

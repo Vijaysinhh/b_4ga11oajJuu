@@ -13,8 +13,13 @@ import { ArrowUpRight } from "lucide-react";
 
 type ReportType = "today" | "month" | "sixMonths" | "year" | "specificMonth";
 
+const safeString = (value: unknown) => (typeof value === "string" ? value : "");
+const safeDateString = (value: unknown) => safeString(value);
+
 interface BrandComparisonProps {
   showOnlyTop5?: boolean;
+  previewLimit?: number;
+  compact?: boolean;
   selectedReportType?: ReportType;
   setSelectedReportType?: (type: ReportType) => void;
   selectedMonth?: string;
@@ -22,7 +27,9 @@ interface BrandComparisonProps {
 }
 
 export function BrandComparison({ 
-    showOnlyTop5 = false, 
+    showOnlyTop5 = false,
+    previewLimit,
+    compact = false,
     selectedReportType: externalSelectedReportType, 
     setSelectedReportType: externalSetSelectedReportType, 
     selectedMonth: externalSelectedMonth, 
@@ -49,7 +56,10 @@ export function BrandComparison({
   const availableMonths = useMemo(() => {
     const months = new Set<string>();
     for (const sale of sales) {
-      months.add(sale.date.slice(0, 7)); // Extract YYYY-MM part
+      const saleDate = safeDateString(sale?.date);
+      if (saleDate.length >= 7) {
+        months.add(saleDate.slice(0, 7)); // Extract YYYY-MM part
+      }
     }
     return Array.from(months).sort().reverse(); // Newest first
   }, [sales]);
@@ -73,17 +83,17 @@ export function BrandComparison({
 
     switch (selectedReportType) {
       case "today":
-        return sales.filter((sale) => sale.date === selectedDateKey);
+        return sales.filter((sale) => safeDateString(sale?.date) === selectedDateKey);
       case "month":
-        return sales.filter((sale) => sale.date.startsWith(thisMonth));
+        return sales.filter((sale) => safeDateString(sale?.date).startsWith(thisMonth));
       case "sixMonths":
-        return sales.filter((sale) => sale.date >= sixMonthStart);
+        return sales.filter((sale) => safeDateString(sale?.date) >= sixMonthStart);
       case "year":
-        return sales.filter((sale) => sale.date.startsWith(thisYear));
+        return sales.filter((sale) => safeDateString(sale?.date).startsWith(thisYear));
       case "specificMonth":
-        return sales.filter((sale) => sale.date.startsWith(selectedMonth));
+        return sales.filter((sale) => safeDateString(sale?.date).startsWith(selectedMonth));
       default:
-        return sales.filter((sale) => sale.date.startsWith(thisMonth));
+        return sales.filter((sale) => safeDateString(sale?.date).startsWith(thisMonth));
     }
   }, [sales, selectedReportType, selectedMonth]);
 
@@ -102,10 +112,11 @@ export function BrandComparison({
 
     // 1. Group items by name
     for (const item of items) {
-      const nameKey = item.name.toLowerCase().trim();
+      const itemName = safeString(item?.name);
+      const nameKey = itemName.toLowerCase().trim();
       if (!groups[nameKey]) {
         groups[nameKey] = {
-          itemName: item.name,
+          itemName,
           items: [],
           totalSalesQuantity: 0,
           totalSalesAmount: 0,
@@ -120,13 +131,13 @@ export function BrandComparison({
       const uniqueBrands = new Set<string>();
       for (const item of group.items) {
         const brandKey =
-          (item.brand?.toLowerCase().trim() || "") +
+          safeString(item?.brand).toLowerCase().trim() +
           "|||" +
-          (item.brandMarathi?.toLowerCase().trim() || "");
-        if (item.brand || item.brandMarathi) {
+          safeString(item?.brandMarathi).toLowerCase().trim();
+        if (item?.brand || item?.brandMarathi) {
           uniqueBrands.add(brandKey);
         } else {
-          uniqueBrands.add(`no-brand-${item.id}`);
+          uniqueBrands.add(`no-brand-${item?.id ?? "unknown"}`);
         }
       }
       return uniqueBrands.size >= 2;
@@ -171,32 +182,49 @@ export function BrandComparison({
       return b.totalSalesQuantity - a.totalSalesQuantity;
     });
 
-    // 5. If showOnlyTop5 is true, slice to first 5 groups
-    return showOnlyTop5 ? validGroups.slice(0, 5) : validGroups;
-  }, [items, filteredSales]);
+    // 5. Cap preview when embedded on Home
+    const limit = previewLimit ?? (showOnlyTop5 ? 5 : undefined);
+    return limit ? validGroups.slice(0, limit) : validGroups;
+  }, [items, filteredSales, previewLimit, showOnlyTop5]);
+
+  const isPreview = Boolean(previewLimit || showOnlyTop5);
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6 pb-24 sm:pb-10">
-      <div className="flex items-center justify-between">
+    <div className={compact ? "space-y-3" : "mx-auto max-w-5xl space-y-6 pb-24 sm:pb-10"}>
+      <div className="flex items-center justify-between gap-2">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">
-            {language === "mr" ? "ब्रँड तुलना" : "Brand Comparison"}
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {language === "mr"
-              ? "एकाच उत्पादनाच्या वेगवेगळ्या ब्रँड्सचे मार्जिन आणि विक्री पहा"
-              : "Compare margins and sales of different brands for the same product"}
-          </p>
+          {compact ? (
+            <h3 className="text-sm font-semibold">
+              {language === "mr" ? "ब्रँड तुलना" : "Brand Comparison"}
+            </h3>
+          ) : (
+            <>
+              <h1 className="text-3xl font-bold tracking-tight">
+                {language === "mr" ? "ब्रँड तुलना" : "Brand Comparison"}
+              </h1>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {language === "mr"
+                  ? "एकाच उत्पादनाच्या वेगवेगळ्या ब्रँड्सचे मार्जिन आणि विक्री पहा"
+                  : "Compare margins and sales of different brands for the same product"}
+              </p>
+            </>
+          )}
         </div>
-        {showOnlyTop5 && (
-          <Button onClick={() => router.push("/brand-comparison")}>
+        {isPreview && (
+          <Button
+            variant={compact ? "ghost" : "default"}
+            size={compact ? "sm" : "default"}
+            className={compact ? "h-8 text-xs" : undefined}
+            onClick={() => router.push("/brand-comparison")}
+          >
             {language === "mr" ? "सर्व पहा" : "View All"}
             <ArrowUpRight className="ml-2 h-4 w-4" />
           </Button>
         )}
       </div>
 
-      {/* Report Type Selector (same as dashboard) */}
+      {/* Report Type Selector — hidden in compact Home embed */}
+      {!compact && (
       <div className="flex items-center gap-4">
         <select
           value={selectedReportType}
@@ -236,6 +264,7 @@ export function BrandComparison({
           </select>
         )}
       </div>
+      )}
 
       {/* Product Groups */}
       {productGroups.length === 0 ? (
