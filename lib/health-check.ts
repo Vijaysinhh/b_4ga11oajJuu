@@ -146,7 +146,7 @@ export class HealthChecker {
     // Save results to database
     try {
       for (const result of results) {
-        await supabase.from('system_health_checks').insert({
+        await (supabase as any).from('system_health_checks').insert({
           shop_id: shopId || 1,
           check_type: result.checkType,
           status: result.status,

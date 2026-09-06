@@ -19,7 +19,7 @@ export async function logAuditEvent(params: AuditLogParams) {
     // Get client info
     const userAgent = typeof navigator !== 'undefined' ? navigator.userAgent : 'server';
 
-    await supabase.from('audit_logs').insert({
+    await (supabase as any).from('audit_logs').insert({
       action,
       table_name: tableName,
       record_id: recordId?.toString(),

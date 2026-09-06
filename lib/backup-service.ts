@@ -98,7 +98,7 @@ export class BackupService {
 
         for (let i = 0; i < tableData.length; i += chunkSize) {
           const chunk = tableData.slice(i, i + chunkSize);
-          const { error } = await supabase
+          const { error } = await (supabase as any)
             .from(table)
             .insert(chunk);
 

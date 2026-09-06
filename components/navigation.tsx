@@ -3,7 +3,7 @@
 import { useMemo, useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
-import { useSupabaseAuth } from '@/providers/supabase-auth-provider';
+import { useAuth } from '@/providers/auth-provider';
 import { useLanguage } from '@/providers/language-provider';
 import { cn } from '@/lib/utils';
 import { 
@@ -41,7 +41,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 
 export function Navigation() {
-  const { user, logout, isAuthenticated } = useSupabaseAuth();
+  const { user, logout, isAuthenticated } = useAuth();
   const { t } = useLanguage();
   const pathname = usePathname();
   const router = useRouter();
@@ -50,9 +50,9 @@ export function Navigation() {
   const [showSearchResults, setShowSearchResults] = useState(false);
 
   // Get data for search (using user context for multi-tenant filtering)
-  const { items } = useItems(user?.id || '');
-  const { sales } = useSales(user?.id || '');
-  const { customers } = useUdhari(user?.id || '');
+  const { items } = useItems(user?.id);
+  const { sales } = useSales(user?.id);
+  const { customers } = useUdhari(user?.id);
 
   // Compute search results
   const searchResults = useMemo(() => {
