@@ -34,7 +34,6 @@ import { Input } from "@/components/ui/input";
 import { useItems, useSales, useUdhari } from "@/hooks/use-supabase";
 import { NotificationCenter } from "@/components/notification-center";
 import { OfflineStatus } from "@/components/offline-status";
-import { GlobalAiAssistant } from "@/components/global-ai-assistant";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -260,7 +259,6 @@ export function Navigation() {
                 {headerPulse.lowStock} low stock
               </Link>}
             </div>
-            <GlobalAiAssistant items={items} sales={sales} customers={customers} />
             <div className="relative flex-1 max-w-md search-container">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input

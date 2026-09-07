@@ -160,7 +160,7 @@ export function ItemsManagement() {
   const [selectedStockStatus, setSelectedStockStatus] = useState<string | null>(
     null,
   ); // null = All, 'lowStock', 'inStock', 'outOfStock'
-  const [reorderMode, setReorderMode] = useState(false);
+  const [stockView, setStockView] = useState<"inStock" | "restock">("inStock");
   const [adjustingItemIds, setAdjustingItemIds] = useState<Set<number>>(new Set());
   const [optimisticQuantities, setOptimisticQuantities] = useState<Map<number, number>>(new Map());
   const pendingQuantityUpdates = useRef(new Map<number, Promise<void>>());
@@ -330,14 +330,31 @@ export function ItemsManagement() {
         else if (selectedStockStatus === "inStock") matchesStock = isInStock;
       }
 
-      const matchesReorder =
-        !reorderMode || Number(item.quantity || 0) <= Number(item.lowStockLimit || 0);
+      const quantity = Number(item.quantity || 0);
+      const lowStockLimit = Number(item.lowStockLimit || 0);
+      const needsRestocking = quantity === 0 || (lowStockLimit > 0 && quantity <= lowStockLimit);
+      const matchesStockView = stockView === "restock" ? needsRestocking : !needsRestocking;
 
-      return matchesCategory && matchesBrand && matchesExpiry && matchesStock && matchesReorder;
+      return matchesCategory && matchesBrand && matchesExpiry && matchesStock && matchesStockView;
     });
 
     // Sorting
     result.sort((a, b) => {
+      // In the normal In stock view, surface expiry risk before the regular
+      // alphabetical list. A user-selected sort still takes precedence.
+      if (stockView === "inStock" && sortBy === "name-asc") {
+        const expiryPriority = (item: (typeof result)[number]) => {
+          if (!item.expiryDate) return 2;
+          const expiry = new Date(item.expiryDate);
+          if (Number.isNaN(expiry.getTime())) return 2;
+          expiry.setHours(0, 0, 0, 0);
+          if (expiry < today) return 0;
+          if (expiry <= new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000)) return 1;
+          return 2;
+        };
+        const urgencyDifference = expiryPriority(a) - expiryPriority(b);
+        if (urgencyDifference !== 0) return urgencyDifference;
+      }
       switch (sortBy) {
         case "name-asc": {
           const nameA = (a.name || a.nameMarathi || "").toLowerCase();
@@ -380,7 +397,7 @@ export function ItemsManagement() {
     selectedBrand,
     selectedExpiryStatus,
     selectedStockStatus,
-    reorderMode,
+    stockView,
     sortBy,
   ]);
 
@@ -457,6 +474,12 @@ export function ItemsManagement() {
     | { kind: "item"; item: (typeof filteredItems)[number]; groupKey?: string };
 
   const renderList: RenderEntry[] = useMemo(() => {
+    // The In stock tab is intentionally a single ordered list: its expiry
+    // priority and alphabetical order must not be interrupted by brand groups.
+    if (stockView === "inStock") {
+      return filteredItems.map((item) => ({ kind: "item" as const, item }));
+    }
+
     const list: RenderEntry[] = [];
     const groupSummaries = groupedItems.groups.map(([groupKey, itemsInBrand]) => {
       const groupItems = [...itemsInBrand].sort((a, b) => {
@@ -513,18 +536,23 @@ export function ItemsManagement() {
     }
 
     return list;
-  }, [groupedItems, language, unitNamesById]);
+  }, [filteredItems, groupedItems, language, stockView, unitNamesById]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const itemId = Number(params.get("focusItemId"));
     const filter = params.get("filter");
+    const view = params.get("view");
 
-    if (!Number.isFinite(itemId) || itemId <= 0) return;
+    if (view === "restock" || filter === "lowStock") {
+      setStockView("restock");
+    }
 
-    setFocusedItemId(itemId);
-    setSelectedCategoryId(null);
-    setSelectedBrand(null);
+    if (Number.isFinite(itemId) && itemId > 0) {
+      setFocusedItemId(itemId);
+      setSelectedCategoryId(null);
+      setSelectedBrand(null);
+    }
 
     if (filter === "lowStock") {
       setSelectedStockStatus("lowStock");
@@ -788,15 +816,14 @@ export function ItemsManagement() {
     setSelectedBrand(null);
     setSelectedExpiryStatus(null);
     setSelectedStockStatus(null);
-    setReorderMode(false);
     setSortBy("name-asc");
   };
 
-  const openStockTask = (task: "reorder" | "out" | "expiry") => {
-    clearFilters();
-    if (task === "reorder") setReorderMode(true);
-    if (task === "out") setSelectedStockStatus("outOfStock");
-    if (task === "expiry") setSelectedExpiryStatus("expiring");
+  const selectStockView = (view: "inStock" | "restock") => {
+    setStockView(view);
+    // Dashboard deep links can arrive with a low-stock filter. The tabs are
+    // already the stock filter, so remove it before changing views.
+    setSelectedStockStatus(null);
   };
 
   const adjustStockQuickly = async (item: (typeof items)[number], change: number) => {
@@ -913,41 +940,24 @@ export function ItemsManagement() {
         <div className="flex items-center justify-between gap-3">
           <div>
             <p className="text-base font-semibold tracking-tight text-indigo-950">
-              {language === "mr" ? "आजची स्टॉक कामे" : "Today’s stock tasks"}
+              {language === "mr" ? "स्टॉक दृश्य" : "Stock view"}
             </p>
             <p className="mt-0.5 text-xs leading-5 text-indigo-700">
-              {outOfStockCount + lowStockCount === 0
-                ? language === "mr" ? "आजचा स्टॉक तपास पूर्ण ✓" : "Stock check complete for today ✓"
-                : language === "mr" ? "आधी तातडीच्या वस्तू तपासा" : "Start with the urgent products"}
+              {stockView === "restock" ? "Low and empty-stock products in one place" : "Products with healthy available stock"}
             </p>
           </div>
-          <Button
-            type="button"
-            size="sm"
-            variant={reorderMode ? "default" : "outline"}
-            onClick={() => {
-              if (reorderMode) setReorderMode(false);
-              else openStockTask("reorder");
-            }}
-            className="shrink-0"
-          >
-            {reorderMode
-              ? language === "mr" ? "सर्व दाखवा" : "Show all"
-              : language === "mr" ? "ऑर्डर मोड" : "Reorder mode"}
-          </Button>
+          <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-bold ${stockView === "restock" ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"}`}>
+            {stockView === "restock" ? outOfStockCount + lowStockCount : items.length - (outOfStockCount + lowStockCount)} items
+          </span>
         </div>
-        <div className="mt-3 grid grid-cols-3 gap-2">
-          <button type="button" onClick={() => openStockTask("reorder")} className="rounded-xl border border-amber-200 bg-white px-2 py-2 text-left shadow-sm transition-all duration-150 hover:-translate-y-px hover:bg-amber-50 hover:shadow active:scale-[0.97]">
-            <span className="block text-lg font-bold text-amber-700">{outOfStockCount + lowStockCount}</span>
-            <span className="block text-[11px] font-semibold text-amber-900">{language === "mr" ? "मागवायच्या" : "Reorder"}</span>
+        <div className="mt-3 grid grid-cols-2 gap-2 rounded-xl bg-white/70 p-1.5">
+          <button type="button" onClick={() => selectStockView("inStock")} className={`rounded-lg px-3 py-2.5 text-left transition ${stockView === "inStock" ? "bg-emerald-600 text-white shadow-sm" : "text-slate-600 hover:bg-emerald-50"}`}>
+            <span className="block text-sm font-bold">In stock</span>
+            <span className={`block text-[11px] ${stockView === "inStock" ? "text-emerald-100" : "text-muted-foreground"}`}>Available products</span>
           </button>
-          <button type="button" onClick={() => openStockTask("out")} className="rounded-xl border border-red-200 bg-white px-2 py-2 text-left shadow-sm transition-all duration-150 hover:-translate-y-px hover:bg-red-50 hover:shadow active:scale-[0.97]">
-            <span className="block text-lg font-bold text-red-700">{outOfStockCount}</span>
-            <span className="block text-[11px] font-semibold text-red-900">{language === "mr" ? "संपला" : "Out"}</span>
-          </button>
-          <button type="button" onClick={() => openStockTask("expiry")} className="rounded-xl border border-orange-200 bg-white px-2 py-2 text-left shadow-sm transition-all duration-150 hover:-translate-y-px hover:bg-orange-50 hover:shadow active:scale-[0.97]">
-            <span className="block text-lg font-bold text-orange-700">{expiringSoonCount}</span>
-            <span className="block text-[11px] font-semibold text-orange-900">{language === "mr" ? "लवकर एक्सपायर" : "Near expiry"}</span>
+          <button type="button" onClick={() => selectStockView("restock")} className={`rounded-lg px-3 py-2.5 text-left transition ${stockView === "restock" ? "bg-amber-500 text-white shadow-sm" : "text-slate-600 hover:bg-amber-50"}`}>
+            <span className="flex items-center justify-between gap-2 text-sm font-bold">Restock <span className={`rounded-full px-1.5 py-0.5 text-[10px] ${stockView === "restock" ? "bg-white/20" : "bg-amber-100 text-amber-800"}`}>{outOfStockCount + lowStockCount}</span></span>
+            <span className={`block text-[11px] ${stockView === "restock" ? "text-amber-50" : "text-muted-foreground"}`}>Low or out of stock</span>
           </button>
         </div>
       </section>
@@ -1997,7 +2007,6 @@ export function ItemsManagement() {
               selectedBrand === null &&
               selectedExpiryStatus === null &&
               selectedStockStatus === null &&
-              !reorderMode &&
               sortBy === "name-asc"
             }
           >
@@ -2009,7 +2018,6 @@ export function ItemsManagement() {
           selectedBrand ||
           selectedExpiryStatus ||
           selectedStockStatus ||
-          reorderMode ||
           sortBy !== "name-asc") && (
           <div className="hidden">
             {selectedCategoryId !== null && (

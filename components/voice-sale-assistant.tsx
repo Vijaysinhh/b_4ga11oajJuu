@@ -1,24 +1,15 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import {
-  Check,
-  Mic,
-  Minus,
-  Plus,
-  Search,
-  Sparkles,
-  Trash2,
-  Volume2,
-} from "lucide-react";
+import { Mic, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   normalizeVoiceText,
   parseVoiceSaleCommand,
 } from "@/lib/voice-sale-parser";
-import { useGeminiUnderstanding } from "@/hooks/use-gemini";
 import { convertUnit } from "@/lib/unit-conversion";
+import { useLanguage } from "@/providers/language-provider";
 
 type SaleLine = {
   itemId: number;
@@ -41,7 +32,7 @@ type Draft = {
   variant?: string;
   candidates: any[];
   selectedId: number | null;
-  blockedReason?: "out-of-stock" | "expired";
+  blockedReason?: "out-of-stock" | "expired" | "insufficient";
 };
 
 const fillerWords = new Set([
@@ -178,31 +169,73 @@ export function VoiceSaleAssistant({
   items,
   units,
   onAdd,
+  onSearchRequested,
+  onProductSelected,
+  addedItems = [],
   autoFocus = false,
 }: {
   items: any[];
   units: any[];
   onAdd: (line: SaleLine) => void;
+  onSearchRequested?: (query: string) => void;
+  onProductSelected?: (itemId: number, quantity: number, requestedUnit?: string) => void;
+  addedItems?: Array<{ itemId: number; quantity: number }>;
   autoFocus?: boolean;
 }) {
   const [command, setCommand] = useState("");
   const [listening, setListening] = useState(false);
+  const [showVoice, setShowVoice] = useState(autoFocus);
   const [draft, setDraft] = useState<Draft[]>([]);
+  const [busy, setBusy] = useState(false);
+  const parsingRef = useRef(false);
   const [message, setMessage] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const recognition = useRef<any>(null);
-  const keepListening = useRef(false);
+  const cancelled = useRef(false);
   const transcript = useRef("");
-  const restartTimer = useRef<number | null>(null);
-  const lastFinalPhrase = useRef("");
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
-  const audioStreamRef = useRef<MediaStream | null>(null);
-  const { parseVoiceCommand, isLoading: aiParsing } = useGeminiUnderstanding();
+  const latestTranscript = useRef("");
+  const { language } = useLanguage();
+
+  useEffect(() => () => {
+    cancelled.current = true;
+    recognition.current?.abort?.();
+  }, []);
 
   useEffect(() => {
     if (autoFocus) inputRef.current?.focus();
   }, [autoFocus]);
+
+  const resolveDraftLine = (line: Draft) => {
+    const item = items.find((candidate) => candidate.id === line.selectedId);
+    if (!item) return { state: "unmatched" as const };
+    const unit = units.find((candidate) => candidate.id === item.unitId);
+    const unitName = unit?.shortForm || "unit";
+    const quantity = line.requestedUnit
+      ? convertUnit(line.quantity, line.requestedUnit, unitName)
+      : line.quantity;
+    if (!Number.isFinite(quantity) || quantity <= 0) return { state: "quantity" as const };
+    if (line.variant || line.priceOverride != null) return { state: "variant" as const, item };
+    const expiryDate = item.expiryDate ? new Date(item.expiryDate) : null;
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    if (expiryDate && expiryDate.getTime() < today.getTime()) return { state: "expired" as const, item };
+    const available = Math.max(0, Number(item.quantity || 0) - addedItems.filter((entry) => entry.itemId === item.id).reduce((sum, entry) => sum + entry.quantity, 0));
+    if (quantity > available) return { state: "insufficient" as const, item, available };
+    return {
+      state: "ready" as const,
+      saleLine: {
+        itemId: item.id,
+        itemName: item.brand ? `${item.name} (${item.brand})` : item.name,
+        quantity,
+        displayQuantity: `${line.quantity} ${line.requestedUnit || unitName}`,
+        unitId: item.unitId,
+        unitShortForm: unitName,
+        pricePerUnit: Number(item.sellPrice),
+        totalPrice: quantity * Number(item.sellPrice),
+        costPerUnit: Number(item.buyPrice),
+        totalCost: quantity * Number(item.buyPrice),
+      },
+    };
+  };
 
   const buildDraft = (
     requests: Array<{
@@ -250,249 +283,183 @@ export function VoiceSaleAssistant({
           item,
           score: productScore(query, item),
         }))
-        .filter((entry) => entry.score > 0)
+        .filter((entry) => entry.score >= 28)
         .sort((a, b) => b.score - a.score);
       const bestScore = rankedCandidates[0]?.score || 0;
       const isAmbiguous =
         rankedCandidates.length > 1 &&
         bestScore > 0 &&
         bestScore - rankedCandidates[1].score <= 2;
+      const exactCandidates = rankedCandidates.filter(({item}) =>
+        [item.name, item.nameMarathi, item.brand, item.brandMarathi]
+          .filter(Boolean).some((name) => normalizeVoiceText(name) === normalizeVoiceText(query)));
+      const isConfident = exactCandidates.length === 1 && !isAmbiguous;
       // Show alternatives only when the phrase genuinely has close matches.
-      const candidates = rankedCandidates
-        .slice(0, isAmbiguous && queryWords.length > 1 ? 3 : 1)
+      const candidates = (isConfident ? exactCandidates : rankedCandidates)
+        .slice(0, isConfident ? 1 : 3)
         .map((entry) => entry.item);
       const selectedCandidate = candidates[0];
       const expiryDate = selectedCandidate?.expiryDate
         ? new Date(selectedCandidate.expiryDate)
         : null;
       const isExpired = !!expiryDate && expiryDate.getTime() < Date.now();
+      const requestedUnit = units.find((unit) => unit.shortForm === request.unit);
+      const requestedQuantity = request.unit && requestedUnit
+        ? convertUnit(request.quantity || 1, request.unit, units.find((unit) => unit.id === selectedCandidate?.unitId)?.shortForm || "")
+        : request.quantity || 1;
       const blockedReason: Draft["blockedReason"] = isExpired
         ? "expired"
         : Number(selectedCandidate?.quantity || 0) <= 0
           ? "out-of-stock"
+          : requestedQuantity > Number(selectedCandidate?.quantity || 0)
+            ? "insufficient"
           : undefined;
       return {
         id: String(Date.now()) + "-" + index,
         query,
         quantity: request.quantity || 1,
-        requestedUnit: request.unit,
+        requestedUnit: request.unit || (request as { requestedUnit?: string }).requestedUnit,
         priceOverride: request.priceOverride,
         variant: request.variant,
         candidates,
         selectedId:
-          candidates.length === 1 && !blockedReason ? candidates[0].id : null,
+          candidates.length === 1 && isConfident ? candidates[0].id : null,
         blockedReason,
       };
     });
     setDraft(lines);
-    setMessage(
-      lines.length
-        ? "Choose a suggested product if needed, check quantity, then add confirmed items."
-        : "Try saying product name and quantity, for example: two Parle-G and one milk.",
-    );
+    setShowVoice(false);
+    setMessage("Check your spoken order, then add ready items to the bill.");
   };
 
   const parseTranscript = async (rawTranscript: string) => {
-    const cleaned = cleanTranscript(rawTranscript);
-    if (!cleaned || aiParsing) return;
-
-    setMessage("Understanding products, quantities, and price variants…");
-
-    const result = await parseVoiceCommand(cleaned, items, units);
-    if (Array.isArray(result?.data) && result.data.length > 0) {
-      buildDraft(result.data);
-      return;
+    const cleaned = rawTranscript.trim();
+    if (!cleaned || parsingRef.current) return;
+    parsingRef.current = true;
+    setBusy(true);
+    try {
+      setMessage("Checking products and stock…");
+      const parsed = parseVoiceSaleCommand(cleaned);
+      if (parsed.length > 0) {
+        buildDraft(parsed);
+      } else {
+        setMessage(
+          "No products were recognised. Try again, or search by product name.",
+        );
+        setDraft([]);
+      }
+    } finally {
+      parsingRef.current = false;
+      setBusy(false);
     }
-
-    const fallback = parseVoiceSaleCommand(cleaned);
-    if (fallback.length > 0) {
-      buildDraft(fallback);
-      return;
-    }
-
-    setMessage(
-      "I could not match any sale items from that voice input. Please try again or type the product name and quantity.",
-    );
-    setDraft([]);
   };
 
   const review = async () => {
     await parseTranscript(command.trim());
   };
 
-  const transcribeRecordedAudio = async (audioBlob: Blob) => {
-    const formData = new FormData();
-    formData.append("audio", audioBlob, "voice.webm");
-    formData.append("language", "mr-IN");
-
-    const response = await fetch("/api/transcribe", {
-      method: "POST",
-      body: formData,
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.error || "Voice transcription failed");
-    }
-
-    const data = await response.json();
-    const transcriptText = cleanTranscript(data.transcript || "");
-    if (!transcriptText) {
-      throw new Error("No transcript returned from the audio model");
-    }
-
-    setCommand(transcriptText);
-    await parseTranscript(transcriptText);
-  };
-
-  const startListening = async () => {
+  const startListening = () => {
     if (typeof window === "undefined") return;
+    const Recognition =
+      (window as any).SpeechRecognition ||
+      (window as any).webkitSpeechRecognition;
 
-    const hasAudioCapture =
-      typeof MediaRecorder !== "undefined" &&
-      !!navigator.mediaDevices?.getUserMedia;
-
-    if (!hasAudioCapture) {
-      const Recognition =
-        (window as any).SpeechRecognition ||
-        (window as any).webkitSpeechRecognition;
-      if (!Recognition)
-        return setMessage(
-          "Voice input works best in Chrome or Edge. You can also type the sale.",
-        );
-      keepListening.current = true;
-      transcript.current = command.trim().slice(-6000);
-      lastFinalPhrase.current = "";
-      const session = () => {
-        if (!keepListening.current) return;
-        const instance = new Recognition();
-        recognition.current = instance;
-        instance.lang = "mr-IN";
-        instance.interimResults = true;
-        instance.continuous = true;
-        instance.onstart = () => {
-          setListening(true);
-          setMessage(
-            "Listening — keep speaking. I will stay open until you press Stop mic.",
-          );
-        };
-        instance.onresult = (event: any) => {
-          let interim = "";
-          for (let i = event.resultIndex; i < event.results.length; i += 1) {
-            const heard = event.results[i][0]?.transcript?.trim() || "";
-            if (event.results[i].isFinal && heard !== lastFinalPhrase.current) {
-              const nextTranscript = (transcript.current + " " + heard).trim();
-              transcript.current = nextTranscript.slice(-6000);
-              lastFinalPhrase.current = heard;
-            } else if (!event.results[i].isFinal)
-              interim = (interim + " " + heard).trim();
-          }
-          setCommand((transcript.current + " " + interim).trim().slice(-6000));
-        };
-        instance.onend = () => {
-          if (keepListening.current)
-            restartTimer.current = window.setTimeout(session, 250);
-          else setListening(false);
-        };
-        instance.onerror = (event: any) => {
-          if (event.error === "no-speech" || event.error === "aborted") return;
-          if (
-            ["not-allowed", "audio-capture", "network"].includes(event.error)
-          ) {
-            keepListening.current = false;
-            setListening(false);
-            setMessage(
-              "Microphone is unavailable. Check permission and try again.",
-            );
-          }
-        };
-        try {
-          instance.start();
-        } catch {
-          restartTimer.current = window.setTimeout(session, 400);
-        }
-      };
-      session();
+    if (!Recognition) {
+      setMessage(
+        "Voice input is not supported in this browser. Use Chrome or Edge, or search by product name.",
+      );
       return;
     }
 
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      audioStreamRef.current = stream;
-      const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
-        ? "audio/webm;codecs=opus"
-        : "audio/webm";
-      const recorder = new MediaRecorder(stream, { mimeType });
-      mediaRecorderRef.current = recorder;
-      audioChunksRef.current = [];
+    cancelled.current = false;
+    transcript.current = "";
+    latestTranscript.current = "";
+    setCommand("");
+    setDraft([]);
+    setShowVoice(true);
 
-      recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) audioChunksRef.current.push(event.data);
-      };
+    const instance = new Recognition();
+    recognition.current = instance;
+    instance.lang = language === "mr" ? "mr-IN" : "en-IN";
+    instance.interimResults = true;
+    instance.continuous = false;
+    instance.maxAlternatives = 3;
 
-      recorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
-        if (audioBlob.size === 0) {
-          setMessage("No audio captured. Please try again.");
-          return;
-        }
-
-        setListening(false);
-        setMessage("Processing your spoken order…");
-
-        try {
-          await transcribeRecordedAudio(audioBlob);
-        } catch (error) {
-          const message =
-            error instanceof Error
-              ? error.message
-              : "Voice transcription failed";
-          setMessage(message);
-        } finally {
-          stream.getTracks().forEach((track) => track.stop());
-          audioStreamRef.current = null;
-        }
-      };
-
-      recorder.start();
-      setCommand("");
-      setDraft([]);
+    instance.onstart = () => {
       setListening(true);
+      setMessage("Listening… say the complete order, then pause.");
+    };
+
+    instance.onresult = (event: any) => {
+      let finalText = "";
+      let interimText = "";
+
+      for (let index = event.resultIndex; index < event.results.length; index += 1) {
+        const heard = event.results[index][0]?.transcript?.trim() || "";
+        if (event.results[index].isFinal) {
+          finalText = `${finalText} ${heard}`.trim();
+        } else {
+          interimText = `${interimText} ${heard}`.trim();
+        }
+      }
+
+      if (finalText) {
+        transcript.current = `${transcript.current} ${finalText}`.trim();
+      }
+      const latest = `${transcript.current} ${interimText}`.trim();
+      latestTranscript.current = latest;
+      setCommand(latest);
+    };
+
+    instance.onerror = (event: any) => {
+      if (event.error === "aborted") return;
+      setListening(false);
+      recognition.current = null;
       setMessage(
-        "Listening with live audio capture. Speak naturally, then press Stop mic.",
+        event.error === "no-speech"
+          ? "Nothing was heard. Tap Speak order and try again."
+          : "Microphone is unavailable. Check permission and try again.",
       );
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Microphone access was denied";
-      setMessage(message);
+    };
+
+    instance.onend = () => {
+      recognition.current = null;
+      setListening(false);
+      const spokenOrder = latestTranscript.current.trim();
+      if (!cancelled.current && spokenOrder) {
+        void parseTranscript(spokenOrder);
+      } else if (!cancelled.current) {
+        setMessage("Nothing was heard. Tap Speak order and try again.");
+      }
+    };
+
+    try {
+      instance.start();
+    } catch {
+      recognition.current = null;
+      setListening(false);
+      setMessage("Voice input could not start. Please try again.");
     }
   };
 
   const stopListening = () => {
-    keepListening.current = false;
-    if (restartTimer.current) {
-      window.clearTimeout(restartTimer.current);
-      restartTimer.current = null;
-    }
-    if (
-      mediaRecorderRef.current &&
-      mediaRecorderRef.current.state !== "inactive"
-    ) {
-      mediaRecorderRef.current.stop();
-      return;
-    }
     recognition.current?.stop?.();
-    setListening(false);
+  };
 
-    if (command.trim()) {
-      setMessage("Voice captured. Parsing the raw transcript into products…");
-      window.setTimeout(() => {
-        void review();
-      }, 150);
-      return;
+  const cancelVoice = () => {
+    cancelled.current = true;
+    if (recognition.current) {
+      recognition.current.onresult = null;
+      recognition.current.onend = null;
+      recognition.current.onerror = null;
+      recognition.current.abort?.();
+      recognition.current = null;
     }
-
-    setMessage("Voice entry stopped.");
+    parsingRef.current = false;
+    setBusy(false);
+    setListening(false);
+    setCommand("");
+    setMessage("Voice cancelled. You can speak again or search products.");
   };
   const changeQuantity = (id: string, amount: number) =>
     setDraft((current) =>
@@ -506,254 +473,94 @@ export function VoiceSaleAssistant({
     setDraft((current) =>
       current.map((line) => (line.id === id ? { ...line, selectedId } : line)),
     );
+  const removeDraftLine = (id: string) =>
+    setDraft((current) => current.filter((line) => line.id !== id));
+  const useAvailableQuantity = (line: Draft) => {
+    const item = line.candidates.find((candidate) => candidate.id === line.selectedId) || line.candidates[0];
+    if (!item) return;
+    setDraft((current) => current.map((entry) => entry.id === line.id ? {
+      ...entry,
+      selectedId: item.id,
+      quantity: Number(item.quantity || 0),
+      requestedUnit: undefined,
+      blockedReason: undefined,
+    } : entry));
+  };
+  // Reserve quantities in spoken order as well as quantities already in the bill.
+  const reserved = new Map<number, number>();
+  const reviewed = draft.map((line) => {
+    const result = resolveDraftLine(line);
+    if (result.state !== "ready") return { line, result };
+    const sale = result.saleLine;
+    const item = items.find((entry) => entry.id === sale.itemId);
+    const available = Math.max(0, Number(item?.quantity || 0)
+      - addedItems.filter((entry) => entry.itemId === sale.itemId).reduce((sum, entry) => sum + entry.quantity, 0)
+      - (reserved.get(sale.itemId) || 0));
+    if (sale.quantity > available) return { line, result: { state: "insufficient" as const, available, item } };
+    reserved.set(sale.itemId, (reserved.get(sale.itemId) || 0) + sale.quantity);
+    return { line, result };
+  });
+  const ready = reviewed.filter((entry) => entry.result.state === "ready");
   const addConfirmed = () => {
-    const confirmed = draft.filter((line) => line.selectedId);
-    const blocked = confirmed.filter((line) => {
-      const item = line.candidates.find(
-        (candidate) => candidate.id === line.selectedId,
-      );
-      const unit = units.find((candidate) => candidate.id === item?.unitId);
-      const quantity =
-        line.requestedUnit && unit
-          ? convertUnit(line.quantity, line.requestedUnit, unit.shortForm)
-          : line.quantity;
-      const expiryDate = item?.expiryDate ? new Date(item.expiryDate) : null;
-      return (
-        !item ||
-        quantity > Number(item.quantity || 0) ||
-        (!!expiryDate && expiryDate.getTime() < Date.now())
-      );
+    const ids = new Set<string>();
+    ready.forEach(({ line, result }) => {
+      if (result.state === "ready") { onAdd(result.saleLine); ids.add(line.id); }
     });
-    if (blocked.length > 0) {
-      setMessage(
-        "Some confirmed items are unavailable or expired. Remove them before adding the sale.",
-      );
-      return;
-    }
-    confirmed.forEach((line) => {
-      const item = line.candidates.find(
-        (candidate) => candidate.id === line.selectedId,
-      );
-      if (!item) return;
-      const unit = units.find((candidate) => candidate.id === item.unitId);
-      const unitName = unit?.shortForm || "unit";
-      const requestedUnit = line.requestedUnit;
-      const quantity = requestedUnit
-        ? convertUnit(line.quantity, requestedUnit, unitName)
-        : line.quantity;
-      const expiryDate = item.expiryDate ? new Date(item.expiryDate) : null;
-      if (
-        Number(item.quantity || 0) <= 0 ||
-        (expiryDate && expiryDate.getTime() < Date.now())
-      )
-        return;
-      onAdd({
-        itemId: item.id,
-        itemName: item.brand ? item.name + " (" + item.brand + ")" : item.name,
-        quantity,
-        displayQuantity: line.quantity + " " + (requestedUnit || unitName),
-        unitId: item.unitId,
-        unitShortForm: unitName,
-        pricePerUnit: Number(item.sellPrice),
-        totalPrice: quantity * Number(item.sellPrice),
-        costPerUnit: Number(item.buyPrice),
-        totalCost: quantity * Number(item.buyPrice),
-      });
-    });
-    setMessage(
-      confirmed.length +
-        " item" +
-        (confirmed.length === 1 ? "" : "s") +
-        " added to cart. Review any unselected suggestions.",
-    );
-    setDraft((current) => current.filter((line) => !line.selectedId));
-    if (confirmed.length === draft.length) setCommand("");
+    setDraft((current) => current.filter((line) => !ids.has(line.id)));
+    setMessage(`${ids.size} products added to the bill.`);
+    if (ids.size === draft.length) { setCommand(""); setShowVoice(false); }
+  };
+  const searchInstead = (line: Draft) => {
+    onSearchRequested?.(line.query);
+    removeDraftLine(line.id);
   };
 
   return (
-    <section
-      className={
-        "mb-4 rounded-2xl border p-3 " +
-        (autoFocus
-          ? "border-violet-200 bg-violet-50/60 shadow-sm"
-          : "border-slate-200 bg-white")
-      }
-    >
-      <div className="mb-3 flex items-start justify-between gap-3">
-        <div>
-          <p className="flex items-center gap-1.5 text-sm font-semibold">
-            <Sparkles className="h-4 w-4 text-violet-600" /> Voice sale draft
-          </p>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            Speak naturally. Nothing enters the cart until you confirm it.
-          </p>
-        </div>
-        {listening && (
-          <span className="rounded-full bg-red-50 px-2 py-1 text-[11px] font-semibold text-red-600">
-            ● Listening
-          </span>
-        )}
-      </div>
-      <div className="flex flex-col gap-2 sm:flex-row">
-        <div className="relative flex-1">
-          <Volume2 className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-violet-500" />
-          <Input
-            ref={inputRef}
-            value={command}
-            onChange={(event) => setCommand(event.target.value)}
-            onKeyDown={(event) => event.key === "Enter" && review()}
-            className="bg-white pl-9"
-            placeholder="e.g. two Parle-G and 3 bread"
-          />
-        </div>
-        <Button
-          type="button"
-          onClick={listening ? stopListening : startListening}
-          variant="outline"
-          className="border-violet-300 text-violet-700"
-        >
-          <Mic className="mr-2 h-4 w-4" />
-          {listening ? "Stop mic" : "Speak"}
+    <section className="rounded-2xl border border-violet-100 bg-white p-3">
+      <div className="flex items-center gap-3">
+        <Button type="button" disabled={busy} onClick={listening ? stopListening : startListening}
+          className={`h-12 shrink-0 gap-2 rounded-xl ${listening ? "bg-red-600 hover:bg-red-700" : "bg-violet-600 hover:bg-violet-700"}`}>
+          <Mic className="h-5 w-5" />{listening ? "Stop" : busy ? "Processing…" : "Speak order"}
         </Button>
-        <Button
-          type="button"
-          onClick={review}
-          className="bg-violet-600 hover:bg-violet-700"
-        >
-          <Search className="mr-2 h-4 w-4" />
-          Review
-        </Button>
+        {(busy || listening) && <Button type="button" variant="outline" onClick={cancelVoice}>Cancel</Button>}
+        <p role="status" className="text-xs text-slate-600">{message || "Say your whole order, e.g. two Parle-G and one milk."}</p>
       </div>
-      {message && (
-        <p className="mt-2 rounded-lg bg-slate-50 px-2.5 py-2 text-xs text-slate-600">
-          {message}
-        </p>
-      )}
-      {draft.length > 0 && (
-        <div className="mt-3 space-y-2">
-          {draft.map((line) => (
-            <div
-              key={line.id}
-              className="rounded-xl border border-slate-200 bg-white p-3"
-            >
-              <div className="flex items-center gap-2">
-                <div className="flex items-center rounded-lg border">
-                  <button
-                    type="button"
-                    onClick={() => changeQuantity(line.id, -1)}
-                    className="p-1.5"
-                  >
-                    <Minus className="h-3.5 w-3.5" />
-                  </button>
-                  <span className="min-w-8 text-center text-sm font-bold">
-                    {line.quantity}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => changeQuantity(line.id, 1)}
-                    className="p-1.5"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-                <p className="min-w-0 flex-1 truncate text-sm">
-                  <span className="text-muted-foreground">Heard: </span>
-                  {line.query}
-                  {line.variant && (
-                    <span className="ml-2 text-violet-700">
-                      ({line.variant})
-                    </span>
-                  )}
-                  {line.priceOverride !== undefined && !line.variant && (
-                    <span className="ml-2 text-violet-700">
-                      (₹{line.priceOverride} variant)
-                    </span>
-                  )}
-                </p>
-              </div>
-              {line.blockedReason === "expired" && (
-                <p className="mt-2 rounded-md bg-red-50 px-2 py-1.5 text-xs font-semibold text-red-700">
-                  Expired product: remove it from this sale.
-                </p>
-              )}
-              {line.blockedReason === "out-of-stock" && (
-                <p className="mt-2 rounded-md bg-amber-50 px-2 py-1.5 text-xs font-semibold text-amber-700">
-                  No stock available for this product.
-                </p>
-              )}
-              {line.candidates.length ? (
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {line.candidates.map((item) => (
-                    <button
-                      key={item.id}
-                      type="button"
-                      onClick={() => {
-                        const expiryDate = item.expiryDate
-                          ? new Date(item.expiryDate)
-                          : null;
-                        if (
-                          Number(item.quantity || 0) <= 0 ||
-                          (expiryDate && expiryDate.getTime() < Date.now())
-                        )
-                          return;
-                        choose(line.id, item.id);
-                      }}
-                      disabled={
-                        Number(item.quantity || 0) <= 0 ||
-                        (!!item.expiryDate &&
-                          new Date(item.expiryDate).getTime() < Date.now())
-                      }
-                      className={
-                        "inline-flex items-center gap-1 rounded-lg border px-2 py-1.5 text-xs font-medium " +
-                        (line.selectedId === item.id
-                          ? "border-violet-300 bg-violet-50 text-violet-800"
-                          : Number(item.quantity || 0) <= 0 ||
-                              (!!item.expiryDate &&
-                                new Date(item.expiryDate).getTime() <
-                                  Date.now())
-                            ? "cursor-not-allowed border-slate-200 text-slate-400 line-through"
-                            : "border-slate-200 text-slate-600")
-                      }
-                    >
-                      {line.selectedId === item.id && (
-                        <Check className="h-3 w-3" />
-                      )}
-                      {item.name}
-                      {item.brand ? " · " + item.brand : ""}
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                <p className="mt-2 text-xs text-amber-700">
-                  No close match. Edit the text above and review again.
-                </p>
-              )}
-            </div>
-          ))}
-          <div className="flex items-center justify-between">
-            <button
-              type="button"
-              onClick={() => {
-                setDraft([]);
-                setCommand("");
-                setMessage("");
-              }}
-              className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-red-600"
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Clear
-            </button>
-            <Button
-              type="button"
-              size="sm"
-              onClick={addConfirmed}
-              disabled={!draft.some((line) => line.selectedId)}
-            >
-              <Check className="mr-1.5 h-4 w-4" />
-              Add confirmed
-            </Button>
+      {command && <details className="mt-2 text-xs text-slate-500"><summary className="cursor-pointer">What I heard / correct words</summary>
+        <Input aria-label="Correct spoken order" className="mt-2" value={command} onChange={(event) => setCommand(event.target.value)} />
+        <Button type="button" variant="ghost" disabled={busy || listening} onClick={review}>Check correction</Button>
+      </details>}
+      {draft.length > 0 && <div className="mt-3 space-y-3">
+        <div className="rounded-xl bg-emerald-50 p-3">
+          <p className="font-semibold text-emerald-900">{ready.length} products ready · ₹{ready.reduce((sum, entry) => sum + (entry.result.state === "ready" ? entry.result.saleLine.totalPrice : 0), 0).toFixed(2)}</p>
+          <p className="text-xs text-slate-600">{draft.length - ready.length} need attention</p>
+        </div>
+        {reviewed.map(({line, result}) => <div key={line.id} className={`rounded-xl border p-3 ${result.state === "ready" ? "border-slate-200" : "border-amber-200 bg-amber-50/50"}`}>
+          <div className="flex items-center justify-between gap-2">
+            <p className="font-semibold text-sm">{items.find((item) => item.id === line.selectedId)?.name || line.query}</p>
+            <Button variant="ghost" size="icon" aria-label={`Remove ${line.query}`} onClick={() => removeDraftLine(line.id)}><X className="h-4 w-4" /></Button>
           </div>
+          <div className="flex items-center gap-2">
+            <label className="text-xs" htmlFor={`voice-qty-${line.id}`}>Quantity</label>
+            <Input id={`voice-qty-${line.id}`} type="number" min="0.001" step="any" className="h-9 w-24" value={line.quantity} onChange={(event) => setDraft((current) => current.map((entry) => entry.id === line.id ? {...entry, quantity: Number(event.target.value)} : entry))} />
+            <span className="text-xs">{line.requestedUnit || units.find((unit) => unit.id === items.find((item) => item.id === line.selectedId)?.unitId)?.shortForm}</span>
+          </div>
+          {result.state === "ready" && <p className="mt-2 text-sm text-emerald-700">Ready · ₹{result.saleLine.totalPrice.toFixed(2)}</p>}
+          {result.state === "expired" && <p className="mt-2 text-sm text-red-700">Expired. Choose another product.</p>}
+          {result.state === "quantity" && <p className="mt-2 text-sm text-amber-800">Enter a quantity greater than zero.</p>}
+          {result.state === "variant" && <div className="mt-2"><p className="text-sm text-amber-800">Check the requested price or pack size.</p><Button variant="outline" onClick={() => { onProductSelected?.(line.selectedId!, line.quantity, line.requestedUnit); removeDraftLine(line.id); }}>Choose price / pack</Button></div>}
+          {result.state === "insufficient" && <div className="mt-2 flex flex-wrap items-center gap-2"><p className="text-sm text-amber-800">{result.available > 0 ? `Only ${result.available} available after other bill items.` : "Out of stock for this bill."}</p>
+            {result.available > 0 && <Button variant="outline" onClick={() => setDraft((current) => current.map((entry) => entry.id === line.id ? {...entry, quantity: result.available, requestedUnit: undefined} : entry))}>Use {result.available}</Button>}
+          </div>}
+          {result.state === "unmatched" && <div className="mt-2 space-y-2"><p className="text-sm text-amber-800">{line.candidates.length ? "Which product did you mean?" : "No matching product found."}</p>
+            {line.candidates.map((item) => <Button key={item.id} variant="outline" className="mr-1 mb-1 h-auto whitespace-normal text-left" onClick={() => choose(line.id,item.id)}>{item.name} {item.brand} · ₹{item.sellPrice}</Button>)}
+          </div>}
+          {result.state !== "ready" && onSearchRequested && <Button className="mt-2" variant="outline" onClick={() => searchInstead(line)}>Search replacement</Button>}
+        </div>)}
+        <div className="flex flex-wrap gap-2">
+          <Button className="flex-1 bg-emerald-600 hover:bg-emerald-700" disabled={!ready.length || busy || listening} onClick={addConfirmed}>Add {ready.length} ready products to bill</Button>
+          <Button variant="ghost" onClick={() => {setDraft([]); setCommand(""); setMessage("");}}>Clear spoken items</Button>
         </div>
-      )}
+      </div>}
     </section>
   );
 }

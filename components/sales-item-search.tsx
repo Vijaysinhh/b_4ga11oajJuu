@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import { useItems, useUnits, usePriceTiers } from "@/hooks/use-supabase";
 import { useAuth } from "@/providers/auth-provider";
 import { useLanguage } from "@/providers/language-provider";
@@ -65,6 +65,7 @@ export function SalesItemSearch({
   const [selectedPriceTier, setSelectedPriceTier] = useState<PriceTier | null>(
     null,
   );
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!searchTerm.trim()) {
@@ -374,7 +375,26 @@ export function SalesItemSearch({
         )}
       </div>
 
-      <VoiceSaleAssistant items={items} units={units} onAdd={onItemAdded} />
+      <VoiceSaleAssistant
+        items={items}
+        units={units}
+        addedItems={addedItems}
+        onAdd={onItemAdded}
+        onProductSelected={(itemId, spokenQuantity, requestedUnit) => {
+          const item = items.find((product) => product.id === itemId);
+          if (!item) return;
+          handleItemSelect(item);
+          const baseUnit = units.find((unit) => unit.id === item.unitId)?.shortForm || "";
+          const initialQuantity = requestedUnit ? convertUnit(spokenQuantity, requestedUnit, baseUnit) : spokenQuantity;
+          setQuantity(String(initialQuantity));
+          window.setTimeout(() => document.getElementById("sale-product-details")?.scrollIntoView({ behavior: "smooth", block: "center" }), 0);
+        }}
+        onSearchRequested={(query) => {
+          setSelectedItem(null);
+          setSearchTerm(query);
+          window.setTimeout(() => searchInputRef.current?.focus(), 0);
+        }}
+      />
 
       {searchTerm && !selectedItem && (
         <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
@@ -545,7 +565,7 @@ export function SalesItemSearch({
       )}
 
       {selectedItem && (
-        <Card className="border-blue-200 bg-blue-50 p-3">
+        <Card id="sale-product-details" className="border-blue-200 bg-blue-50 p-3">
           <div className="mb-3 flex items-start justify-between gap-2">
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
@@ -626,7 +646,8 @@ export function SalesItemSearch({
                 {units.find((u) => u.id === selectedItem.unitId)?.shortForm})
               </span>
             </div>
-            <Input
+        <Input
+          ref={searchInputRef}
               type="text"
               inputMode="numeric"
               pattern="[0-9]*"

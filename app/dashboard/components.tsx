@@ -1025,10 +1025,12 @@ export function Dashboard() {
       ? "उधारी pending नाही"
       : "No pending udhari";
   const itemFocusHref = (itemId?: number, filter?: string | null) => {
-    if (!itemId) return "/items";
-    const params = new URLSearchParams({ focusItemId: String(itemId) });
+    const params = new URLSearchParams();
+    if (itemId) params.set("focusItemId", String(itemId));
     if (filter) params.set("filter", filter);
-    return `/items?${params.toString()}`;
+    if (filter === "lowStock") params.set("view", "restock");
+    const query = params.toString();
+    return query ? `/items?${query}` : "/items";
   };
   const customerFocusHref = (customerId?: number) =>
     customerId ? `/udhari?focusCustomerId=${customerId}` : "/udhari";
@@ -2829,7 +2831,7 @@ export function Dashboard() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => (window.location.href = "/items")}
+              onClick={() => router.push("/items?view=restock")}
               className="text-xs"
             >
               {t("restock")}

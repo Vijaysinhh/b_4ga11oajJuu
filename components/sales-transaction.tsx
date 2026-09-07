@@ -33,7 +33,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Check, Trash2, UserPlus } from "lucide-react";
+import { Check, ShoppingBag, Trash2, UserPlus } from "lucide-react";
 import { toast } from "sonner";
 
 type PaymentMethod = "cash" | "card" | "partial" | "udhar";
@@ -301,9 +301,10 @@ export function SalesTransaction() {
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
       <div className="lg:col-span-1">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">{t("add_items")}</CardTitle>
+        <Card className="border-indigo-100 shadow-sm lg:sticky lg:top-24">
+          <CardHeader className="border-b border-indigo-50 pb-3">
+            <CardTitle className="text-base">Add products</CardTitle>
+            <p className="text-xs text-muted-foreground">Search is quickest. Use voice only when it helps.</p>
           </CardHeader>
           <CardContent>
             <SalesItemSearch onItemAdded={handleItemAdded} addedItems={items} />
@@ -312,62 +313,37 @@ export function SalesTransaction() {
       </div>
 
       <div className="space-y-3 lg:col-span-2">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">
-              {t("sale_items")} ({items.length})
-            </CardTitle>
+        <Card className="overflow-hidden border-slate-200 shadow-sm">
+          <CardHeader className="flex flex-row items-center justify-between border-b bg-slate-50/70 py-4">
+            <CardTitle className="flex items-center gap-2 text-base"><ShoppingBag className="h-4 w-4 text-indigo-600" />Current bill</CardTitle>
+            <span className="rounded-full bg-indigo-100 px-2.5 py-1 text-xs font-bold text-indigo-700">{items.length} {items.length === 1 ? "item" : "items"}</span>
           </CardHeader>
           <CardContent>
             {items.length === 0 ? (
-              <div className="py-8 text-center text-gray-500">
-                <p>{t("no_items_added")}</p>
+              <div className="py-12 text-center text-gray-500">
+                <ShoppingBag className="mx-auto h-9 w-9 text-slate-300" />
+                <p className="mt-3 font-medium text-slate-700">Your bill is empty</p>
+                <p className="mt-1 text-sm">Search a product to start this sale.</p>
               </div>
             ) : (
               <div className="space-y-2">
                 {items.map((item, index) => {
-                  const profit = item.totalPrice - item.totalCost;
-                  const marginPct =
-                    item.totalPrice > 0 ? (profit / item.totalPrice) * 100 : 0;
-
                   return (
                     <div
                       key={`${item.itemId}-${index}`}
-                      className="flex items-start justify-between rounded border bg-gray-50 p-3 transition hover:bg-gray-100"
+                      className="flex items-start justify-between rounded-xl border border-slate-200 bg-white p-3 transition hover:border-indigo-200 hover:bg-indigo-50/30"
                     >
                       <div className="min-w-0 flex-1">
-                        <div className="text-sm font-semibold">
-                          {item.itemName} - {item.displayQuantity}
-                        </div>
-                        <div className="mt-1 space-y-1 text-xs text-muted-foreground">
-                          <div>
-                            {t("selling")}: {formatSaleLineSubtitle(item)} ={" "}
-                            <span className="font-semibold text-blue-600">
-                              Rs. {formatMoney(item.totalPrice)}
-                            </span>
-                          </div>
-                          <div>
-                            {t("cost")}: Rs. {formatMoney(item.totalCost)}
-                          </div>
-                        </div>
-                        <div className="mt-1 text-xs font-semibold">
-                          <span
-                            className={
-                              profit > 0 ? "text-green-700" : "text-red-700"
-                            }
-                          >
-                            {t("profit_amount")}: Rs. {formatMoney(profit)} (
-                            {formatPercent(marginPct)}%)
-                          </span>
-                        </div>
+                        <div className="text-sm font-semibold text-slate-900">{item.itemName}</div>
+                        <div className="mt-1 text-xs text-muted-foreground">{formatSaleLineSubtitle(item)} · ₹{formatMoney(item.pricePerUnit)} each</div>
                       </div>
-                      <button
+                      <div className="flex items-center gap-3"><span className="text-sm font-bold text-slate-900">₹{formatMoney(item.totalPrice)}</span><button
                         onClick={() => handleRemoveItem(index)}
                         className="ml-2 flex-shrink-0 text-red-600 hover:text-red-800"
                         aria-label={`Remove ${item.itemName}`}
                       >
                         <Trash2 className="h-4 w-4" />
-                      </button>
+                      </button></div>
                     </div>
                   );
                 })}
@@ -378,34 +354,12 @@ export function SalesTransaction() {
 
         {items.length > 0 && (
           <>
-            <Card className="border-green-200 bg-green-50">
+            <Card className="border-emerald-200 bg-emerald-50 shadow-sm">
               <CardContent className="pt-4">
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between">
-                    <span>{t("total_revenue")}:</span>
-                    <span className="font-bold">
-                      Rs. {formatMoney(totals.subtotal)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>{t("total_cost")}:</span>
-                    <span className="font-bold">
-                      Rs. {formatMoney(totals.totalCost)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between border-t pt-2 text-base">
-                    <span>{t("total_profit")}:</span>
-                    <span
-                      className={`font-bold ${totals.totalProfit >= 0 ? "text-green-700" : "text-red-700"}`}
-                    >
-                      Rs. {formatMoney(totals.totalProfit)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-xs text-gray-600">
-                    <span>{t("margin")} %:</span>
-                    <span className="font-semibold">
-                      {formatPercent(profitMarginPercent)}%
-                    </span>
+                    <span className="font-medium text-emerald-900">Bill total</span>
+                    <span className="text-xl font-bold text-emerald-800">₹{formatMoney(totals.subtotal)}</span>
                   </div>
                 </div>
               </CardContent>
