@@ -191,6 +191,8 @@ export function VoiceSaleAssistant({
   const [message, setMessage] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const recognition = useRef<any>(null);
+  const keepListening = useRef(false);
+  const restartTimer = useRef<number | null>(null);
   const cancelled = useRef(false);
   const transcript = useRef("");
   const latestTranscript = useRef("");
@@ -198,6 +200,10 @@ export function VoiceSaleAssistant({
 
   useEffect(() => () => {
     cancelled.current = true;
+    keepListening.current = false;
+    if (restartTimer.current !== null) {
+      window.clearTimeout(restartTimer.current);
+    }
     recognition.current?.abort?.();
   }, []);
 
@@ -358,6 +364,17 @@ export function VoiceSaleAssistant({
     await parseTranscript(command.trim());
   };
 
+  const finishListening = () => {
+    recognition.current = null;
+    setListening(false);
+    const spokenOrder = latestTranscript.current.trim();
+    if (!cancelled.current && spokenOrder) {
+      void parseTranscript(spokenOrder);
+    } else if (!cancelled.current) {
+      setMessage("Nothing was heard. Tap Speak order and try again.");
+    }
+  };
+
   const startListening = () => {
     if (typeof window === "undefined") return;
     const Recognition =
@@ -372,82 +389,105 @@ export function VoiceSaleAssistant({
     }
 
     cancelled.current = false;
+    keepListening.current = true;
     transcript.current = "";
     latestTranscript.current = "";
     setCommand("");
     setDraft([]);
     setShowVoice(true);
 
-    const instance = new Recognition();
-    recognition.current = instance;
-    instance.lang = language === "mr" ? "mr-IN" : "en-IN";
-    instance.interimResults = true;
-    instance.continuous = false;
-    instance.maxAlternatives = 3;
+    const startSession = () => {
+      if (!keepListening.current || cancelled.current) return;
 
-    instance.onstart = () => {
-      setListening(true);
-      setMessage("Listening… say the complete order, then pause.");
-    };
+      const instance = new Recognition();
+      recognition.current = instance;
+      instance.lang = language === "mr" ? "mr-IN" : "en-IN";
+      instance.interimResults = true;
+      instance.continuous = true;
+      instance.maxAlternatives = 3;
 
-    instance.onresult = (event: any) => {
-      let finalText = "";
-      let interimText = "";
+      instance.onstart = () => {
+        setListening(true);
+        setMessage("Listening… say the complete order, then tap Stop.");
+      };
 
-      for (let index = event.resultIndex; index < event.results.length; index += 1) {
-        const heard = event.results[index][0]?.transcript?.trim() || "";
-        if (event.results[index].isFinal) {
-          finalText = `${finalText} ${heard}`.trim();
-        } else {
-          interimText = `${interimText} ${heard}`.trim();
+      instance.onresult = (event: any) => {
+        let finalText = "";
+        let interimText = "";
+
+        for (let index = event.resultIndex; index < event.results.length; index += 1) {
+          const heard = event.results[index][0]?.transcript?.trim() || "";
+          if (event.results[index].isFinal) {
+            finalText = `${finalText} ${heard}`.trim();
+          } else {
+            interimText = `${interimText} ${heard}`.trim();
+          }
         }
-      }
 
-      if (finalText) {
-        transcript.current = `${transcript.current} ${finalText}`.trim();
+        if (finalText) {
+          transcript.current = `${transcript.current} ${finalText}`.trim();
+        }
+        const latest = `${transcript.current} ${interimText}`.trim();
+        latestTranscript.current = latest;
+        setCommand(latest);
+      };
+
+      instance.onerror = (event: any) => {
+        if (event.error === "aborted" || event.error === "no-speech") return;
+        keepListening.current = false;
+        cancelled.current = true;
+        setListening(false);
+        recognition.current = null;
+        setMessage("Microphone is unavailable. Check permission and try again.");
+      };
+
+      instance.onend = () => {
+        recognition.current = null;
+        if (keepListening.current && !cancelled.current) {
+          // Browsers can end recognition after a short silence. Reopen it while
+          // keeping the transcript and Stop button active.
+          restartTimer.current = window.setTimeout(() => {
+            restartTimer.current = null;
+            startSession();
+          }, 150);
+          return;
+        }
+        finishListening();
+      };
+
+      try {
+        instance.start();
+      } catch {
+        keepListening.current = false;
+        recognition.current = null;
+        setListening(false);
+        setMessage("Voice input could not start. Please try again.");
       }
-      const latest = `${transcript.current} ${interimText}`.trim();
-      latestTranscript.current = latest;
-      setCommand(latest);
     };
 
-    instance.onerror = (event: any) => {
-      if (event.error === "aborted") return;
-      setListening(false);
-      recognition.current = null;
-      setMessage(
-        event.error === "no-speech"
-          ? "Nothing was heard. Tap Speak order and try again."
-          : "Microphone is unavailable. Check permission and try again.",
-      );
-    };
-
-    instance.onend = () => {
-      recognition.current = null;
-      setListening(false);
-      const spokenOrder = latestTranscript.current.trim();
-      if (!cancelled.current && spokenOrder) {
-        void parseTranscript(spokenOrder);
-      } else if (!cancelled.current) {
-        setMessage("Nothing was heard. Tap Speak order and try again.");
-      }
-    };
-
-    try {
-      instance.start();
-    } catch {
-      recognition.current = null;
-      setListening(false);
-      setMessage("Voice input could not start. Please try again.");
-    }
+    startSession();
   };
 
   const stopListening = () => {
-    recognition.current?.stop?.();
+    keepListening.current = false;
+    if (restartTimer.current !== null) {
+      window.clearTimeout(restartTimer.current);
+      restartTimer.current = null;
+    }
+    if (recognition.current) {
+      recognition.current.stop?.();
+    } else {
+      finishListening();
+    }
   };
 
   const cancelVoice = () => {
     cancelled.current = true;
+    keepListening.current = false;
+    if (restartTimer.current !== null) {
+      window.clearTimeout(restartTimer.current);
+      restartTimer.current = null;
+    }
     if (recognition.current) {
       recognition.current.onresult = null;
       recognition.current.onend = null;
