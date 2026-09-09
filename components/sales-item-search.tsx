@@ -21,6 +21,7 @@ import {
 import type { Item, PriceTier } from "@/lib/db";
 import { VoiceSaleAssistant } from "./voice-sale-assistant";
 import { normalizeVoiceText } from "@/lib/voice-sale-parser";
+import { convertVoiceQuantity } from "@/lib/voice-sale-matching";
 
 interface SaleLineItem {
   itemId: number;
@@ -66,6 +67,13 @@ export function SalesItemSearch({
     null,
   );
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const [voiceReplacement, setVoiceReplacement] = useState<{ query: string; resolve: (itemId: number) => void } | null>(null);
+  const voiceProductAdded = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    setVoiceReplacement(null);
+    voiceProductAdded.current = null;
+  }, [currentShopId]);
 
   useEffect(() => {
     if (!searchTerm.trim()) {
@@ -226,6 +234,13 @@ export function SalesItemSearch({
   };
 
   const handleItemSelect = (item: Item) => {
+    if (voiceReplacement && item.id !== undefined) {
+      voiceReplacement.resolve(item.id);
+      setVoiceReplacement(null);
+      setSearchTerm("");
+      return;
+    }
+    voiceProductAdded.current = null;
     setSelectedItem(item);
     setSearchTerm("");
     setQuantity("");
@@ -348,6 +363,8 @@ export function SalesItemSearch({
       onItemEdited(newItem);
     } else {
       onItemAdded(newItem);
+      voiceProductAdded.current?.();
+      voiceProductAdded.current = null;
     }
 
     setSelectedItem(null);
@@ -376,25 +393,37 @@ export function SalesItemSearch({
       </div>
 
       <VoiceSaleAssistant
+        key={currentShopId}
         items={items}
         units={units}
         addedItems={addedItems}
         onAdd={onItemAdded}
-        onProductSelected={(itemId, spokenQuantity, requestedUnit) => {
+        onProductSelected={(itemId, spokenQuantity, requestedUnit, onAdded) => {
           const item = items.find((product) => product.id === itemId);
           if (!item) return;
-          handleItemSelect(item);
+          setVoiceReplacement(null);
+          setSelectedItem(item);
+          setSelectedPriceTier(null);
+          setSearchTerm("");
+          voiceProductAdded.current = onAdded || null;
           const baseUnit = units.find((unit) => unit.id === item.unitId)?.shortForm || "";
-          const initialQuantity = requestedUnit ? convertUnit(spokenQuantity, requestedUnit, baseUnit) : spokenQuantity;
-          setQuantity(String(initialQuantity));
+          const initialQuantity = convertVoiceQuantity(spokenQuantity, requestedUnit, baseUnit);
+          setQuantity(initialQuantity === null ? "" : String(initialQuantity));
           window.setTimeout(() => document.getElementById("sale-product-details")?.scrollIntoView({ behavior: "smooth", block: "center" }), 0);
         }}
-        onSearchRequested={(query) => {
+        onSearchRequested={(query, resolve) => {
+          voiceProductAdded.current = null;
+          setVoiceReplacement({ query, resolve });
           setSelectedItem(null);
           setSearchTerm(query);
           window.setTimeout(() => searchInputRef.current?.focus(), 0);
         }}
       />
+
+      {voiceReplacement && <div className="flex items-center justify-between gap-2 rounded-xl bg-violet-50 p-3 text-sm text-violet-900" role="status">
+        <span>{language === "mr" ? `“${voiceReplacement.query}” ऐवजी वस्तू निवडा. प्रमाण तसेच राहील.` : `Choose a replacement for “${voiceReplacement.query}”. Quantity will be kept.`}</span>
+        <Button type="button" variant="ghost" size="sm" onClick={() => { setVoiceReplacement(null); setSearchTerm(""); }}>{language === "mr" ? "रद्द करा" : "Cancel"}</Button>
+      </div>}
 
       {searchTerm && !selectedItem && (
         <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
@@ -547,7 +576,7 @@ export function SalesItemSearch({
                               : "bg-blue-600 text-white hover:bg-blue-700"
                           }`}
                         >
-                          {outOfStock ? "Unavailable" : "Add"}
+                          {outOfStock ? (language === "mr" ? "उपलब्ध नाही" : "Unavailable") : voiceReplacement ? (language === "mr" ? "ही वस्तू निवडा" : "Use this product") : (language === "mr" ? "जोडा" : "Add")}
                         </button>
                       </div>
                     </div>

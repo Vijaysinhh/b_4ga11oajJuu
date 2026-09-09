@@ -2,6 +2,7 @@ export type VoiceSaleRequest = {
   quantity: number;
   productQuery: string;
   requestedUnit?: string;
+  priceOverride?: number;
 };
 
 const numberWords: Record<string, number> = {
@@ -56,6 +57,13 @@ const numberWords: Record<string, number> = {
   अडीच: 2.5,
   साडेतीन: 3.5,
   half: 0.5,
+  अर्धे: 0.5,
+  शून्य: 0,
+  पंचवीस: 25,
+  पन्नास: 50,
+  शंभर: 100,
+  दोनशे: 200,
+  पाचशे: 500,
 };
 
 const unitAliases: Record<string, string> = {
@@ -104,8 +112,15 @@ const priceVariantWords = new Set([
   "wale",
   "वाले",
   "rupees",
+  "rupee",
   "रुपये",
+  "रुपयांची",
+  "रुपयांचा",
   "रुपयाचे",
+  "रुपयांचे",
+  "रुपयाचेच",
+  "रुपयाला",
+  "rs",
   "price",
   "rate",
 ]);
@@ -131,6 +146,10 @@ const commandWords = new Set([
   "चा",
   "ची",
   "चे",
+  "मला",
+  "आहे",
+  "a",
+  "of",
 ]);
 
 const speechAliases: Record<string, string> = {
@@ -145,20 +164,35 @@ const speechAliases: Record<string, string> = {
   duudh: "doodh",
   dhoodh: "doodh",
   dudh: "doodh",
+  दूध: "doodh",
+  दुध: "doodh",
   milk: "doodh",
   dule: "doodh",
   dud: "doodh",
+  पार्ले: "parle",
+  जी: "g",
+  बिस्किट: "biscuit",
+  बिस्किटे: "biscuit",
+  biscuits: "biscuit",
+  ब्रेड: "bread",
+  साखर: "sugar",
+  मीठ: "salt",
+  तांदूळ: "rice",
+  तेल: "oil",
 };
 
-export function normalizeVoiceText(value: string) {
+export function normalizeVoiceText(value: string, applyAliases = true) {
   const normalized = value
+    .normalize("NFC")
     .toLowerCase()
     .replace(/[०-९]/g, (digit) => String("०१२३४५६७८९".indexOf(digit)))
     .replace(
       /\b(?:i|ek|एक)\s+(?=(?:kilo|kilos|kg|kilogram|kilograms|किलो|किलोग्राम)\b)/g,
       "1 ",
     )
-    .replace(/[,.!?;:]/g, " ")
+    .replace(/[-–—()]/g, " ")
+    .replace(/[!?;:,।]/g, " ")
+    .replace(/\.(?!\d)/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 
@@ -166,17 +200,10 @@ export function normalizeVoiceText(value: string) {
     .replace(/([a-z])\1{2,}/g, "$1$1")
     .replace(/([aeiou])\1{2,}/g, "$1");
 
-  const aliasApplied = Object.entries(speechAliases).reduce(
-    (result, [alias, replacement]) =>
-      result.replace(
-        new RegExp(
-          `\\b${alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`,
-          "g",
-        ),
-        replacement,
-      ),
-    withoutRepeats,
-  );
+  const aliasApplied = withoutRepeats
+    .split(" ")
+    .map((token) => applyAliases ? speechAliases[token] || token : token)
+    .join(" ");
 
   return aliasApplied.replace(/\s+/g, " ").trim();
 }
@@ -186,12 +213,23 @@ function numberFromToken(token: string) {
   return numberWords[token];
 }
 
+/** Collapse a stutter, not separate items or an explicit quantity + price. */
+export function cleanVoiceRepetitions(value: string) {
+  const tokens = value.split(/\s+/).filter(Boolean);
+  return tokens.filter((token, index) => {
+    if (!index || priceVariantWords.has(tokens[index + 1])) return true;
+    const quantity = numberFromToken(token);
+    return quantity === undefined || quantity !== numberFromToken(tokens[index - 1]);
+  }).join(" ");
+}
+
 function quantityStartIndexes(tokens: string[]) {
   const indexes: number[] = [];
 
   for (let index = 0; index < tokens.length; index += 1) {
     const token = tokens[index];
     const nextToken = tokens[index + 1];
+    if (token === "पाव" && !unitAliases[nextToken]) continue;
     if (numberFromToken(token) === undefined) continue;
     if (nextToken && priceVariantWords.has(nextToken)) continue;
     if (index > 0 && numberFromToken(tokens[index - 1]) !== undefined) continue;
@@ -202,10 +240,11 @@ function quantityStartIndexes(tokens: string[]) {
 }
 
 function splitRequests(value: string) {
-  const normalized = normalizeVoiceText(value)
+  const normalized = cleanVoiceRepetitions(normalizeVoiceText(value
+    .replace(/₹\s*([\d०-९]+(?:\.[\d०-९]+)?)/g, "$1 rupees")
+    .replace(/[,;।]+/g, " | "), false)
     .replace(/\b(?:and|then|plus|ani|mag|aani)\b/g, "|")
-    .replace(/[,;]+/g, "|")
-    .replace(/\b(?:आणि|मग|तथा)\b/g, "|");
+    .split(/\s+/).map((token) => ["आणि", "मग", "तथा"].includes(token) ? "|" : token).join(" "));
 
   const clauses = normalized
     .split("|")
@@ -224,7 +263,7 @@ function splitRequests(value: string) {
     }
 
     for (let index = 0; index < starts.length; index += 1) {
-      const start = starts[index];
+      const start = index === 0 ? 0 : starts[index];
       const end = starts[index + 1] ?? tokens.length;
       const segment = tokens.slice(start, end).join(" ").trim();
       if (segment) resolved.push(segment);
@@ -239,6 +278,7 @@ export function parseVoiceSaleCommand(value: string): VoiceSaleRequest[] {
     .map((part) => {
       const tokens = part.split(" ").filter(Boolean);
       const ignoredIndexes = new Set<number>();
+      let priceOverride: number | undefined;
 
       for (let index = 0; index < tokens.length - 1; index += 1) {
         const token = tokens[index];
@@ -250,16 +290,18 @@ export function parseVoiceSaleCommand(value: string): VoiceSaleRequest[] {
         ) {
           ignoredIndexes.add(index);
           ignoredIndexes.add(index + 1);
+          priceOverride = numberFromToken(token);
         }
       }
 
       const quantityIndex = tokens.findIndex(
         (token, index) =>
-          !ignoredIndexes.has(index) && numberFromToken(token) !== undefined,
+          !ignoredIndexes.has(index) && numberFromToken(token) !== undefined &&
+          (token !== "पाव" || Boolean(unitAliases[tokens[index + 1]])),
       );
 
       let quantity =
-        quantityIndex >= 0 ? numberFromToken(tokens[quantityIndex]) || 1 : 1;
+        quantityIndex >= 0 ? numberFromToken(tokens[quantityIndex]) ?? 1 : 1;
 
       const productTokens = tokens.filter(
         (_, index) =>
@@ -269,18 +311,19 @@ export function parseVoiceSaleCommand(value: string): VoiceSaleRequest[] {
       );
 
       let requestedUnit: string | undefined;
-      const filteredTokens = productTokens.filter((token) => {
-        const unit = unitAliases[token];
+      const filteredTokens = productTokens.filter((token, index) => {
+        // The G in the brand Parle-G is not a request for grams.
+        const unit = token === "g" && normalizeVoiceText(productTokens[index - 1] || "") === "parle"
+          ? undefined : unitAliases[token];
         if (unit) requestedUnit = unit;
         return !unit;
       });
-
-      if (requestedUnit === "dozen") quantity *= 12;
 
       return {
         quantity,
         productQuery: filteredTokens.join(" ").trim(),
         ...(requestedUnit ? { requestedUnit } : {}),
+        ...(priceOverride !== undefined ? { priceOverride } : {}),
       };
     })
     .filter((request) => request.productQuery.length > 0);
