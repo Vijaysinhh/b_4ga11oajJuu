@@ -129,6 +129,9 @@ const priceVariantWords = new Set([
 const commandWords = new Set([
   "add",
   "please",
+  "more",
+  "आणखी",
+  "अजून",
   "qty",
   "quantity",
   "करा",

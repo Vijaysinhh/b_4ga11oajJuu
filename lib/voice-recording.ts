@@ -21,7 +21,8 @@ export function createVoiceRecording(
   language: string,
   callbacks: {
     onText: (text: string) => void;
-    onFinish: (text: string) => void;
+    onStableText?: (text: string) => void;
+    onFinish: (text: string, status?: { needsReview: boolean }) => void;
     onError: (code: string) => void;
   },
 ) {
@@ -31,6 +32,9 @@ export function createVoiceRecording(
   let started = false;
   let text = "";
   let publishedText = "";
+  let stableText = "";
+  let publishedStableText = "";
+  let interimText = "";
   let emptySessions = 0;
   let restart: ReturnType<typeof setTimeout> | undefined;
   let stopDeadline: ReturnType<typeof setTimeout> | undefined;
@@ -50,7 +54,7 @@ export function createVoiceRecording(
   const finish = () => {
     if (!active) return;
     cleanup();
-    callbacks.onFinish(cleanVoiceRepetitions(text));
+    callbacks.onFinish(cleanVoiceRepetitions(text), { needsReview: Boolean(interimText.trim()) });
   };
   const fail = (code: string) => {
     if (!active) return;
@@ -62,7 +66,10 @@ export function createVoiceRecording(
     let instance: RecognitionEngine;
     try { instance = createEngine(); } catch { fail("start-failed"); return; }
     engine = instance;
-    const prefix = text;
+    // Only confirmed words may cross a browser-session boundary.
+    const prefix = stableText;
+    const finals = new Map<number, string>();
+    interimText = "";
     instance.lang = language;
     instance.continuous = true;
     instance.interimResults = true;
@@ -70,11 +77,26 @@ export function createVoiceRecording(
     const current = () => active && engine === instance;
     instance.onresult = (event) => {
       if (!current()) return;
-      // Results are a replaceable snapshot, not a stream to append each time.
-      const sessionText = Array.from(event.results, (result) => result[0].transcript.trim()).join(" ");
-      text = `${prefix} ${sessionText}`.trim();
-      // Keep the raw snapshot for future revisions and price context, but never
-      // display a growing quantity stutter (एक एक एक / one १ एक).
+      // Final slots are committed once; interim slots are a replaceable
+      // snapshot, including when the browser removes its previous guess.
+      const pending: string[] = [];
+      Array.from(event.results).forEach((result, index) => {
+        const transcript = result?.[0]?.transcript?.trim() || "";
+        if (result.isFinal) {
+          if (!finals.has(index)) finals.set(index, transcript);
+        } else if (!finals.has(index)) {
+          pending.push(transcript);
+        }
+      });
+      const confirmed = [...finals].sort(([a], [b]) => a - b).map(([, words]) => words).join(" ");
+      stableText = `${prefix} ${confirmed}`.trim();
+      interimText = pending.join(" ").trim();
+      text = `${stableText} ${interimText}`.trim();
+      const stable = cleanVoiceRepetitions(stableText);
+      if (stable !== publishedStableText) {
+        publishedStableText = stable;
+        callbacks.onStableText?.(stable);
+      }
       const cleaned = cleanVoiceRepetitions(text);
       if (cleaned !== publishedText) {
         publishedText = cleaned;
@@ -91,7 +113,11 @@ export function createVoiceRecording(
       if (!current()) return;
       engine = null;
       if (stopping) { finish(); return; }
-      emptySessions = text === prefix ? emptySessions + 1 : 0;
+      // Do not promote unfinished guesses into the next session's permanent
+      // prefix. Preserve them for an explicit correction instead.
+      if (interimText) { finish(); return; }
+      emptySessions = stableText === prefix ? emptySessions + 1 : 0;
+      if (emptySessions >= 2 && stableText) { finish(); return; }
       if (emptySessions >= 5) { fail("no-speech"); return; }
       restart = setTimeout(session, 250);
     };

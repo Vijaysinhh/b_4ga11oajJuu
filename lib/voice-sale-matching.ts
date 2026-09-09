@@ -2,7 +2,7 @@ import { normalizeVoiceText } from "./voice-sale-parser";
 
 type Product = { id: number; name: string; nameMarathi?: string; brand?: string; brandMarathi?: string };
 
-/** Approximate words broaden AI context, never automatically choose the product. */
+/** Approximate words offer alternatives, never automatically choose the product. */
 export function shortlistVoiceProducts<T extends Product>(query: string, items: T[]) {
   const exact = matchVoiceProducts(query, items).candidates;
   const words = normalizeVoiceText(query).split(" ").filter((word) => word.length > 2);

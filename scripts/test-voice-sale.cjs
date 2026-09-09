@@ -22,7 +22,6 @@ function load(name) {
 const { parseVoiceSaleCommand: parse, normalizeVoiceText: normalize, cleanVoiceRepetitions: cleanRepeats } = load('voice-sale-parser');
 const { matchVoiceProducts: match, convertVoiceQuantity: convert, checkVoiceStock: stock } = load('voice-sale-matching');
 const { createVoiceRecording } = load('voice-recording');
-const { validateVoiceAIResult } = load('voice-sale-ai');
 
 for (const [spoken, expected] of [
   ['two Parle-G', [{quantity: 2, productQuery: 'parle g'}]],
@@ -32,6 +31,7 @@ for (const [spoken, expected] of [
   ['दोन 2 दोन दूध', [{quantity: 2, productQuery: 'दूध'}]],
   ['दोन दोन रुपयांचे बिस्किट', [{quantity: 2, productQuery: 'बिस्किट', priceOverride: 2}]],
   ['दोन दूध आणि दोन दूध', [{quantity: 2, productQuery: 'दूध'}, {quantity: 2, productQuery: 'दूध'}]],
+  ['दोन दूध आणि आणखी दोन दूध', [{quantity: 2, productQuery: 'दूध'}, {quantity: 2, productQuery: 'दूध'}]],
   ['दोन पार्ले जी आणि अर्धा लिटर दूध', [
     { quantity: 2, productQuery: 'पार्ले जी' },
     { quantity: 0.5, productQuery: 'दूध', requestedUnit: 'l' },
@@ -74,15 +74,15 @@ test('converts compatible units once, rejects guessed pack sizes', () => {
 
 function harness(t) {
   t.mock.timers.enable({ apis: ['setTimeout'] });
-  const engines = [], texts = [], finished = [], errors = [];
+  const engines = [], texts = [], stableTexts = [], finished = [], statuses = [], errors = [];
   const recording = createVoiceRecording(() => {
     const engine = { start() {}, stop() {}, abort() {}, onresult: null, onend: null, onerror: null };
     engines.push(engine);
     return engine;
-  }, 'mr-IN', { onText: (text) => texts.push(text), onFinish: (text) => finished.push(text), onError: (code) => errors.push(code) });
+  }, 'mr-IN', { onText: (text) => texts.push(text), onStableText: (text) => stableTexts.push(text), onFinish: (text, status) => { finished.push(text); statuses.push(status); }, onError: (code) => errors.push(code) });
   recording.start();
   const result = (engine, phrases) => engine.onresult({ results: phrases.map(([text, final = true]) => ({ isFinal: final, 0: { transcript: text } })) });
-  return {recording, engines, texts, finished, errors, result};
+  return {recording, engines, texts, stableTexts, finished, statuses, errors, result};
 }
 test('stock checks include bill quantities, pending quantities and expiry', () => {
   const now = new Date(2026, 8, 7, 12);
@@ -120,7 +120,7 @@ test('Marathi quantity loops are cleaned live, not only when parsing', (t) => {
 
 test('repeated quantity fragments across result slots and restarts remain one quantity', (t) => {
   const h = harness(t);
-  h.result(h.engines[0], [['एक'], ['एक', false]]);
+  h.result(h.engines[0], [['एक'], ['एक']]);
   h.engines[0].onend(); t.mock.timers.tick(250);
   h.result(h.engines[1], [['one'], ['१ एक बिस्किट']]);
   h.recording.stop(); h.engines[1].onend();
@@ -197,26 +197,59 @@ test('recordings have a finite lifetime', (t) => {
   assert.deepEqual(h.finished, []);
 });
 
-const sourceLines = [{index: 0, candidateIds: [42, 43]}];
-const validAI = {index: 0, productId: 42, quantity: 2, unit: 'packet', price: null, needsClarification: false};
-test('AI accepts only existing shortlisted IDs', () => {
-  assert.equal(validateVoiceAIResult({lines: [validAI]}, sourceLines).lines[0].productId, 42);
-  assert.throws(() => validateVoiceAIResult({lines: [{...validAI, productId: 999}]}, sourceLines));
+test('unstable guesses never appear as confirmed text', (t) => {
+  const h = harness(t), engine = h.engines[0];
+  h.result(engine, [['एक एक एक', false]]);
+  h.result(engine, [['दोन बिस्किट', false]]);
+  assert.deepEqual(h.stableTexts, []);
+  h.result(engine, [['दोन बिस्किट']]);
+  assert.deepEqual(h.stableTexts, ['दोन बिस्किट']);
 });
-test('AI cannot omit, duplicate or invent order lines', () => {
-  assert.throws(() => validateVoiceAIResult({lines: []}, sourceLines));
-  assert.throws(() => validateVoiceAIResult({lines: [validAI, validAI]}, sourceLines));
-  assert.throws(() => validateVoiceAIResult({lines: [{...validAI, index: 2}]}, sourceLines));
+test('unfinished speech is saved for review, never carried into a restart', (t) => {
+  const h = harness(t), engine = h.engines[0];
+  h.result(engine, [['एक बिस्किट'], ['दोन दोन', false]]);
+  engine.onend(); t.mock.timers.tick(2000);
+  assert.equal(h.engines.length, 1);
+  assert.deepEqual(h.finished, ['एक बिस्किट दोन']);
+  assert.deepEqual(h.statuses, [{needsReview: true}]);
 });
-test('AI rejects invalid quantities and accepts explicit uncertainty', () => {
-  for (const quantity of [-1, Infinity, '2']) {
-    assert.throws(() => validateVoiceAIResult({lines: [{...validAI, quantity}]}, sourceLines));
-  }
-  assert.equal(validateVoiceAIResult({lines: [{...validAI, productId: null, needsClarification: true}]}, sourceLines).lines[0].productId, null);
+test('repeated events commit final slots only once', (t) => {
+  const h = harness(t), engine = h.engines[0];
+  h.result(engine, [['एक बिस्किट']]);
+  h.result(engine, [['एक बिस्किट']]);
+  h.result(engine, [['एक बिस्किट'], ['दोन दूध']]);
+  h.result(engine, [['एक बिस्किट'], ['दोन दूध']]);
+  h.recording.stop(); engine.onend();
+  assert.deepEqual(h.finished, ['एक बिस्किट दोन दूध']);
+  assert.deepEqual(h.statuses, [{needsReview: false}]);
 });
-test('AI cannot silently change a parsed quantity or unit', () => {
-  const source = [{...sourceLines[0], quantity: 2, requestedUnit: 'packet'}];
-  assert.throws(() => validateVoiceAIResult({lines: [{...validAI, quantity: 3}]}, source));
-  assert.throws(() => validateVoiceAIResult({lines: [{...validAI, unit: 'kg'}]}, source));
-  assert.equal(validateVoiceAIResult({lines: [{...validAI, quantity: 0, needsClarification: true}]}, source).lines[0].quantity, 0);
+test('removed interim guesses do not survive the next snapshot', (t) => {
+  const h = harness(t), engine = h.engines[0];
+  h.result(engine, [['एक बिस्किट'], ['दोन दूध', false]]);
+  h.result(engine, [['एक बिस्किट']]);
+  h.recording.stop(); engine.onend();
+  assert.deepEqual(h.finished, ['एक बिस्किट']);
+  assert.deepEqual(h.statuses, [{needsReview: false}]);
+});
+test('Done timeout requires review when only an interim guess exists', (t) => {
+  const h = harness(t), engine = h.engines[0];
+  h.result(engine, [['एक एक बिस्किट', false]]);
+  h.recording.stop(); t.mock.timers.tick(1500);
+  assert.deepEqual(h.finished, ['एक बिस्किट']);
+  assert.deepEqual(h.statuses, [{needsReview: true}]);
+});
+test('confirmed orders finish after two empty restarts', (t) => {
+  const h = harness(t);
+  h.result(h.engines[0], [['दूध']]); h.engines[0].onend();
+  t.mock.timers.tick(250); h.engines[1].onend();
+  t.mock.timers.tick(250); h.engines[2].onend();
+  t.mock.timers.tick(1000);
+  assert.equal(h.engines.length, 3);
+  assert.deepEqual(h.finished, ['दूध']);
+  assert.deepEqual(h.statuses, [{needsReview: false}]);
+});
+test('voice matching has no AI service dependency', () => {
+  const component = fs.readFileSync(path.resolve(__dirname, '../components/voice-sale-assistant.tsx'), 'utf8');
+  assert.doesNotMatch(component, /fetch\s*\(|voice-sale-ai|GoogleGenAI/);
+  assert.equal(fs.existsSync(path.resolve(__dirname, '../app/api/voice-sale/resolve/route.ts')), false);
 });

@@ -8,10 +8,9 @@ import {
   cleanVoiceRepetitions,
   normalizeVoiceText,
   parseVoiceSaleCommand,
+  type VoiceSaleRequest,
 } from "@/lib/voice-sale-parser";
 import { checkVoiceStock, convertVoiceQuantity, matchVoiceProducts, shortlistVoiceProducts } from "@/lib/voice-sale-matching";
-import { validateVoiceAIResult } from "@/lib/voice-sale-ai";
-import { useAuth } from "@/providers/auth-provider";
 import { createVoiceRecording, type RecognitionEngine } from "@/lib/voice-recording";
 import { useLanguage } from "@/providers/language-provider";
 
@@ -33,7 +32,6 @@ type Draft = {
   quantity: number;
   requestedUnit?: string;
   priceOverride?: number;
-  variant?: string;
   candidates: any[];
   selectedId: number | null;
 
@@ -58,10 +56,10 @@ export function VoiceSaleAssistant({
 }) {
   const [command, setCommand] = useState("");
   const [listening, setListening] = useState(false);
+  const [stableCommand, setStableCommand] = useState("");
   const [draft, setDraft] = useState<Draft[]>([]);
   const [busy, setBusy] = useState(false);
   const parsingRef = useRef(false);
-  const requestController = useRef<AbortController | null>(null);
   const appendRecording = useRef(false);
   const lastParsedIds = useRef(new Set<string>());
   const [message, setMessage] = useState("");
@@ -69,7 +67,6 @@ export function VoiceSaleAssistant({
   const recording = useRef<ReturnType<typeof createVoiceRecording> | null>(null);
   const recordingId = useRef(0);
   const { language } = useLanguage();
-  const { user, currentShopId } = useAuth();
   const mr = language === "mr";
   const label = (english: string, marathi: string) => mr ? marathi : english;
   const productName = (item: any) => {
@@ -83,8 +80,6 @@ export function VoiceSaleAssistant({
   useEffect(() => () => {
     recordingId.current += 1;
     recording.current?.cancel();
-    requestController.current?.abort();
-    requestController.current = null;
   }, []);
 
   useEffect(() => {
@@ -103,7 +98,7 @@ export function VoiceSaleAssistant({
         !Number.isFinite(Number(item.buyPrice)) || !Number.isFinite(Number(item.quantity))) {
       return { state: "variant" as const, item };
     }
-    if (line.variant || line.priceOverride != null) return { state: "variant" as const, item };
+    if (line.priceOverride != null) return { state: "variant" as const, item };
     const stock = checkVoiceStock({...item, quantity: Number(item.quantity)}, quantity,
       addedItems.filter((entry) => entry.itemId === item.id).reduce((sum, entry) => sum + entry.quantity, 0));
     if (stock.state === "invalid") return { state: "variant" as const, item };
@@ -126,32 +121,21 @@ export function VoiceSaleAssistant({
   };
 
   const buildDraft = (
-    requests: Array<{
-      productQuery?: string;
-      productName?: string;
-      quantity?: number;
-      unit?: string;
-      requestedUnit?: string;
-      priceOverride?: number;
-      variant?: string;
-      productId?: number | null;
-      needsClarification?: boolean;
-    }>,
+    requests: VoiceSaleRequest[],
   ) => {
     const uniqueRequests = requests.reduce<typeof requests>(
       (result, request) => {
         const query = normalizeVoiceText(
-          request.productName || request.productQuery || "",
+          request.productQuery,
         );
-        const key = `${query}|${request.requestedUnit || request.unit || ""}|${request.priceOverride ?? ""}|${request.productId ?? ""}`;
+        const key = `${query}|${request.requestedUnit || ""}|${request.priceOverride ?? ""}`;
         const previous = result.find((entry) => {
           const previousQuery = normalizeVoiceText(
-            entry.productName || entry.productQuery || "",
+            entry.productQuery,
           );
           return (
             (request.quantity ?? 1) > 0 && (entry.quantity ?? 1) > 0 &&
-            request.needsClarification === entry.needsClarification &&
-            `${previousQuery}|${entry.requestedUnit || entry.unit || ""}|${entry.priceOverride ?? ""}|${entry.productId ?? ""}` ===
+            `${previousQuery}|${entry.requestedUnit || ""}|${entry.priceOverride ?? ""}` ===
             key
           );
         });
@@ -167,9 +151,9 @@ export function VoiceSaleAssistant({
     );
 
     const lines = uniqueRequests.map((request) => {
-      const query = request.productName || request.productQuery || "";
+      const query = request.productQuery;
       const local = matchVoiceProducts(query, items);
-      const selectedId = request.needsClarification ? null : request.productId !== undefined ? request.productId : local.selectedId;
+      const selectedId = local.selectedId;
       const candidates = shortlistVoiceProducts(query, items);
       const selected = items.find((item) => item.id === selectedId);
       if (selected && !candidates.some((item) => item.id === selectedId)) candidates.unshift(selected);
@@ -177,9 +161,8 @@ export function VoiceSaleAssistant({
         id: crypto.randomUUID(),
         query,
         quantity: request.quantity ?? 1,
-        requestedUnit: request.requestedUnit || request.unit,
+        requestedUnit: request.requestedUnit,
         priceOverride: request.priceOverride,
-        variant: request.variant,
         candidates,
         selectedId,
       };
@@ -191,66 +174,31 @@ export function VoiceSaleAssistant({
     setMessage(label("Check the items, then add them to the bill.", "वस्तू तपासा आणि बिलात जोडा."));
   };
 
-  const parseTranscript = async (rawTranscript: string) => {
+  const parseTranscript = (rawTranscript: string) => {
     const cleaned = cleanVoiceRepetitions(rawTranscript);
     if (!cleaned || parsingRef.current) return;
     setCommand(cleaned);
     parsingRef.current = true;
-    const controller = new AbortController();
-    requestController.current = controller;
-    const timer = window.setTimeout(() => controller.abort(), 14000);
     setBusy(true);
     try {
       setMessage(label("Checking products and stock…", "वस्तू आणि साठा तपासत आहे…"));
-      const parsed: Parameters<typeof buildDraft>[0] = parseVoiceSaleCommand(cleaned);
-      const uncertain = parsed.map((entry, index) => ({entry, index}))
-        .filter(({entry}) => matchVoiceProducts(entry.productQuery || "", items).selectedId === null)
-        .map(({entry, index}) => ({ index, productQuery: entry.productQuery || "", quantity: entry.quantity ?? 1,
-          requestedUnit: entry.requestedUnit, priceOverride: entry.priceOverride,
-          candidateIds: shortlistVoiceProducts(entry.productQuery || "", items).map((item) => item.id),
-        })).filter((entry) => entry.candidateIds.length > 0);
-      let usedFallback = false;
-      if (uncertain.length && uncertain.length <= 20 && parsed.length <= 40 && cleaned.length <= 2000 && user?.id && user.password && currentShopId && navigator.onLine) {
-        try {
-          const response = await fetch("/api/voice-sale/resolve", {
-            method: "POST", headers: {"Content-Type": "application/json"}, signal: controller.signal,
-            body: JSON.stringify({ transcript: cleaned, shopId: currentShopId, userId: user.id, password: user.password, lines: uncertain }),
-          });
-          if (!response.ok) throw new Error("Unavailable");
-          const result = validateVoiceAIResult(await response.json(), uncertain);
-          for (const line of result.lines) {
-            parsed[line.index] = {...parsed[line.index], productId: line.productId, quantity: line.quantity,
-              requestedUnit: parsed[line.index].requestedUnit || line.unit || undefined,
-              priceOverride: parsed[line.index].priceOverride ?? line.price ?? undefined,
-              needsClarification: line.needsClarification };
-          }
-        } catch {
-          usedFallback = true;
-        }
-      }
-      // A cancelled request must never restore a discarded review.
-      if (requestController.current !== controller) return;
+      const parsed = parseVoiceSaleCommand(cleaned);
       if (parsed.length > 0) {
         buildDraft(parsed);
         appendRecording.current = false;
-        if (usedFallback) setMessage(label("Check the suggested products below, or search by name.", "खालील सुचवलेल्या वस्तू तपासा किंवा नावाने शोधा."));
       } else {
         setMessage(
           label("No products recognised. Edit the words below or search.", "वस्तू ओळखता आल्या नाहीत. खाली शब्द दुरुस्त करा किंवा शोधा."),
         );
       }
     } finally {
-      window.clearTimeout(timer);
-      if (requestController.current === controller) {
-        requestController.current = null;
-        parsingRef.current = false;
-        setBusy(false);
-      }
+      parsingRef.current = false;
+      setBusy(false);
     }
   };
 
-  const review = async () => {
-    await parseTranscript(command.trim());
+  const review = () => {
+    parseTranscript(command.trim());
   };
 
   const parseLatest = useRef(parseTranscript);
@@ -269,16 +217,21 @@ export function VoiceSaleAssistant({
     }
     appendRecording.current = true;
     setCommand("");
+    setStableCommand("");
     setListening(true);
     setMessage(label("Listening… tap Done when finished.", "ऐकत आहे… बोलून झाल्यावर पूर्ण झाले दाबा."));
     const id = ++recordingId.current;
     const session = createVoiceRecording(() => new Recognition(), "mr-IN", {
       onText: (text) => { if (recordingId.current === id) setCommand(text); },
-      onFinish: (text) => {
+      onStableText: (text) => { if (recordingId.current === id) setStableCommand(text); },
+      onFinish: (text, status) => {
         if (recordingId.current !== id) return;
         recording.current = null;
         setListening(false);
-        if (text) void parseLatest.current(text);
+        if (text && status?.needsReview) {
+          setCommand(text);
+          setMessage(label("Some words weren't confirmed. Check the saved words or speak again.", "काही शब्द निश्चित झाले नाहीत. ऐकलेले शब्द तपासा किंवा पुन्हा बोला."));
+        } else if (text) parseLatest.current(text);
         else setMessage(label("Nothing was heard. Try again.", "आवाज ऐकू आला नाही. पुन्हा बोला."));
       },
       onError: (code) => {
@@ -303,14 +256,13 @@ export function VoiceSaleAssistant({
   };
   const stopListening = () => recording.current?.stop();
   const cancelVoice = () => {
-    requestController.current?.abort();
-    requestController.current = null;
     parsingRef.current = false;
     setBusy(false);
     recordingId.current += 1;
     recording.current?.cancel();
     recording.current = null;
     setListening(false);
+    setStableCommand("");
     setCommand("");
     appendRecording.current = false;
     setMessage(label("Recording cancelled. Reviewed items are kept.", "रेकॉर्डिंग रद्द झाले. तपासलेल्या वस्तू तशाच आहेत."));
@@ -363,7 +315,7 @@ export function VoiceSaleAssistant({
         {(busy || listening) && <Button type="button" variant="outline" onClick={cancelVoice}>{label("Cancel", "रद्द करा")}</Button>}
         {<p role="status" className="text-xs text-slate-600">{message || label("Try: two Parle-G and half a litre of milk.", "उदा. दोन पार्ले जी आणि अर्धा लिटर दूध")}</p>}
       </div>
-      {listening && command && <p className="mt-2 rounded-lg bg-violet-50 px-3 py-2 text-sm text-violet-900">“{command}”</p>}
+      {listening && stableCommand && <p className="mt-2 rounded-lg bg-violet-50 px-3 py-2 text-sm text-violet-900">“{stableCommand}”</p>}
       {!listening && command && draft.length === 0 && <div className="mt-3 space-y-2">
         <label className="text-xs text-slate-600" htmlFor="voice-recovery">{label("Edit what was heard", "ऐकलेले शब्द दुरुस्त करा")}</label>
         <Input ref={inputRef} id="voice-recovery" value={command} onChange={(event) => setCommand(event.target.value)} />
