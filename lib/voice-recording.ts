@@ -1,3 +1,5 @@
+import { cleanVoiceRepetitions } from "./voice-sale-parser";
+
 export type SpeechResult = { isFinal: boolean; 0: { transcript: string } };
 export interface RecognitionEngine {
   lang: string;
@@ -28,6 +30,7 @@ export function createVoiceRecording(
   let stopping = false;
   let started = false;
   let text = "";
+  let publishedText = "";
   let emptySessions = 0;
   let restart: ReturnType<typeof setTimeout> | undefined;
   let stopDeadline: ReturnType<typeof setTimeout> | undefined;
@@ -47,7 +50,7 @@ export function createVoiceRecording(
   const finish = () => {
     if (!active) return;
     cleanup();
-    callbacks.onFinish(text.trim());
+    callbacks.onFinish(cleanVoiceRepetitions(text));
   };
   const fail = (code: string) => {
     if (!active) return;
@@ -70,7 +73,13 @@ export function createVoiceRecording(
       // Results are a replaceable snapshot, not a stream to append each time.
       const sessionText = Array.from(event.results, (result) => result[0].transcript.trim()).join(" ");
       text = `${prefix} ${sessionText}`.trim();
-      callbacks.onText(text);
+      // Keep the raw snapshot for future revisions and price context, but never
+      // display a growing quantity stutter (एक एक एक / one १ एक).
+      const cleaned = cleanVoiceRepetitions(text);
+      if (cleaned !== publishedText) {
+        publishedText = cleaned;
+        callbacks.onText(cleaned);
+      }
     };
     instance.onerror = ({ error }) => {
       if (!current()) return;

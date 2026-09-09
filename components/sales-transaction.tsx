@@ -7,6 +7,8 @@ import { useLanguage } from "@/providers/language-provider";
 import { dateKey } from "@/lib/utils";
 import { formatSaleLineSubtitle } from "@/lib/sale-item-display";
 import { SalesItemSearch } from "./sales-item-search";
+import { SaleQuantityControl } from "./sale-quantity-control";
+import { editableSaleQuantity, isSaleQuantityApplied, maxBillLineQuantity, resizeSaleLine } from "@/lib/sale-quantity";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -65,6 +67,7 @@ export function SalesTransaction() {
   const { t, language } = useLanguage();
 
   const [items, setItems] = useState<LineItem[]>([]);
+  const [quantityDrafts, setQuantityDrafts] = useState<Record<number, string>>({});
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
   const [creditCustomerId, setCreditCustomerId] = useState<number | null>(null);
   const [newCustomerName, setNewCustomerName] = useState("");
@@ -87,13 +90,36 @@ export function SalesTransaction() {
   const profitMarginPercent =
     totals.subtotal > 0 ? (totals.totalProfit / totals.subtotal) * 100 : 0;
 
+  const billLineMax = (index: number, lines = items) => maxBillLineQuantity(
+    allItems.find((product) => product.id === lines[index]?.itemId)?.quantity ?? 0, lines, index,
+  );
+  const hasInvalidQuantity = items.some((item, index) => {
+    const value = Number(quantityDrafts[index] ?? editableSaleQuantity(item));
+    return !isSaleQuantityApplied(item, value, billLineMax(index));
+  });
+
+  const handleQuantityChange = (index: number, value: string) => {
+    if (isProcessing || showConfirmDialog) return;
+    setQuantityDrafts((current) => ({ ...current, [index]: value }));
+    setItems((current) => {
+      if (!current[index]) return current;
+      const updated = resizeSaleLine(current[index], Number(value), billLineMax(index, current));
+      return updated ? current.map((line, lineIndex) => lineIndex === index ? updated : line) : current;
+    });
+  };
+
   const handleItemAdded = (item: LineItem) => {
     setItems((current) => [...current, item]);
     toast.success(`${item.itemName} ${t("success")}`);
   };
 
   const handleRemoveItem = (index: number) => {
-    setItems(items.filter((_, i) => i !== index));
+    if (isProcessing || showConfirmDialog) return;
+    setItems((current) => current.filter((_, i) => i !== index));
+    setQuantityDrafts((current) => Object.fromEntries(
+      Object.entries(current).filter(([key]) => Number(key) !== index)
+        .map(([key, value]) => [Number(key) > index ? Number(key) - 1 : Number(key), value]),
+    ));
   };
 
   const resetCreditFields = () => {
@@ -104,6 +130,7 @@ export function SalesTransaction() {
 
   const resetSale = () => {
     setItems([]);
+    setQuantityDrafts({});
     setPaymentMethod("cash");
     resetCreditFields();
     setShowConfirmDialog(false);
@@ -119,6 +146,7 @@ export function SalesTransaction() {
   };
 
   const handleCompleteSale = async () => {
+    if (isProcessing || hasInvalidQuantity) return;
     if (items.length === 0) {
       toast.error(t("error"));
       return;
@@ -134,7 +162,7 @@ export function SalesTransaction() {
       (acc, lineItem) => {
         acc.set(
           lineItem.itemId,
-          (acc.get(lineItem.itemId) || 0) + lineItem.quantity,
+          Number(((acc.get(lineItem.itemId) || 0) + lineItem.quantity).toFixed(9)),
         );
         return acc;
       },
@@ -299,12 +327,12 @@ export function SalesTransaction() {
   };
 
   return (
-    <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-      <div className="lg:col-span-1">
+    <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2 lg:gap-6">
+      <div>
         <Card className="border-indigo-100 shadow-sm lg:sticky lg:top-24">
           <CardHeader className="border-b border-indigo-50 pb-3">
-            <CardTitle className="text-base">Add products</CardTitle>
-            <p className="text-xs text-muted-foreground">Search is quickest. Use voice only when it helps.</p>
+            <CardTitle className="text-base">{language === "mr" ? "वस्तू जोडा" : "Add products"}</CardTitle>
+            <p className="text-sm text-muted-foreground">{language === "mr" ? "वस्तू शोधा किंवा ऑर्डर बोलून सांगा." : "Search a product or speak your order."}</p>
           </CardHeader>
           <CardContent>
             <SalesItemSearch onItemAdded={handleItemAdded} addedItems={items} />
@@ -312,18 +340,18 @@ export function SalesTransaction() {
         </Card>
       </div>
 
-      <div className="space-y-3 lg:col-span-2">
+      <div className="space-y-4">
         <Card className="overflow-hidden border-slate-200 shadow-sm">
           <CardHeader className="flex flex-row items-center justify-between border-b bg-slate-50/70 py-4">
-            <CardTitle className="flex items-center gap-2 text-base"><ShoppingBag className="h-4 w-4 text-indigo-600" />Current bill</CardTitle>
-            <span className="rounded-full bg-indigo-100 px-2.5 py-1 text-xs font-bold text-indigo-700">{items.length} {items.length === 1 ? "item" : "items"}</span>
+            <CardTitle className="flex items-center gap-2 text-base"><ShoppingBag className="h-4 w-4 text-indigo-600" />{language === "mr" ? "चालू बिल" : "Current bill"}</CardTitle>
+            <span aria-live="polite" className="rounded-full bg-indigo-100 px-2.5 py-1 text-xs font-bold text-indigo-700">{formatNumber(items.length)} {language === "mr" ? "वस्तू" : items.length === 1 ? "item" : "items"}</span>
           </CardHeader>
           <CardContent>
             {items.length === 0 ? (
               <div className="py-12 text-center text-gray-500">
                 <ShoppingBag className="mx-auto h-9 w-9 text-slate-300" />
-                <p className="mt-3 font-medium text-slate-700">Your bill is empty</p>
-                <p className="mt-1 text-sm">Search a product to start this sale.</p>
+                <p className="mt-3 font-medium text-slate-700">{language === "mr" ? "बिलात अद्याप वस्तू नाहीत" : "Your bill is empty"}</p>
+                <p className="mt-1 text-sm">{language === "mr" ? "सुरुवात करण्यासाठी वस्तू शोधा किंवा बोलून सांगा." : "Search or speak to add your first product."}</p>
               </div>
             ) : (
               <div className="space-y-2">
@@ -331,19 +359,36 @@ export function SalesTransaction() {
                   return (
                     <div
                       key={`${item.itemId}-${index}`}
-                      className="flex items-start justify-between rounded-xl border border-slate-200 bg-white p-3 transition hover:border-indigo-200 hover:bg-indigo-50/30"
+                      className="rounded-xl border border-slate-200 bg-white p-3"
                     >
+                      <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0 flex-1">
-                        <div className="text-sm font-semibold text-slate-900">{item.itemName}</div>
-                        <div className="mt-1 text-xs text-muted-foreground">{formatSaleLineSubtitle(item)} · ₹{formatMoney(item.pricePerUnit)} each</div>
+                        <div className="break-words text-sm font-semibold text-slate-900">{item.itemName}</div>
+                        <div className="mt-1 text-sm text-muted-foreground">{formatSaleLineSubtitle(item)}</div>
                       </div>
-                      <div className="flex items-center gap-3"><span className="text-sm font-bold text-slate-900">₹{formatMoney(item.totalPrice)}</span><button
+                      <div className="flex shrink-0 flex-col items-end gap-1"><span className="text-base font-semibold tabular-nums text-slate-900">₹{formatMoney(item.totalPrice)}</span><button
                         onClick={() => handleRemoveItem(index)}
-                        className="ml-2 flex-shrink-0 text-red-600 hover:text-red-800"
-                        aria-label={`Remove ${item.itemName}`}
+                        disabled={isProcessing || showConfirmDialog}
+                        className="flex min-h-11 items-center gap-1.5 rounded-lg px-2 text-xs text-slate-500 hover:bg-red-50 hover:text-red-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500"
+                        aria-label={`${language === "mr" ? "काढा" : "Remove"} ${item.itemName}`}
                       >
                         <Trash2 className="h-4 w-4" />
+                        {language === "mr" ? "काढा" : "Remove"}
                       </button></div>
+                      </div>
+                      <div className="mt-2">
+                        <SaleQuantityControl
+                          value={quantityDrafts[index] ?? String(editableSaleQuantity(item))}
+                          onChange={(value) => handleQuantityChange(index, value)}
+                          max={billLineMax(index)}
+                          unit={item.priceTierId != null && item.packCount != null ? (language === "mr" ? "पॅकेट" : "packs") : item.unitShortForm}
+                          label={t("quantity")}
+                          productName={item.itemName}
+                          pending={quantityDrafts[index] !== undefined && Number(quantityDrafts[index]) !== editableSaleQuantity(item)}
+                          language={language}
+                          disabled={isProcessing || showConfirmDialog}
+                        />
+                      </div>
                     </div>
                   );
                 })}
@@ -354,28 +399,21 @@ export function SalesTransaction() {
 
         {items.length > 0 && (
           <>
-            <Card className="border-emerald-200 bg-emerald-50 shadow-sm">
-              <CardContent className="pt-4">
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className="font-medium text-emerald-900">Bill total</span>
-                    <span className="text-xl font-bold text-emerald-800">₹{formatMoney(totals.subtotal)}</span>
-                  </div>
+            <Card className="overflow-hidden border-emerald-200 shadow-sm">
+              <CardContent className="space-y-4 pt-4">
+                <div className="flex items-center justify-between gap-3 border-b border-emerald-100 pb-4">
+                  <span className="font-medium text-slate-700">{language === "mr" ? "बिलाची एकूण रक्कम" : "Bill total"}</span>
+                  <span aria-live="polite" className="text-2xl font-bold tabular-nums text-slate-900">₹{formatMoney(totals.subtotal)}</span>
                 </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardContent className="space-y-3 pt-4">
                 <div>
-                  <label className="mb-1 block text-xs font-semibold text-gray-700">
+                  <label htmlFor="sale-payment-method" className="mb-2 block text-sm font-medium text-gray-700">
                     {t("payment_method")}
                   </label>
                   <Select
                     value={paymentMethod}
                     onValueChange={handlePaymentChange}
                   >
-                    <SelectTrigger className="h-9">
+                    <SelectTrigger id="sale-payment-method" className="h-12 rounded-lg">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -464,10 +502,13 @@ export function SalesTransaction() {
                   </div>
                 )}
 
+                {hasInvalidQuantity && <p role="alert" className="text-sm text-red-700">
+                  {language === "mr" ? "विक्री पूर्ण करण्यापूर्वी प्रमाण दुरुस्त करून लागू करा किंवा वस्तू काढा." : "Correct and apply the quantities, or remove those items, before completing the sale."}
+                </p>}
                 <Button
                   onClick={() => setShowConfirmDialog(true)}
-                  disabled={isProcessing}
-                  className="h-10 w-full bg-green-600 text-white hover:bg-green-700"
+                  disabled={isProcessing || hasInvalidQuantity}
+                  className="h-auto min-h-12 w-full gap-2 whitespace-normal rounded-xl bg-emerald-600 py-3 text-base font-semibold text-white hover:bg-emerald-700"
                 >
                   <Check className="mr-2 h-4 w-4" />
                   {isProcessing ? t("processing") : t("complete_sale")}
@@ -527,7 +568,7 @@ export function SalesTransaction() {
           </AlertDialogHeader>
           <div className="flex justify-end gap-2">
             <AlertDialogCancel>{t("cancel")}</AlertDialogCancel>
-            <AlertDialogAction onClick={handleCompleteSale}>
+            <AlertDialogAction disabled={isProcessing || hasInvalidQuantity} onClick={handleCompleteSale}>
               {t("complete_sale")}
             </AlertDialogAction>
           </div>

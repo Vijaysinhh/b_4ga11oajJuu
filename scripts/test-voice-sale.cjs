@@ -19,13 +19,15 @@ function load(name) {
   modules.set(filename, module.exports);
   return module.exports;
 }
-const { parseVoiceSaleCommand: parse, normalizeVoiceText: normalize } = load('voice-sale-parser');
+const { parseVoiceSaleCommand: parse, normalizeVoiceText: normalize, cleanVoiceRepetitions: cleanRepeats } = load('voice-sale-parser');
 const { matchVoiceProducts: match, convertVoiceQuantity: convert, checkVoiceStock: stock } = load('voice-sale-matching');
 const { createVoiceRecording } = load('voice-recording');
 const { validateVoiceAIResult } = load('voice-sale-ai');
 
 for (const [spoken, expected] of [
   ['two Parle-G', [{quantity: 2, productQuery: 'parle g'}]],
+  ['एक एक एक एक एक बिस्किट', [{quantity: 1, productQuery: 'बिस्किट'}]],
+  ['one १ एक 1 ek बिस्किट', [{quantity: 1, productQuery: 'बिस्किट'}]],
   ['दोन दोन दोन दूध', [{quantity: 2, productQuery: 'दूध'}]],
   ['दोन 2 दोन दूध', [{quantity: 2, productQuery: 'दूध'}]],
   ['दोन दोन रुपयांचे बिस्किट', [{quantity: 2, productQuery: 'बिस्किट', priceOverride: 2}]],
@@ -101,6 +103,51 @@ test('result revisions never duplicate a product; Done processes once', (t) => {
   h.recording.stop(); engine.onend();
   t.mock.timers.tick(2000);
   assert.deepEqual(h.finished, ['दोन दूध एक ब्रेड']);
+});
+
+test('Marathi quantity loops are cleaned live, not only when parsing', (t) => {
+  const h = harness(t), engine = h.engines[0];
+  h.result(engine, [['एक', false]]);
+  h.result(engine, [['एक एक', false]]);
+  h.result(engine, [['एक एक एक एक एक', false]]);
+  h.result(engine, [['एक एक एक एक एक बिस्किट', false]]);
+  h.result(engine, [['एक एक एक एक एक बिस्किट']]);
+  assert.deepEqual(h.texts, ['एक', 'एक बिस्किट']);
+  h.recording.stop(); engine.onend();
+  assert.deepEqual(h.finished, ['एक बिस्किट']);
+  assert.deepEqual(parse(h.finished[0]), [{quantity: 1, productQuery: 'बिस्किट'}]);
+});
+
+test('repeated quantity fragments across result slots and restarts remain one quantity', (t) => {
+  const h = harness(t);
+  h.result(h.engines[0], [['एक'], ['एक', false]]);
+  h.engines[0].onend(); t.mock.timers.tick(250);
+  h.result(h.engines[1], [['one'], ['१ एक बिस्किट']]);
+  h.recording.stop(); h.engines[1].onend();
+  assert.deepEqual(h.finished, ['एक बिस्किट']);
+});
+
+test('quantity corrections can replace a previously displayed interim quantity', (t) => {
+  const h = harness(t), engine = h.engines[0];
+  h.result(engine, [['एक एक बिस्किट', false]]);
+  h.result(engine, [['दोन बिस्किट']]);
+  assert.deepEqual(h.texts, ['एक बिस्किट', 'दोन बिस्किट']);
+  h.recording.stop(); engine.onend();
+  assert.deepEqual(h.finished, ['दोन बिस्किट']);
+});
+
+test('cleanup preserves explicit additional items, price variants and product names', () => {
+  for (const text of ['दोन दूध आणि आणखी दोन दूध', 'एक बिस्किट एक बिस्किट', 'दोन दोन रुपयांचे बिस्किट', 'एक, एक बिस्किट', 'एक\nएक बिस्किट', 'Good Good biscuit']) {
+    assert.equal(cleanRepeats(text), text);
+  }
+  assert.equal(cleanRepeats('One १ एक ek बिस्किट'), 'One बिस्किट');
+});
+
+test('new price context is retained even if the earlier interim text was cleaned', (t) => {
+  const h = harness(t), engine = h.engines[0];
+  h.result(engine, [['दोन दोन', false]]);
+  h.result(engine, [['दोन दोन रुपयांचे बिस्किट']]);
+  assert.deepEqual(h.texts, ['दोन', 'दोन दोन रुपयांचे बिस्किट']);
 });
 test('short pauses restart while preserving the order', (t) => {
   const h = harness(t);

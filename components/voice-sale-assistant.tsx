@@ -5,6 +5,7 @@ import { Mic } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
+  cleanVoiceRepetitions,
   normalizeVoiceText,
   parseVoiceSaleCommand,
 } from "@/lib/voice-sale-parser";
@@ -191,8 +192,9 @@ export function VoiceSaleAssistant({
   };
 
   const parseTranscript = async (rawTranscript: string) => {
-    const cleaned = rawTranscript.trim();
+    const cleaned = cleanVoiceRepetitions(rawTranscript);
     if (!cleaned || parsingRef.current) return;
+    setCommand(cleaned);
     parsingRef.current = true;
     const controller = new AbortController();
     requestController.current = controller;

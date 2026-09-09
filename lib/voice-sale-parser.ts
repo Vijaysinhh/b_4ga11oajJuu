@@ -8,6 +8,7 @@ export type VoiceSaleRequest = {
 const numberWords: Record<string, number> = {
   zero: 0,
   one: 1,
+  ek: 1,
   two: 2,
   three: 3,
   four: 4,
@@ -215,11 +216,18 @@ function numberFromToken(token: string) {
 
 /** Collapse a stutter, not separate items or an explicit quantity + price. */
 export function cleanVoiceRepetitions(value: string) {
+  return value.split(/\r?\n/).map((line) => cleanVoiceLineRepetitions(line)).join("\n").trim();
+}
+
+function cleanVoiceLineRepetitions(value: string) {
   const tokens = value.split(/\s+/).filter(Boolean);
-  return tokens.filter((token, index) => {
-    if (!index || priceVariantWords.has(tokens[index + 1])) return true;
-    const quantity = numberFromToken(token);
-    return quantity === undefined || quantity !== numberFromToken(tokens[index - 1]);
+  // Compare recognised quantities across scripts without translating the text
+  // shown to the shopkeeper. This also runs before parser normalisation.
+  const comparable = tokens.map((token) => normalizeVoiceText(token, false));
+  return tokens.filter((_, index) => {
+    if (!index || /[,;।!?]/.test(tokens[index - 1]) || priceVariantWords.has(comparable[index + 1])) return true;
+    const quantity = numberFromToken(comparable[index]);
+    return quantity === undefined || quantity !== numberFromToken(comparable[index - 1]);
   }).join(" ");
 }
 

@@ -12,7 +12,6 @@ import { HelpTooltip } from "@/components/help-tooltip";
 import { calculatePriceTierCost, convertUnit } from "@/lib/unit-conversion";
 import { toast } from "sonner";
 import {
-  cleanNumberInput,
   formatMoney,
   formatNumber,
   formatWholeNumber,
@@ -22,6 +21,8 @@ import type { Item, PriceTier } from "@/lib/db";
 import { VoiceSaleAssistant } from "./voice-sale-assistant";
 import { normalizeVoiceText } from "@/lib/voice-sale-parser";
 import { convertVoiceQuantity } from "@/lib/voice-sale-matching";
+import { SaleQuantityControl } from "./sale-quantity-control";
+import { maxSaleQuantity } from "@/lib/sale-quantity";
 
 interface SaleLineItem {
   itemId: number;
@@ -67,6 +68,14 @@ export function SalesItemSearch({
     null,
   );
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const quantityInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (selectedItem) {
+      quantityInputRef.current?.focus();
+      quantityInputRef.current?.select();
+    }
+  }, [selectedItem?.id]);
   const [voiceReplacement, setVoiceReplacement] = useState<{ query: string; resolve: (itemId: number) => void } | null>(null);
   const voiceProductAdded = useRef<(() => void) | null>(null);
 
@@ -130,7 +139,7 @@ export function SalesItemSearch({
         itemUnit?.shortForm || "",
       );
 
-      return qty * tierQtyInItemUnit;
+      return Number((qty * tierQtyInItemUnit).toFixed(9));
     }
 
     return qty;
@@ -226,11 +235,7 @@ export function SalesItemSearch({
       inCart -= itemToEdit.quantity;
     }
     // Now calculate remaining stock: current stock minus (other items in cart)
-    const remaining =
-      item.quantity -
-      inCart +
-      (itemToEdit && itemToEdit.itemId === item.id ? itemToEdit.quantity : 0);
-    return remaining;
+    return Math.max(0, item.quantity - inCart);
   };
 
   const handleItemSelect = (item: Item) => {
@@ -243,17 +248,17 @@ export function SalesItemSearch({
     voiceProductAdded.current = null;
     setSelectedItem(item);
     setSearchTerm("");
-    setQuantity("");
+    setQuantity("1");
     setSelectedPriceTier(null);
   };
 
   const handleAddToCart = () => {
     const qty = parseNumberInput(quantity);
-    if (!selectedItem || !quantity || qty <= 0) return;
+    if (!selectedItem || !quantity || !Number.isFinite(qty) || qty <= 0 || qty > maxQuantity) return;
 
     // Calculate actual quantity to be sold in item's base unit
     let totalQuantityToSell = qty;
-    let availableQuantity = getRemainingStock(selectedItem);
+    let availableQuantity = Number(getRemainingStock(selectedItem).toFixed(9));
     let quantityDisplay = `${formatNumber(qty)} ${units.find((u) => u.id === selectedItem.unitId)?.shortForm}`;
 
     if (selectedPriceTier) {
@@ -270,7 +275,7 @@ export function SalesItemSearch({
       );
 
       // Total quantity to sell = number of price tiers * converted quantity per tier
-      totalQuantityToSell = qty * tierQtyInItemUnit;
+      totalQuantityToSell = Number((qty * tierQtyInItemUnit).toFixed(9));
       quantityDisplay = `${formatNumber(qty)} x ${formatNumber(selectedPriceTier.quantity)} ${priceTierUnit?.shortForm}`;
     }
 
@@ -370,13 +375,19 @@ export function SalesItemSearch({
     setSelectedItem(null);
     setQuantity("");
     setSelectedPriceTier(null);
+    searchInputRef.current?.focus();
   };
+
+  const selectedUnit = units.find((unit) => unit.id === selectedItem?.unitId)?.shortForm || "";
+  const remainingStock = selectedItem ? getRemainingStock(selectedItem) : 0;
+  const maxQuantity = maxSaleQuantity(remainingStock, 0, calculateActualQuantity(1, selectedPriceTier));
 
   return (
     <div className="space-y-3">
       <div className="relative">
         <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
         <Input
+          ref={searchInputRef}
           type="text"
           placeholder={t("search_items")}
           value={searchTerm}
@@ -594,11 +605,11 @@ export function SalesItemSearch({
       )}
 
       {selectedItem && (
-        <Card id="sale-product-details" className="border-blue-200 bg-blue-50 p-3">
+        <Card id="sale-product-details" className="rounded-xl border-indigo-200 bg-white p-4 shadow-sm">
           <div className="mb-3 flex items-start justify-between gap-2">
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
-                <div className="text-sm font-bold truncate">
+                <div className="break-words text-base font-semibold text-slate-900">
                   {(() => {
                     const baseName =
                       language === "mr" && selectedItem.nameMarathi
@@ -612,10 +623,10 @@ export function SalesItemSearch({
                   })()}
                 </div>
               </div>
-              <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-gray-600">
+              <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-slate-500">
                 <span>
-                  {t("stock")}:{" "}
-                  {formatWholeNumber(getRemainingStock(selectedItem))}{" "}
+                  {language === "mr" ? "शिल्लक साठा:" : "Stock remaining:"}{" "}
+                  {formatNumber(getRemainingStock(selectedItem))}{" "}
                   {units.find((u) => u.id === selectedItem.unitId)?.shortForm}
                 </span>
                 <span className="font-semibold text-blue-700">
@@ -623,7 +634,7 @@ export function SalesItemSearch({
                   {units.find((u) => u.id === selectedItem.unitId)?.shortForm}
                 </span>
                 <span>
-                  {t("buy")}: ₹{formatMoney(selectedItem.buyPrice)}
+                  {t("buy")}: ₹{formatMoney(selectedItem.buyPrice)}/{selectedUnit}
                 </span>
                 {(() => {
                   const ppu =
@@ -635,77 +646,45 @@ export function SalesItemSearch({
                       : 0;
                   return (
                     <span
-                      className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                        mp >= 20
+                      className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-semibold ${
+                        mp < 0
+                          ? "bg-red-100 text-red-800"
+                          : mp >= 20
                           ? "bg-emerald-100 text-emerald-800"
                           : mp >= 10
                             ? "bg-green-100 text-green-800"
                             : "bg-yellow-100 text-yellow-800"
                       }`}
                     >
-                      +₹{formatMoney(Math.max(0, ppu))} · {mp.toFixed(0)}%
+                      {ppu >= 0 ? "+" : ""}₹{formatMoney(ppu)} · {mp.toFixed(0)}%
                     </span>
                   );
                 })()}
               </div>
             </div>
             <button
-              onClick={() => setSelectedItem(null)}
-              className="text-gray-400 hover:text-gray-600"
-              aria-label="Clear selected item"
+              onClick={() => { setSelectedItem(null); voiceProductAdded.current = null; searchInputRef.current?.focus(); }}
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500"
+              aria-label={language === "mr" ? "निवड रद्द करा" : "Clear selected item"}
             >
               <X className="h-4 w-4" />
             </button>
           </div>
 
           <div className="mb-3">
-            <div className="mb-1 flex items-center gap-1">
-              <label className="text-xs font-semibold text-gray-700">
-                {t("quantity")}
-              </label>
-              <HelpTooltip
-                text={
-                  language === "mr"
-                    ? "तुम्ही आता दशांश (उदा. १.५) प्रविष्ट करू शकता."
-                    : "You can enter fractional quantities (e.g. 1.5)."
-                }
-              />
-              <span className="text-xs text-orange-600 font-semibold">
-                (Max: {formatNumber(getRemainingStock(selectedItem))}{" "}
-                {units.find((u) => u.id === selectedItem.unitId)?.shortForm})
-              </span>
-            </div>
-        <Input
-          ref={searchInputRef}
-              type="text"
-              inputMode="numeric"
-              pattern="[0-9]*"
+            <SaleQuantityControl
               value={quantity}
-              onChange={(event) =>
-                setQuantity(cleanNumberInput(event.target.value))
-              }
-              placeholder={t("enter_quantity")}
-              className={`h-9 text-sm ${
-                quantity &&
-                calculateActualQuantity(
-                  parseNumberInput(quantity),
-                  selectedPriceTier,
-                ) > getRemainingStock(selectedItem)
-                  ? "border-red-500 bg-red-50"
-                  : ""
-              }`}
+              onChange={setQuantity}
+              max={maxQuantity}
+              unit={selectedPriceTier ? (language === "mr" ? "पॅकेट" : "packs") : selectedUnit}
+              label={selectedPriceTier ? (language === "mr" ? "पॅकेटची संख्या" : "Number of packs") : t("quantity")}
+              language={language}
+              inputRef={quantityInputRef}
+              onSubmit={handleAddToCart}
             />
-            {quantity &&
-              calculateActualQuantity(
-                parseNumberInput(quantity),
-                selectedPriceTier,
-              ) > getRemainingStock(selectedItem) && (
-                <p className="text-xs text-red-600 mt-1 font-semibold">
-                  ❌ Only {formatNumber(getRemainingStock(selectedItem))}{" "}
-                  {units.find((u) => u.id === selectedItem.unitId)?.shortForm}{" "}
-                  available
-                </p>
-              )}
+            {selectedPriceTier && <p className="mt-2 text-xs text-slate-500">
+              {language === "mr" ? "प्रति पॅकेट:" : "Each pack:"} {formatNumber(selectedPriceTier.quantity)} {units.find((unit) => unit.id === selectedPriceTier.unitId)?.shortForm}
+            </p>}
           </div>
 
           {itemPriceTiers.length > 0 && (
@@ -725,13 +704,14 @@ export function SalesItemSearch({
               <div className="grid grid-cols-2 gap-1">
                 <button
                   onClick={() => setSelectedPriceTier(null)}
-                  className={`rounded border p-1.5 text-xs ${
+                  aria-pressed={!selectedPriceTier}
+                  className={`min-h-12 rounded-lg border p-2 text-sm ${
                     !selectedPriceTier
                       ? "border-blue-600 bg-blue-600 text-white"
                       : "border-gray-300 bg-white"
                   }`}
                 >
-                  {t("default_label")} Rs. {formatMoney(selectedItem.sellPrice)}
+                  ₹{formatMoney(selectedItem.sellPrice)} / {units.find((u) => u.id === selectedItem.unitId)?.shortForm}
                 </button>
                 {itemPriceTiers.map((tier) => {
                   const tierUnit = units.find((u) => u.id === tier.unitId);
@@ -739,6 +719,7 @@ export function SalesItemSearch({
                     <button
                       key={tier.id}
                       onClick={() => setSelectedPriceTier(tier)}
+                      aria-pressed={selectedPriceTier?.id === tier.id}
                       className={`flex min-h-12 flex-1 items-center justify-center rounded border p-2 text-xs font-medium sm:min-h-auto sm:p-1.5 ${
                         selectedPriceTier?.id === tier.id
                           ? "border-blue-600 bg-blue-600 text-white"
@@ -754,34 +735,21 @@ export function SalesItemSearch({
             </div>
           )}
 
-          {quantity && parseNumberInput(quantity) > 0 && (
-            <div className="mb-3 rounded border border-blue-100 bg-white p-2">
-              <div className="text-xs text-gray-700">
-                <div className="flex justify-between">
-                  <span>{t("total_price")}:</span>
-                  <span className="font-bold text-green-700">
-                    Rs.{" "}
-                    {formatMoney(
-                      parseNumberInput(quantity) *
-                        (selectedPriceTier?.price || selectedItem.sellPrice),
-                    )}
-                  </span>
-                </div>
-              </div>
+          {Number.isFinite(parseNumberInput(quantity)) && parseNumberInput(quantity) > 0 && (
+            <div className="mb-3 flex items-center justify-between gap-3 border-t border-indigo-100 pt-3 text-sm">
+              <span className="text-slate-600">{t("total_price")}</span>
+              <span aria-live="polite" className="text-lg font-bold tabular-nums text-slate-900">₹{formatMoney(parseNumberInput(quantity) * (selectedPriceTier?.price ?? selectedItem.sellPrice))}</span>
             </div>
           )}
-
           <Button
             onClick={handleAddToCart}
             disabled={
               !quantity ||
+              !Number.isFinite(parseNumberInput(quantity)) ||
               parseNumberInput(quantity) <= 0 ||
-              calculateActualQuantity(
-                parseNumberInput(quantity),
-                selectedPriceTier,
-              ) > getRemainingStock(selectedItem)
+              parseNumberInput(quantity) > maxQuantity
             }
-            className="h-10 w-full bg-green-600 text-sm font-semibold hover:bg-green-700 disabled:opacity-50"
+            className="h-auto min-h-12 w-full gap-2 whitespace-normal rounded-xl bg-green-600 py-3 text-sm font-semibold hover:bg-green-700 disabled:opacity-50"
           >
             <Plus className="mr-2 h-5 w-5" />
             {t("add_to_sale")}
