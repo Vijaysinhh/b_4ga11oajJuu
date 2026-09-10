@@ -22,6 +22,7 @@ function load(name) {
 const { parseVoiceSaleCommand: parse, normalizeVoiceText: normalize, cleanVoiceRepetitions: cleanRepeats } = load('voice-sale-parser');
 const { matchVoiceProducts: match, convertVoiceQuantity: convert, checkVoiceStock: stock } = load('voice-sale-matching');
 const { createVoiceRecording } = load('voice-recording');
+const { isEnabledFlag } = load('feature-flags');
 
 for (const [spoken, expected] of [
   ['two Parle-G', [{quantity: 2, productQuery: 'parle g'}]],
@@ -311,4 +312,13 @@ test('voice matching has no AI service dependency', () => {
   const component = fs.readFileSync(path.resolve(__dirname, '../components/voice-sale-assistant.tsx'), 'utf8');
   assert.doesNotMatch(component, /fetch\s*\(|voice-sale-ai|GoogleGenAI/);
   assert.equal(fs.existsSync(path.resolve(__dirname, '../app/api/voice-sale/resolve/route.ts')), false);
+});
+test('voice sale release flag is opt-in and gates the Sell page', () => {
+  assert.equal(isEnabledFlag(undefined), false);
+  assert.equal(isEnabledFlag('false'), false);
+  assert.equal(isEnabledFlag('1'), false);
+  assert.equal(isEnabledFlag(' TRUE '), true);
+  const saleSearch = fs.readFileSync(path.resolve(__dirname, '../components/sales-item-search.tsx'), 'utf8');
+  assert.match(saleSearch, /voiceSaleEnabled\s*&&\s*<VoiceSaleAssistant/);
+  assert.match(saleSearch, /voiceSaleEnabled\s*&&\s*voiceReplacement/);
 });

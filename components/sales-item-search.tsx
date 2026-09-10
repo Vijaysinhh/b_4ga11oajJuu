@@ -18,11 +18,19 @@ import {
   parseNumberInput,
 } from "@/lib/number-format";
 import type { Item, PriceTier } from "@/lib/db";
-import { VoiceSaleAssistant } from "./voice-sale-assistant";
+import dynamic from "next/dynamic";
 import { normalizeVoiceText } from "@/lib/voice-sale-parser";
 import { convertVoiceQuantity } from "@/lib/voice-sale-matching";
+import { voiceSaleEnabled } from "@/lib/feature-flags";
 import { SaleQuantityControl } from "./sale-quantity-control";
 import { maxSaleQuantity } from "@/lib/sale-quantity";
+
+// Keep experimental voice code in its own chunk. Production does not request
+// this chunk while the feature flag is off.
+const VoiceSaleAssistant = dynamic(
+  () => import("./voice-sale-assistant").then((module) => module.VoiceSaleAssistant),
+  { ssr: false },
+);
 
 interface SaleLineItem {
   itemId: number;
@@ -403,7 +411,7 @@ export function SalesItemSearch({
         )}
       </div>
 
-      <VoiceSaleAssistant
+      {voiceSaleEnabled && <VoiceSaleAssistant
         key={currentShopId}
         items={items}
         units={units}
@@ -429,9 +437,9 @@ export function SalesItemSearch({
           setSearchTerm(query);
           window.setTimeout(() => searchInputRef.current?.focus(), 0);
         }}
-      />
+      />}
 
-      {voiceReplacement && <div className="flex items-center justify-between gap-2 rounded-xl bg-violet-50 p-3 text-sm text-violet-900" role="status">
+      {voiceSaleEnabled && voiceReplacement && <div className="flex items-center justify-between gap-2 rounded-xl bg-violet-50 p-3 text-sm text-violet-900" role="status">
         <span>{language === "mr" ? `“${voiceReplacement.query}” ऐवजी वस्तू निवडा. प्रमाण तसेच राहील.` : `Choose a replacement for “${voiceReplacement.query}”. Quantity will be kept.`}</span>
         <Button type="button" variant="ghost" size="sm" onClick={() => { setVoiceReplacement(null); setSearchTerm(""); }}>{language === "mr" ? "रद्द करा" : "Cancel"}</Button>
       </div>}
