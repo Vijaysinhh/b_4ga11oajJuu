@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Mic } from "lucide-react";
+import { Mic, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -13,6 +13,9 @@ import {
 import { checkVoiceStock, convertVoiceQuantity, matchVoiceProducts, shortlistVoiceProducts } from "@/lib/voice-sale-matching";
 import { createVoiceRecording, type RecognitionEngine } from "@/lib/voice-recording";
 import { useLanguage } from "@/providers/language-provider";
+import { SaleQuantityControl } from "./sale-quantity-control";
+import { maxSaleQuantity } from "@/lib/sale-quantity";
+import { formatMoney, formatNumber } from "@/lib/number-format";
 
 type SaleLine = {
   itemId: number;
@@ -30,6 +33,7 @@ type Draft = {
   id: string;
   query: string;
   quantity: number;
+  quantityInput?: string;
   requestedUnit?: string;
   priceOverride?: number;
   candidates: any[];
@@ -57,6 +61,7 @@ export function VoiceSaleAssistant({
   const [command, setCommand] = useState("");
   const [listening, setListening] = useState(false);
   const [stableCommand, setStableCommand] = useState("");
+  const [needsCorrection, setNeedsCorrection] = useState(false);
   const [draft, setDraft] = useState<Draft[]>([]);
   const [busy, setBusy] = useState(false);
   const parsingRef = useRef(false);
@@ -107,7 +112,7 @@ export function VoiceSaleAssistant({
       state: "ready" as const,
       saleLine: {
         itemId: item.id,
-        itemName: item.brand ? `${item.name} (${item.brand})` : item.name,
+        itemName: productName(item),
         quantity,
         displayQuantity: `${line.quantity} ${line.requestedUnit || unitName}`,
         unitId: item.unitId,
@@ -171,7 +176,7 @@ export function VoiceSaleAssistant({
     const replacedIds = lastParsedIds.current;
     setDraft((current) => [...(append ? current : current.filter((entry) => !replacedIds.has(entry.id))), ...lines]);
     lastParsedIds.current = new Set(lines.map((entry) => entry.id));
-    setMessage(label("Check the items, then add them to the bill.", "वस्तू तपासा आणि बिलात जोडा."));
+    setMessage("");
   };
 
   const parseTranscript = (rawTranscript: string) => {
@@ -184,9 +189,11 @@ export function VoiceSaleAssistant({
       setMessage(label("Checking products and stock…", "वस्तू आणि साठा तपासत आहे…"));
       const parsed = parseVoiceSaleCommand(cleaned);
       if (parsed.length > 0) {
+        setNeedsCorrection(false);
         buildDraft(parsed);
         appendRecording.current = false;
       } else {
+        setNeedsCorrection(true);
         setMessage(
           label("No products recognised. Edit the words below or search.", "वस्तू ओळखता आल्या नाहीत. खाली शब्द दुरुस्त करा किंवा शोधा."),
         );
@@ -218,6 +225,7 @@ export function VoiceSaleAssistant({
     appendRecording.current = true;
     setCommand("");
     setStableCommand("");
+    setNeedsCorrection(false);
     setListening(true);
     setMessage(label("Listening… tap Done when finished.", "ऐकत आहे… बोलून झाल्यावर पूर्ण झाले दाबा."));
     const id = ++recordingId.current;
@@ -229,6 +237,7 @@ export function VoiceSaleAssistant({
         recording.current = null;
         setListening(false);
         if (text && status?.needsReview) {
+          setNeedsCorrection(true);
           setCommand(text);
           setMessage(label("Some words weren't confirmed. Check the saved words or speak again.", "काही शब्द निश्चित झाले नाहीत. ऐकलेले शब्द तपासा किंवा पुन्हा बोला."));
         } else if (text) parseLatest.current(text);
@@ -238,6 +247,7 @@ export function VoiceSaleAssistant({
         if (recordingId.current !== id) return;
         recording.current = null;
         setListening(false);
+        setNeedsCorrection(true);
         const errors: Record<string, [string, string]> = {
           network: ["Connection lost. Edit the saved words or try again.", "इंटरनेट जोडणी तुटली. ऐकलेले शब्द दुरुस्त करा किंवा पुन्हा बोला."],
           "not-allowed": ["Allow microphone access in the browser, then try again.", "ब्राउझरमध्ये माइकची परवानगी द्या आणि पुन्हा प्रयत्न करा."],
@@ -263,17 +273,18 @@ export function VoiceSaleAssistant({
     recording.current = null;
     setListening(false);
     setStableCommand("");
+    setNeedsCorrection(false);
     setCommand("");
     appendRecording.current = false;
     setMessage(label("Recording cancelled. Reviewed items are kept.", "रेकॉर्डिंग रद्द झाले. तपासलेल्या वस्तू तशाच आहेत."));
   };
   const choose = (id: string, selectedId: number) => {
     setDraft((current) => current.map((line) => line.id === id ? {...line, selectedId} : line));
-    setCommand("");
+    if (!needsCorrection) setCommand("");
   };
   const removeDraftLine = (id: string) => {
     setDraft((current) => current.filter((line) => line.id !== id));
-    setCommand("");
+    if (!needsCorrection) setCommand("");
   };
   // Reserve quantities in spoken order as well as quantities already in the bill.
   const reserved = new Map<number, number>();
@@ -292,13 +303,12 @@ export function VoiceSaleAssistant({
   const ready = reviewed.filter((entry) => entry.result.state === "ready");
   const addConfirmed = () => {
     const ids = new Set<string>();
-    setCommand("");
+    if (!needsCorrection) setCommand("");
     ready.forEach(({ line, result }) => {
       if (result.state === "ready") { onAdd(result.saleLine); ids.add(line.id); }
     });
     setDraft((current) => current.filter((line) => !ids.has(line.id)));
     setMessage(label(`${ids.size} products added to the bill.`, `${ids.size} वस्तू बिलात जोडल्या.`));
-    if (ids.size === draft.length) { setCommand("");  }
   };
   const searchInstead = (line: Draft) => {
     onSearchRequested?.(line.query, (itemId) => choose(line.id, itemId));
@@ -306,77 +316,132 @@ export function VoiceSaleAssistant({
   };
 
   return (
-    <section lang={mr ? "mr" : "en"} className="rounded-2xl border border-violet-100 bg-white p-3">
-      <div className="flex flex-wrap items-center gap-3">
+    <section lang={mr ? "mr" : "en"} className="space-y-3">
+      <div className="flex flex-wrap items-center gap-2">
         <Button type="button" disabled={busy} onClick={listening ? stopListening : startListening}
-          className={`h-12 shrink-0 gap-2 rounded-xl ${listening ? "bg-red-600 hover:bg-red-700" : "bg-violet-600 hover:bg-violet-700"}`}>
-          <Mic className="h-5 w-5" />{listening ? label("Done", "पूर्ण झाले") : busy ? label("Checking…", "तपासत आहे…") : label("Speak order", "बोलून वस्तू जोडा")}
+          className={`h-12 gap-2 rounded-xl ${listening ? "bg-red-600 hover:bg-red-700" : "bg-indigo-600 hover:bg-indigo-700"}`}>
+          <Mic className="h-5 w-5" />
+          {listening ? label("Done", "पूर्ण झाले") : label("Speak order", "बोलून वस्तू जोडा")}
         </Button>
-        {(busy || listening) && <Button type="button" variant="outline" onClick={cancelVoice}>{label("Cancel", "रद्द करा")}</Button>}
-        {<p role="status" className="text-xs text-slate-600">{message || label("Try: two Parle-G and half a litre of milk.", "उदा. दोन पार्ले जी आणि अर्धा लिटर दूध")}</p>}
+        {listening && <Button type="button" variant="ghost" className="h-12" onClick={cancelVoice}>{label("Cancel", "रद्द करा")}</Button>}
+        {!listening && draft.length === 0 && !command && !message &&
+          <p className="text-xs text-slate-500">{label("Try: two Parle-G, one milk", "उदा. दोन पार्ले जी, एक दूध")}</p>}
       </div>
-      {listening && stableCommand && <p className="mt-2 rounded-lg bg-violet-50 px-3 py-2 text-sm text-violet-900">“{stableCommand}”</p>}
-      {!listening && command && draft.length === 0 && <div className="mt-3 space-y-2">
-        <label className="text-xs text-slate-600" htmlFor="voice-recovery">{label("Edit what was heard", "ऐकलेले शब्द दुरुस्त करा")}</label>
-        <Input ref={inputRef} id="voice-recovery" value={command} onChange={(event) => setCommand(event.target.value)} />
-        <Button type="button" variant="outline" disabled={busy} onClick={review}>{label("Check these words", "हे शब्द तपासा")}</Button>
+      {message && <p role="status" className="text-sm text-slate-600">{message}</p>}
+      {listening && stableCommand && <p className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-700">{stableCommand}</p>}
+
+      {!listening && command && (draft.length === 0 || needsCorrection) && <div className="space-y-2 rounded-xl border border-slate-200 p-3">
+        <label className="text-sm font-medium" htmlFor="voice-recovery">{label("Check these words", "हे शब्द तपासा")}</label>
+        <Input ref={inputRef} id="voice-recovery" value={command} onChange={(event) => setCommand(event.target.value)} className="h-11" />
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" variant="outline" disabled={busy} className="min-h-11" onClick={review}>{label("Find products", "वस्तू शोधा")}</Button>
+          <Button type="button" variant="ghost" className="min-h-11" onClick={() => { setCommand(""); setMessage(""); setNeedsCorrection(false); }}>{label("Clear", "काढा")}</Button>
+        </div>
       </div>}
-      {draft.length > 0 && <fieldset disabled={listening || busy} className="mt-3 min-w-0 space-y-2 disabled:opacity-60">
-        <div className={`rounded-xl p-3 ${ready.length > 0 ? "bg-emerald-50" : "bg-amber-50"}`}>
-          {ready.length > 0 ? <>
-            <p className="font-semibold text-emerald-900">{ready.length} {label("ready", "तयार")} · ₹{ready.reduce((sum, entry) => sum + (entry.result.state === "ready" ? entry.result.saleLine.totalPrice : 0), 0).toFixed(2)}</p>
-            {draft.length > ready.length && <p className="mt-0.5 text-xs text-amber-800">{draft.length - ready.length} {label("to check", "वस्तू तपासा")}</p>}
-          </> : <>
-            <p className="font-semibold text-amber-950">{draft.length} {label("to check", "वस्तू तपासा")}</p>
-            <p className="mt-0.5 text-xs text-amber-800">{label("Choose another product or remove the item.", "दुसरी वस्तू निवडा किंवा ही वस्तू काढा.")}</p>
-          </>}
+
+      {draft.length > 0 && <fieldset disabled={listening || busy} className="min-w-0 space-y-3 disabled:opacity-60">
+        <legend className="sr-only">{label("Spoken order", "बोलून सांगितलेली ऑर्डर")}</legend>
+        <div className="flex items-center justify-between gap-2 border-t border-slate-200 pt-2">
+          <div>
+            <p className="text-sm font-semibold text-slate-900">{label("Spoken order", "बोलून सांगितलेली ऑर्डर")} · {formatNumber(draft.length)}</p>
+            {draft.length > ready.length && <p className="mt-1 text-xs text-amber-700">
+              {label(`${draft.length - ready.length} need a correction`, `${draft.length - ready.length} वस्तू तपासा`)}
+            </p>}
+          </div>
+          <Button type="button" variant="ghost" className="min-h-11 text-slate-500" onClick={() => {
+            setDraft([]); setCommand(""); setMessage(""); lastParsedIds.current.clear();
+          }}>{label("Clear all", "सर्व काढा")}</Button>
         </div>
 
-        {reviewed.map(({line, result}) => {
+        {reviewed.map(({ line, result }) => {
           const selectedItem = items.find((item) => item.id === line.selectedId);
-          const unitName = line.requestedUnit || units.find((unit) => unit.id === selectedItem?.unitId)?.shortForm || "";
-          return <div key={line.id} className={`rounded-xl border p-3 ${result.state === "ready" ? "border-emerald-200 bg-white" : "border-amber-200 bg-amber-50/40"}`}>
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-slate-900">{productName(selectedItem) || line.query}</p>
-                <p className="mt-0.5 text-xs text-slate-500">{line.quantity} {unitLabel(unitName)}</p>
+          const baseUnit = units.find((unit) => unit.id === selectedItem?.unitId)?.shortForm || "";
+          const spokenUnit = line.requestedUnit || baseUnit;
+          const inBill = addedItems.filter((item) => item.itemId === line.selectedId).reduce((sum, item) => sum + item.quantity, 0);
+          const otherReady = ready.reduce((sum, entry) => entry.line.id !== line.id && entry.result.state === "ready" &&
+            entry.result.saleLine.itemId === line.selectedId ? sum + entry.result.saleLine.quantity : sum, 0);
+          const conversion = selectedItem ? convertVoiceQuantity(1, line.requestedUnit, baseUnit) : null;
+          const max = maxSaleQuantity(Number(selectedItem?.quantity || 0), inBill + otherReady, conversion ?? 0);
+          const canEditQuantity = selectedItem && conversion !== null &&
+            (result.state === "ready" || result.state === "quantity" || (result.state === "insufficient" && max > 0));
+
+          return <div key={line.id} className={`rounded-xl border bg-white p-3 ${result.state === "ready" ? "border-slate-200" : "border-amber-200"}`}>
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0 flex-1">
+                <p className="break-words text-sm font-semibold text-slate-900">{productName(selectedItem) || line.query}</p>
+                {selectedItem && <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500">
+                  <span>{label("Stock:", "साठा:")} {formatNumber(Math.max(0, Number(selectedItem.quantity) - inBill))} {unitLabel(baseUnit)}</span>
+                  <span className="font-medium text-blue-700">{label("Selling:", "विक्री:")} ₹{formatMoney(selectedItem.sellPrice)}/{unitLabel(baseUnit)}</span>
+                  <span>{label("Buy:", "खरेदी:")} ₹{formatMoney(selectedItem.buyPrice)}/{unitLabel(baseUnit)}</span>
+                </div>}
+                {!selectedItem && <p className="mt-1 text-xs text-slate-500">
+                  {formatNumber(line.quantity)} {unitLabel(spokenUnit)}
+                </p>}
               </div>
-              {result.state === "ready" && <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-1 text-xs font-semibold text-emerald-800">{label("Ready", "तयार")} · ₹{result.saleLine.totalPrice.toFixed(2)}</span>}
+              <div className="flex shrink-0 flex-col items-end">
+                {result.state === "ready" && <span className="text-sm font-semibold tabular-nums">₹{formatMoney(result.saleLine.totalPrice)}</span>}
+                <Button type="button" variant="ghost" size="icon" className="h-11 w-11 rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-700"
+                  aria-label={label(`Remove ${productName(selectedItem) || line.query}`, `${productName(selectedItem) || line.query} काढा`)}
+                  onClick={() => removeDraftLine(line.id)}><Trash2 className="h-4 w-4" /></Button>
+              </div>
             </div>
 
-            {result.state === "unit" && <p className="mt-2 text-sm text-amber-900">{label("Check the unit. This product is sold in", "एकक तपासा. ही वस्तू या एककात विकली जाते:")} {unitLabel(result.unitName)}. <Button type="button" size="sm" variant="outline" onClick={() => setDraft((current) => current.map((entry) => entry.id === line.id ? {...entry, requestedUnit: undefined} : entry))}>{label("Use", "वापरा")} {line.quantity} {unitLabel(result.unitName)}</Button></p>}
-            {result.state === "expired" && <p className="mt-2 text-sm font-medium text-red-700">{label("This stock is expired.", "या साठ्याची मुदत संपली आहे.")}</p>}
-            {result.state === "quantity" && <p className="mt-2 text-sm font-medium text-amber-900">{label("Enter a quantity greater than zero.", "शून्यापेक्षा जास्त प्रमाण भरा.")}</p>}
-            {result.state === "variant" && <p className="mt-2 text-sm font-medium text-amber-900">{label("Choose the correct price or pack.", "योग्य किंमत किंवा पॅक निवडा.")}{line.priceOverride != null ? ` (₹${line.priceOverride})` : ""}</p>}
-            {result.state === "insufficient" && <p className="mt-2 text-sm font-medium text-amber-900">{result.available > 0 ? label(`Only ${result.available} available for this bill.`, `या बिलासाठी फक्त ${result.available} उपलब्ध आहेत.`) : label("No stock remaining for this bill.", "या बिलासाठी साठा शिल्लक नाही.")}</p>}
-            {result.state === "unmatched" && <div className="mt-2">
-              <p className="text-sm font-medium text-amber-900">{line.candidates.length ? label("Which product?", "कोणती वस्तू हवी?") : label("Product not found. Search using another name.", "वस्तू सापडली नाही. दुसऱ्या नावाने शोधा.")}</p>
-              {line.candidates.length > 0 && <div className="mt-2 flex flex-wrap gap-2">{line.candidates.map((item) => <Button type="button" key={item.id} variant="outline" size="sm" className="h-auto whitespace-normal bg-white text-left" onClick={() => choose(line.id,item.id)}>{productName(item)} · ₹{item.sellPrice}</Button>)}</div>}
+            {canEditQuantity && <div className="mt-3">
+              <SaleQuantityControl value={line.quantityInput ?? String(line.quantity)} max={max} unit={unitLabel(spokenUnit)}
+                label={label("Quantity", "प्रमाण")} productName={productName(selectedItem)} language={language}
+                onChange={(value) => setDraft((current) => current.map((entry) => entry.id === line.id
+                  ? { ...entry, quantityInput: value, quantity: Number(value) } : entry))} />
             </div>}
 
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              {result.state === "insufficient" && result.available > 0 && <Button type="button" size="sm" onClick={() => setDraft((current) => current.map((entry) => entry.id === line.id ? {...entry, quantity: result.available, requestedUnit: undefined} : entry))}>{result.available} {label("available — use these", "उपलब्ध — वापरा")}</Button>}
-              {result.state === "variant" && <Button type="button" size="sm" onClick={() => { onProductSelected?.(line.selectedId!, line.quantity, line.requestedUnit, () => removeDraftLine(line.id)); }}>{label("Choose price / pack", "किंमत / पॅक निवडा")}</Button>}
-              {result.state !== "ready" && onSearchRequested && <Button type="button" size="sm" className="bg-slate-900 text-white hover:bg-slate-800" onClick={() => searchInstead(line)}>{label("Find replacement", "दुसरी वस्तू शोधा")}</Button>}
-              <details open={result.state === "quantity" ? true : undefined} className="text-xs text-slate-500">
-                <summary className="cursor-pointer px-1 py-2">{label("Edit quantity", "प्रमाण बदला")}</summary>
-                <div className="mt-1 flex items-center gap-2">
-                  <Input aria-label={`Quantity for ${selectedItem?.name || line.query}`} type="number" min="0.001" step="any" className="h-9 w-24 bg-white" value={line.quantity} onChange={(event) => setDraft((current) => current.map((entry) => entry.id === line.id ? {...entry, quantity: Number(event.target.value)} : entry))} />
-                  <span>{unitLabel(unitName)}</span>
-                </div>
-              </details>
-              <Button type="button" variant="ghost" size="sm" className="ml-auto text-slate-500" onClick={() => removeDraftLine(line.id)}>{label("Remove", "काढा")}</Button>
-            </div>
+            {result.state === "expired" && <p className="mt-2 text-sm text-red-700">{label("Expired — choose a replacement.", "मुदत संपली — दुसरी वस्तू निवडा.")}</p>}
+            {result.state === "insufficient" && !canEditQuantity && <p className="mt-2 text-sm text-red-700">{label("Out of stock for this bill.", "या बिलासाठी साठा उपलब्ध नाही.")}</p>}
+            {result.state === "unit" && <div className="mt-2 space-y-2">
+              <p className="text-sm text-amber-800">{label("This product is sold in", "ही वस्तू या एककात विकली जाते:")} {unitLabel(result.unitName)}.</p>
+              <Button type="button" variant="outline" className="min-h-11 whitespace-normal" onClick={() => setDraft((current) => current.map((entry) =>
+                entry.id === line.id ? { ...entry, requestedUnit: undefined } : entry))}>
+                {label(`Use ${formatNumber(line.quantity)} ${unitLabel(result.unitName)}`, `${formatNumber(line.quantity)} ${unitLabel(result.unitName)} वापरा`)}
+              </Button>
+            </div>}
+            {result.state === "variant" && <p className="mt-2 text-sm text-amber-800">
+              {label("Choose the price or pack.", "किंमत किंवा पॅक निवडा.")}{line.priceOverride != null ? ` ₹${formatMoney(line.priceOverride)}` : ""}
+            </p>}
+            {result.state === "quantity" && !canEditQuantity && <p className="mt-2 text-sm text-amber-800">{label("Check the quantity and unit.", "प्रमाण आणि एकक तपासा.")}</p>}
+            {result.state === "unmatched" && <div className="mt-2 space-y-2">
+              <p className="text-sm text-amber-800">{line.candidates.length ? label("Which product?", "कोणती वस्तू?") : label("No matching product.", "जुळणारी वस्तू सापडली नाही.")}</p>
+              {line.candidates.slice(0, 3).map((item) => <Button type="button" key={item.id} variant="outline"
+                className="h-auto min-h-11 w-full justify-between gap-2 whitespace-normal rounded-lg text-left"
+                onClick={() => choose(line.id, item.id)}>
+                <span>{productName(item)}</span><span className="shrink-0">₹{formatMoney(item.sellPrice)}</span>
+              </Button>)}
+            </div>}
+
+            {result.state !== "ready" && <div className="mt-2 flex flex-wrap gap-2">
+              {(result.state === "variant" || (result.state === "quantity" && !canEditQuantity)) && onProductSelected && line.selectedId != null &&
+                <Button type="button" variant="outline" className="min-h-11 whitespace-normal" onClick={() =>
+                  onProductSelected(line.selectedId!, line.quantity, line.requestedUnit, () => removeDraftLine(line.id))}>
+                  {label("Open product", "वस्तू उघडा")}
+                </Button>}
+              {onSearchRequested && (result.state === "expired" || result.state === "unmatched" || result.state === "insufficient") &&
+                <Button type="button" variant="outline" className="min-h-11" onClick={() => searchInstead(line)}>
+                  {result.state === "unmatched" ? label("Search products", "वस्तू शोधा") : label("Find replacement", "दुसरी वस्तू शोधा")}
+                </Button>}
+            </div>}
           </div>;
         })}
 
-        {ready.length > 0 && <Button type="button" className="w-full bg-emerald-600 hover:bg-emerald-700" disabled={busy || listening} onClick={addConfirmed}>{label(`Add ${ready.length} items to bill`, `${ready.length} वस्तू बिलात जोडा`)}</Button>}
-        <div className="flex items-center justify-between gap-2 pt-1">
-          {command && <details className="text-xs text-slate-500"><summary className="cursor-pointer py-2">{label("Edit what was heard", "ऐकलेले शब्द दुरुस्त करा")}</summary>
-            <div className="mt-1 flex flex-col gap-2 sm:flex-row"><Input aria-label={label("Correct spoken order", "ऐकलेले शब्द दुरुस्त करा")} value={command} onChange={(event) => setCommand(event.target.value)} /><Button type="button" variant="outline" disabled={busy || listening} onClick={review}>{label("Update", "दुरुस्त करा")}</Button></div>
-          </details>}
-          <Button type="button" variant="ghost" size="sm" className="ml-auto text-slate-500" onClick={() => {setDraft([]); setCommand(""); setMessage("");}}>{label("Clear all", "सर्व काढा")}</Button>
-        </div>
+        {ready.length > 0 && <Button type="button" className="h-auto min-h-12 w-full gap-2 whitespace-normal rounded-xl bg-green-600 py-3 hover:bg-green-700"
+          disabled={busy || listening} onClick={addConfirmed}>
+          <span>{label(`Add ${ready.length} to bill`, `${ready.length} वस्तू बिलात जोडा`)}</span>
+          <span className="ml-auto shrink-0 tabular-nums">₹{formatMoney(ready.reduce((sum, entry) =>
+            sum + (entry.result.state === "ready" ? entry.result.saleLine.totalPrice : 0), 0))}</span>
+        </Button>}
+        {command && !needsCorrection && <details className="text-xs text-slate-500">
+          <summary className="cursor-pointer py-3">{label("Correct spoken words", "ऐकलेले शब्द दुरुस्त करा")}</summary>
+          <div className="mt-1 space-y-2">
+            <Input className="h-11" aria-label={label("Correct spoken order", "ऐकलेले शब्द दुरुस्त करा")} value={command} onChange={(event) => setCommand(event.target.value)} />
+            <Button type="button" variant="outline" className="min-h-11" disabled={busy || listening} onClick={review}>{label("Update products", "वस्तू अद्ययावत करा")}</Button>
+          </div>
+        </details>}
       </fieldset>}
     </section>
   );
