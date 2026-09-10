@@ -185,7 +185,10 @@ export interface Sale {
   totalProfit: number; // subtotal - totalCost
   profitMarginPercent: number; // (totalProfit / subtotal) * 100
   paymentMethod: 'cash' | 'card' | 'partial' | 'udhar'; // How they paid
-  creditCustomerId?: number; // Udhari customer if payment method is udhar
+  paidAmount?: number;
+  dueAmount?: number;
+  paidVia?: 'cash' | 'card';
+  creditCustomerId?: number; // Customer when all or part of the bill is on credit
   creditCustomerName?: string;
   notes?: string; // Optional notes
   createdAt: number;

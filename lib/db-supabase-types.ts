@@ -248,6 +248,9 @@ export interface Database {
           total_profit: number;
           profit_margin_percent: number | null;
           payment_method: 'cash' | 'card' | 'partial' | 'udhar';
+          paid_amount: number;
+          due_amount: number;
+          paid_via: 'cash' | 'card' | null;
           credit_customer_id: number | null;
           credit_customer_name: string | null;
           notes: string | null;
@@ -265,6 +268,9 @@ export interface Database {
           total_profit: number;
           profit_margin_percent?: number | null;
           payment_method: 'cash' | 'card' | 'partial' | 'udhar';
+          paid_amount?: number;
+          due_amount?: number;
+          paid_via?: 'cash' | 'card' | null;
           credit_customer_id?: number | null;
           credit_customer_name?: string | null;
           notes?: string | null;
@@ -282,6 +288,9 @@ export interface Database {
           total_profit?: number;
           profit_margin_percent?: number | null;
           payment_method?: 'cash' | 'card' | 'partial' | 'udhar';
+          paid_amount?: number;
+          due_amount?: number;
+          paid_via?: 'cash' | 'card' | null;
           credit_customer_id?: number | null;
           credit_customer_name?: string | null;
           notes?: string | null;

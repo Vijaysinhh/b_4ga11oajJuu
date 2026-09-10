@@ -4,7 +4,8 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase";
 import type { Database } from "@/lib/db-supabase-types";
 import { dateKey } from "@/lib/utils";
-import { hasInvalidSaleQuantity } from "@/lib/sale-quantity";
+import { hasInvalidSalePrice, hasInvalidSaleQuantity } from "@/lib/sale-quantity";
+import { getSalePaymentBreakdown, getStoredCreditAmount } from "@/lib/sale-payment";
 import {
   createOfflineId,
   executeWithOfflineDelete,
@@ -687,6 +688,9 @@ const mapSale = (row: any) => ({
   totalProfit: row.total_profit,
   profitMarginPercent: row.profit_margin_percent,
   paymentMethod: row.payment_method === "udhari" ? "udhar" : row.payment_method,
+  paidAmount: Number(row.paid_amount || 0),
+  dueAmount: Number(row.due_amount || 0),
+  paidVia: row.paid_via || undefined,
   creditCustomerId: row.credit_customer_id,
   creditCustomerName: row.credit_customer_name,
   notes: row.notes,
@@ -789,8 +793,8 @@ export function useSales(shopId?: number) {
 
   const createSale = useCallback(
     async (saleData: any) => {
-      if (!Array.isArray(saleData.items) || saleData.items.length === 0 || hasInvalidSaleQuantity(saleData.items)) {
-        throw new Error("Every sale item must have a quantity greater than zero.");
+      if (!Array.isArray(saleData.items) || saleData.items.length === 0 || hasInvalidSaleQuantity(saleData.items) || hasInvalidSalePrice(saleData.items)) {
+        throw new Error("Every sale item must have a positive quantity and selling price.");
       }
       const effectiveShopId = resolveShopId(shopId);
       if (!effectiveShopId) return null;
@@ -801,6 +805,18 @@ export function useSales(shopId?: number) {
           : saleData.timestamp || now;
       const paymentMethod =
         saleData.paymentMethod === "udhar" ? "udhari" : saleData.paymentMethod;
+      const paymentBreakdown = getSalePaymentBreakdown(
+        Number(saleData.subtotal),
+        saleData.paymentMethod,
+        Number(saleData.paidAmount),
+        saleData.paidVia || "cash",
+      );
+      if (!paymentBreakdown.isValid) {
+        throw new Error("Enter a valid payment amount before completing the sale.");
+      }
+      if (paymentBreakdown.dueAmount > 0 && !saleData.creditCustomerId) {
+        throw new Error("A customer is required when an amount remains due.");
+      }
       const saleRow = {
         id: createOfflineId(),
         shop_id: effectiveShopId,
@@ -812,6 +828,9 @@ export function useSales(shopId?: number) {
         total_profit: saleData.totalProfit,
         profit_margin_percent: saleData.profitMarginPercent,
         payment_method: paymentMethod,
+        paid_amount: paymentBreakdown.paidAmount,
+        due_amount: paymentBreakdown.dueAmount,
+        paid_via: paymentBreakdown.paidVia,
         credit_customer_id: saleData.creditCustomerId || null,
         credit_customer_name: saleData.creditCustomerName || null,
         notes: saleData.notes || null,
@@ -824,11 +843,34 @@ export function useSales(shopId?: number) {
         row: saleRow,
         request: async () => {
           const { id: _localId, ...insertRow } = saleRow;
-          const { data: savedSale, error } = await (supabase as any)
+          let { data: savedSale, error } = await (supabase as any)
             .from("sales")
             .insert(insertRow)
             .select("*")
             .single();
+          const isMissingPaymentColumns =
+            (error as any)?.code === "PGRST204" &&
+            /(?:paid_amount|due_amount|paid_via)/.test((error as any)?.message || "");
+          if (isMissingPaymentColumns && paymentMethod !== "partial") {
+            const {
+              paid_amount: _paidAmount,
+              due_amount: _dueAmount,
+              paid_via: _paidVia,
+              ...legacyInsertRow
+            } = insertRow;
+            const legacyResult = await (supabase as any)
+              .from("sales")
+              .insert(legacyInsertRow)
+              .select("*")
+              .single();
+            savedSale = legacyResult.data;
+            error = legacyResult.error;
+          } else if (isMissingPaymentColumns) {
+            throw new Error(
+              "Partial payment needs the database migration 20260910_partial_payments.sql before it can be used.",
+              { cause: error },
+            );
+          }
           if (error) {
             const msg =
               (error as any)?.message ||
@@ -902,7 +944,8 @@ export function useSales(shopId?: number) {
         });
       }
 
-      if (paymentMethod === "udhari" && saleData.creditCustomerId) {
+      const creditAmount = paymentBreakdown.dueAmount;
+      if (creditAmount > 0 && saleData.creditCustomerId) {
         const cachedCustomers = await readCachedCollection(
           effectiveShopId,
           "credit_customers",
@@ -923,7 +966,7 @@ export function useSales(shopId?: number) {
           const updatedCustomer = {
             ...customer,
             balance: Math.max(
-              Number(customer.balance || 0) + Number(saleData.subtotal || 0),
+              Number(customer.balance || 0) + creditAmount,
               0,
             ),
             updated_at: now,
@@ -959,7 +1002,7 @@ export function useSales(shopId?: number) {
           customer_id: saleData.creditCustomerId,
           customer_name: saleData.creditCustomerName || "",
           type: "credit",
-          amount: saleData.subtotal,
+          amount: creditAmount,
           sale_id: savedSale.id,
           bill_items:
             saleData.items?.map((item: any) => ({
@@ -1202,8 +1245,8 @@ export function useSales(shopId?: number) {
 
   const updateSale = useCallback(
     async (saleId: number, updatedSaleData: any) => {
-      if (!Array.isArray(updatedSaleData.items) || updatedSaleData.items.length === 0 || hasInvalidSaleQuantity(updatedSaleData.items)) {
-        throw new Error("Every sale item must have a quantity greater than zero.");
+      if (!Array.isArray(updatedSaleData.items) || updatedSaleData.items.length === 0 || hasInvalidSaleQuantity(updatedSaleData.items) || hasInvalidSalePrice(updatedSaleData.items)) {
+        throw new Error("Every sale item must have a positive quantity and selling price.");
       }
       const effectiveShopId = resolveShopId(shopId);
       if (!effectiveShopId) return;
@@ -1301,6 +1344,20 @@ export function useSales(shopId?: number) {
         updatedSaleData.paymentMethod === "udhar"
           ? "udhari"
           : updatedSaleData.paymentMethod;
+      const updatePaidAmount = updatedSaleData.paidAmount ?? originalSale.paid_amount ?? 0;
+      const updatePaidVia = updatedSaleData.paidVia ?? originalSale.paid_via ?? "cash";
+      const updatedPaymentBreakdown = getSalePaymentBreakdown(
+        Number(updatedSaleData.subtotal),
+        updatedSaleData.paymentMethod,
+        Number(updatePaidAmount),
+        updatePaidVia,
+      );
+      if (!updatedPaymentBreakdown.isValid) {
+        throw new Error("Enter a valid payment amount before updating the sale.");
+      }
+      if (updatedPaymentBreakdown.dueAmount > 0 && !updatedSaleData.creditCustomerId) {
+        throw new Error("A customer is required when an amount remains due.");
+      }
       const saleTimestamp =
         typeof updatedSaleData.timestamp === "number"
           ? new Date(updatedSaleData.timestamp).toISOString()
@@ -1317,6 +1374,9 @@ export function useSales(shopId?: number) {
           total_profit: updatedSaleData.totalProfit,
           profit_margin_percent: updatedSaleData.profitMarginPercent,
           payment_method: paymentMethod,
+          paid_amount: updatedPaymentBreakdown.paidAmount,
+          due_amount: updatedPaymentBreakdown.dueAmount,
+          paid_via: updatedPaymentBreakdown.paidVia,
           credit_customer_id: updatedSaleData.creditCustomerId,
           credit_customer_name: updatedSaleData.creditCustomerName,
           notes: updatedSaleData.notes,
@@ -1436,8 +1496,10 @@ export function useSales(shopId?: number) {
       // Step 5: Handle udhari balance changes if payment method or amount changed
       const originalSubtotal = originalSale.subtotal;
       const newSubtotal = updatedSaleData.subtotal;
-      const originalWasUdhari = originalSale.payment_method === "udhari";
-      const newIsUdhari = paymentMethod === "udhari";
+      const originalCreditAmount = getStoredCreditAmount(originalSale);
+      const newCreditAmount = updatedPaymentBreakdown.dueAmount;
+      const originalWasUdhari = originalCreditAmount > 0;
+      const newIsUdhari = newCreditAmount > 0;
 
       // First, fetch the original credit entry to preserve original date and timestamp
       let originalCreditEntry = null;
@@ -1458,12 +1520,12 @@ export function useSales(shopId?: number) {
           .eq("id", originalSale.credit_customer_id)
           .single();
         if (originalCustomer) {
-          let newBalance = originalCustomer.balance - originalSubtotal;
+          let newBalance = originalCustomer.balance - originalCreditAmount;
           if (
             newIsUdhari &&
             updatedSaleData.creditCustomerId === originalSale.credit_customer_id
           ) {
-            newBalance += newSubtotal;
+            newBalance += newCreditAmount;
           }
           newBalance = Math.max(newBalance, 0);
           await (supabase as any)
@@ -1492,7 +1554,7 @@ export function useSales(shopId?: number) {
             customer_id: updatedSaleData.creditCustomerId,
             customer_name: updatedSaleData.creditCustomerName,
             type: "credit",
-            amount: newSubtotal,
+            amount: newCreditAmount,
             sale_id: saleId,
             bill_items:
               updatedSaleData.items?.map((i: any) => ({
@@ -1521,7 +1583,7 @@ export function useSales(shopId?: number) {
             await (supabase as any)
               .from("credit_customers")
               .update({
-                balance: Math.max(newCustomer.balance + newSubtotal, 0),
+                balance: Math.max(newCustomer.balance + newCreditAmount, 0),
                 updated_at: now,
               })
               .eq("id", updatedSaleData.creditCustomerId);
@@ -1532,7 +1594,7 @@ export function useSales(shopId?: number) {
               customer_id: updatedSaleData.creditCustomerId,
               customer_name: updatedSaleData.creditCustomerName,
               type: "credit",
-              amount: newSubtotal,
+              amount: newCreditAmount,
               sale_id: saleId,
               bill_items:
                 updatedSaleData.items?.map((i: any) => ({
@@ -1564,7 +1626,7 @@ export function useSales(shopId?: number) {
           await (supabase as any)
             .from("credit_customers")
             .update({
-              balance: Math.max(newCustomer.balance + newSubtotal, 0),
+              balance: Math.max(newCustomer.balance + newCreditAmount, 0),
               updated_at: now,
             })
             .eq("id", updatedSaleData.creditCustomerId);
@@ -1575,7 +1637,7 @@ export function useSales(shopId?: number) {
             customer_id: updatedSaleData.creditCustomerId,
             customer_name: updatedSaleData.creditCustomerName,
             type: "credit",
-            amount: newSubtotal,
+            amount: newCreditAmount,
             sale_id: saleId,
             bill_items:
               updatedSaleData.items?.map((i: any) => ({
@@ -1618,8 +1680,9 @@ export function useSales(shopId?: number) {
         .select("*")
         .eq("sale_id", saleId);
 
-      // If udhari sale, revert customer balance and delete credit entry
-      if (sale.payment_method === "udhari" && sale.credit_customer_id) {
+      // Revert exactly the amount that this sale added to the customer's Udhar.
+      const creditAmount = getStoredCreditAmount(sale);
+      if (creditAmount > 0 && sale.credit_customer_id) {
         const { data: customer } = await (supabase as any)
           .from("credit_customers")
           .select("*")
@@ -1630,7 +1693,7 @@ export function useSales(shopId?: number) {
           await (supabase as any)
             .from("credit_customers")
             .update({
-              balance: Math.max(customer.balance - sale.subtotal, 0),
+              balance: Math.max(customer.balance - creditAmount, 0),
               updated_at: new Date().toISOString(),
             })
             .eq("id", sale.credit_customer_id);

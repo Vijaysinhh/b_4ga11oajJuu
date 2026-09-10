@@ -20,12 +20,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  cleanNumberInput,
   cleanWholeNumberInput,
   formatMoney,
   formatNumber,
   formatPercent,
   formatWholeNumber,
 } from "@/lib/number-format";
+import { getSalePaymentBreakdown, type ImmediatePaymentMethod } from "@/lib/sale-payment";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -69,6 +71,8 @@ export function SalesTransaction() {
   const [items, setItems] = useState<LineItem[]>([]);
   const [quantityDrafts, setQuantityDrafts] = useState<Record<number, string>>({});
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
+  const [partialPaidAmount, setPartialPaidAmount] = useState("");
+  const [partialPaidVia, setPartialPaidVia] = useState<ImmediatePaymentMethod>("cash");
   const [creditCustomerId, setCreditCustomerId] = useState<number | null>(null);
   const [newCustomerName, setNewCustomerName] = useState("");
   const [newCustomerPhone, setNewCustomerPhone] = useState("");
@@ -84,7 +88,13 @@ export function SalesTransaction() {
     ),
   };
 
-  const isUdharSale = paymentMethod === "udhar";
+  const needsCreditCustomer = paymentMethod === "udhar" || paymentMethod === "partial";
+  const paymentBreakdown = getSalePaymentBreakdown(
+    totals.subtotal,
+    paymentMethod,
+    Number(partialPaidAmount),
+    partialPaidVia,
+  );
   const selectedCreditCustomer =
     customers.find((customer) => customer.id === creditCustomerId) || null;
   const profitMarginPercent =
@@ -95,7 +105,7 @@ export function SalesTransaction() {
   );
   const hasInvalidQuantity = items.some((item, index) => {
     const value = Number(quantityDrafts[index] ?? editableSaleQuantity(item));
-    return !isSaleQuantityApplied(item, value, billLineMax(index));
+    return Number(item.pricePerUnit) <= 0 || !isSaleQuantityApplied(item, value, billLineMax(index));
   });
 
   const handleQuantityChange = (index: number, value: string) => {
@@ -132,6 +142,8 @@ export function SalesTransaction() {
     setItems([]);
     setQuantityDrafts({});
     setPaymentMethod("cash");
+    setPartialPaidAmount("");
+    setPartialPaidVia("cash");
     resetCreditFields();
     setShowConfirmDialog(false);
   };
@@ -140,20 +152,23 @@ export function SalesTransaction() {
     const nextPaymentMethod = value as PaymentMethod;
     setPaymentMethod(nextPaymentMethod);
 
-    if (nextPaymentMethod !== "udhar") {
+    if (nextPaymentMethod !== "partial") {
+      setPartialPaidAmount("");
+    }
+    if (nextPaymentMethod !== "udhar" && nextPaymentMethod !== "partial") {
       resetCreditFields();
     }
   };
 
   const handleCompleteSale = async () => {
-    if (isProcessing || hasInvalidQuantity) return;
+    if (isProcessing || hasInvalidQuantity || !paymentBreakdown.isValid) return;
     if (items.length === 0) {
       toast.error(t("error"));
       return;
     }
 
-    if (isUdharSale && !selectedCreditCustomer && !newCustomerName.trim()) {
-      toast.error(t("error"));
+    if (needsCreditCustomer && !selectedCreditCustomer && !newCustomerName.trim()) {
+      toast.error(language === "mr" ? "उधारीसाठी ग्राहक निवडा किंवा नाव लिहा." : "Choose a customer or enter a name for the due amount.");
       return;
     }
 
@@ -211,7 +226,7 @@ export function SalesTransaction() {
       let finalCreditCustomerId = creditCustomerId;
       let finalCreditCustomerName = selectedCreditCustomer?.name || "";
 
-      if (isUdharSale && !finalCreditCustomerId) {
+      if (needsCreditCustomer && !finalCreditCustomerId) {
         const createdCustomerId = await addCustomer({
           name: newCustomerName.trim(),
           phone: newCustomerPhone.trim() || undefined,
@@ -232,10 +247,13 @@ export function SalesTransaction() {
         totalProfit: totals.totalProfit,
         profitMarginPercent,
         paymentMethod,
-        creditCustomerId: isUdharSale
+        paidAmount: paymentBreakdown.paidAmount,
+        dueAmount: paymentBreakdown.dueAmount,
+        paidVia: paymentBreakdown.paidVia || undefined,
+        creditCustomerId: needsCreditCustomer
           ? finalCreditCustomerId || undefined
           : undefined,
-        creditCustomerName: isUdharSale ? finalCreditCustomerName : undefined,
+        creditCustomerName: needsCreditCustomer ? finalCreditCustomerName : undefined,
       });
 
       if (createdSaleId === null || createdSaleId === undefined) {
@@ -266,19 +284,7 @@ export function SalesTransaction() {
           : typeof error === "string"
             ? error
             : JSON.stringify(error, null, 2);
-      console.group(
-        "%cSale completion error",
-        "color: #dc2626; font-weight: bold",
-      );
-      console.error("Error value:");
-      console.dir(error, { depth: null });
-      console.error("Error message:", errorMessage);
-      if (error instanceof Error && error.cause) {
-        console.error("Error cause:");
-        console.dir(error.cause, { depth: null });
-      }
-      console.trace("Error thrown at:");
-      console.groupEnd();
+      console.warn("Sale could not be completed:", errorMessage);
       const persistedSaleId = Number(createdSaleId ?? 0);
       if (persistedSaleId > 0) {
         try {
@@ -312,12 +318,17 @@ export function SalesTransaction() {
           );
         }
       } else {
+        const needsPartialMigration = errorMessage.includes("20260910_partial_payments.sql");
         toast.error(
           language === "mr"
             ? "विक्री जोडता आली नाही"
             : "Could not complete sale",
           {
-            description: errorMessage.slice(0, 220),
+            description: needsPartialMigration
+              ? language === "mr"
+                ? "Supabase मध्ये partial-payment migration चालवा आणि पुन्हा प्रयत्न करा."
+                : "Run the partial-payment migration in Supabase, then try again."
+              : errorMessage.slice(0, 220),
           },
         );
       }
@@ -356,25 +367,51 @@ export function SalesTransaction() {
             ) : (
               <div className="space-y-2">
                 {items.map((item, index) => {
+                  const catalogItem = allItems.find((product) => product.id === item.itemId);
+                  const totalInBill = items.filter((line) => line.itemId === item.itemId)
+                    .reduce((sum, line) => sum + Number(line.quantity || 0), 0);
+                  const stockAfterBill = Math.max(0, Number(Number((catalogItem?.quantity ?? 0) - totalInBill).toFixed(6)));
+                  const profitPerUnit = Number(item.pricePerUnit || 0) - Number(item.costPerUnit || 0);
+                  const marginPercent = Number(item.pricePerUnit) > 0
+                    ? (profitPerUnit / Number(item.pricePerUnit)) * 100 : 0;
                   return (
                     <div
                       key={`${item.itemId}-${index}`}
-                      className="rounded-xl border border-slate-200 bg-white p-3"
+                      className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm"
                     >
                       <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0 flex-1">
-                        <div className="break-words text-sm font-semibold text-slate-900">{item.itemName}</div>
-                        <div className="mt-1 text-sm text-muted-foreground">{formatSaleLineSubtitle(item)}</div>
-                      </div>
-                      <div className="flex shrink-0 flex-col items-end gap-1"><span className="text-base font-semibold tabular-nums text-slate-900">₹{formatMoney(item.totalPrice)}</span><button
-                        onClick={() => handleRemoveItem(index)}
-                        disabled={isProcessing || showConfirmDialog}
-                        className="flex min-h-11 items-center gap-1.5 rounded-lg px-2 text-xs text-slate-500 hover:bg-red-50 hover:text-red-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500"
-                        aria-label={`${language === "mr" ? "काढा" : "Remove"} ${item.itemName}`}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                        {language === "mr" ? "काढा" : "Remove"}
-                      </button></div>
+                        <div className="min-w-0 flex-1">
+                          <div className="break-words text-sm font-bold text-slate-900">{item.itemName}</div>
+                          <div className="mt-2 flex flex-wrap gap-1.5 text-[11px]">
+                            <span className={`rounded px-1.5 py-0.5 font-semibold ${stockAfterBill > 0 ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
+                              {language === "mr" ? "विक्रीनंतर साठा" : "Stock after bill"}: {formatNumber(stockAfterBill)} {item.unitShortForm}
+                            </span>
+                            <span className="rounded bg-blue-50 px-1.5 py-0.5 font-semibold text-blue-700">
+                              {language === "mr" ? "विक्री" : "Sell"}: ₹{formatMoney(item.pricePerUnit)}/{item.unitShortForm}
+                            </span>
+                            <span className="rounded bg-slate-100 px-1.5 py-0.5 font-medium text-slate-600">
+                              {language === "mr" ? "खरेदी" : "Buy"}: ₹{formatMoney(item.costPerUnit)}/{item.unitShortForm}
+                            </span>
+                          </div>
+                          <div className="mt-2 flex flex-wrap items-center gap-2">
+                            <span className="text-xs text-slate-500">{formatSaleLineSubtitle(item)}</span>
+                            <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${profitPerUnit >= 0 ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-700"}`}>
+                              {profitPerUnit >= 0 ? "+" : ""}₹{formatMoney(profitPerUnit)} · {marginPercent.toFixed(0)}%
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex shrink-0 flex-col items-end gap-1">
+                          <span className="text-lg font-extrabold tabular-nums text-blue-700">₹{formatMoney(item.totalPrice)}</span>
+                          <button
+                            onClick={() => handleRemoveItem(index)}
+                            disabled={isProcessing || showConfirmDialog}
+                            className="flex min-h-10 items-center gap-1 rounded-lg px-2 text-xs text-slate-500 hover:bg-red-50 hover:text-red-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500"
+                            aria-label={`${language === "mr" ? "काढा" : "Remove"} ${item.itemName}`}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                            {language === "mr" ? "काढा" : "Remove"}
+                          </button>
+                        </div>
                       </div>
                       <div className="mt-2">
                         <SaleQuantityControl
@@ -418,14 +455,57 @@ export function SalesTransaction() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="cash">{t("cash")}</SelectItem>
-                      <SelectItem value="card">{t("card")}</SelectItem>
+                      <SelectItem value="card">{language === "mr" ? "ऑनलाइन" : "Online"}</SelectItem>
                       <SelectItem value="partial">{t("partial")}</SelectItem>
                       <SelectItem value="udhar">{t("udhar")}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
 
-                {isUdharSale && (
+                {paymentMethod === "partial" && (
+                  <div className="space-y-3 rounded-xl border border-blue-200 bg-blue-50 p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-blue-950">
+                          {language === "mr" ? "आता किती मिळाले?" : "Amount received now"}
+                        </p>
+                        <p className="text-xs text-blue-800">
+                          {language === "mr" ? "बाकी रक्कम ग्राहकाच्या उधारीत जाईल." : "The rest will be added to the customer's Udhar."}
+                        </p>
+                      </div>
+                      <div className="relative w-32 shrink-0">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 font-semibold text-slate-500">₹</span>
+                        <Input
+                          aria-label={language === "mr" ? "मिळालेली रक्कम" : "Amount received"}
+                          value={partialPaidAmount}
+                          onChange={(event) => setPartialPaidAmount(cleanNumberInput(event.target.value))}
+                          inputMode="decimal"
+                          placeholder="0"
+                          className="h-11 bg-white pl-7 text-right text-lg font-bold"
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Button type="button" variant={partialPaidVia === "cash" ? "default" : "outline"} onClick={() => setPartialPaidVia("cash")} className="h-10">
+                        {t("cash")}
+                      </Button>
+                      <Button type="button" variant={partialPaidVia === "card" ? "default" : "outline"} onClick={() => setPartialPaidVia("card")} className="h-10">
+                        {language === "mr" ? "ऑनलाइन" : "Online"}
+                      </Button>
+                    </div>
+                    <div className="flex items-center justify-between rounded-lg bg-white px-3 py-2">
+                      <span className="text-sm text-slate-600">{language === "mr" ? "बाकी उधार" : "Remaining Udhar"}</span>
+                      <span className="text-lg font-bold text-orange-700">₹{formatMoney(paymentBreakdown.dueAmount)}</span>
+                    </div>
+                    {partialPaidAmount && !paymentBreakdown.isValid && (
+                      <p role="alert" className="text-xs font-medium text-red-700">
+                        {language === "mr" ? "मिळालेली रक्कम ₹0 पेक्षा जास्त आणि बिलाच्या रकमेपेक्षा कमी असावी." : "Received amount must be more than ₹0 and less than the bill total."}
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {needsCreditCustomer && (
                   <div className="space-y-3 rounded-md border border-orange-200 bg-orange-50 p-3">
                     <div>
                       <label className="mb-1 block text-xs font-semibold text-orange-900">
@@ -497,17 +577,19 @@ export function SalesTransaction() {
 
                     <div className="flex items-center gap-2 text-xs text-orange-900">
                       <UserPlus className="h-4 w-4" />
-                      <span>{t("udhari_bill_notice")}</span>
+                      <span>{paymentMethod === "partial"
+                        ? (language === "mr" ? `फक्त ₹${formatMoney(paymentBreakdown.dueAmount)} ग्राहकाच्या उधारीत जोडले जातील.` : `Only ₹${formatMoney(paymentBreakdown.dueAmount)} will be added to this customer's Udhar.`)
+                        : t("udhari_bill_notice")}</span>
                     </div>
                   </div>
                 )}
 
                 {hasInvalidQuantity && <p role="alert" className="text-sm text-red-700">
-                  {language === "mr" ? "विक्री पूर्ण करण्यापूर्वी प्रमाण दुरुस्त करून लागू करा किंवा वस्तू काढा." : "Correct and apply the quantities, or remove those items, before completing the sale."}
+                  {language === "mr" ? "विक्री पूर्ण करण्यापूर्वी प्रमाण आणि विक्री किंमत दुरुस्त करा किंवा वस्तू काढा." : "Correct the quantities and selling prices, or remove those items, before completing the sale."}
                 </p>}
                 <Button
                   onClick={() => setShowConfirmDialog(true)}
-                  disabled={isProcessing || hasInvalidQuantity}
+                  disabled={isProcessing || hasInvalidQuantity || !paymentBreakdown.isValid}
                   className="h-auto min-h-12 w-full gap-2 whitespace-normal rounded-xl bg-emerald-600 py-3 text-base font-semibold text-white hover:bg-emerald-700"
                 >
                   <Check className="mr-2 h-4 w-4" />
@@ -538,10 +620,22 @@ export function SalesTransaction() {
                 <div className="flex justify-between text-sm">
                   <span>{t("payment")}:</span>
                   <span className="font-bold capitalize">
-                    {t(paymentMethod)}
+                    {paymentMethod === "card" ? (language === "mr" ? "ऑनलाइन" : "Online") : t(paymentMethod)}
                   </span>
                 </div>
-                {isUdharSale && (
+                {paymentMethod === "partial" && (
+                  <>
+                    <div className="flex justify-between text-sm">
+                      <span>{language === "mr" ? "आता मिळाले" : "Received now"}:</span>
+                      <span className="font-bold">₹{formatMoney(paymentBreakdown.paidAmount)} · {partialPaidVia === "cash" ? t("cash") : (language === "mr" ? "ऑनलाइन" : "Online")}</span>
+                    </div>
+                    <div className="flex justify-between text-sm text-orange-700">
+                      <span>{language === "mr" ? "बाकी उधार" : "Remaining Udhar"}:</span>
+                      <span className="font-bold">₹{formatMoney(paymentBreakdown.dueAmount)}</span>
+                    </div>
+                  </>
+                )}
+                {needsCreditCustomer && (
                   <div className="flex justify-between gap-3 text-sm">
                     <span>{t("customer")}:</span>
                     <span className="text-right font-bold">
@@ -568,7 +662,7 @@ export function SalesTransaction() {
           </AlertDialogHeader>
           <div className="flex justify-end gap-2">
             <AlertDialogCancel>{t("cancel")}</AlertDialogCancel>
-            <AlertDialogAction disabled={isProcessing || hasInvalidQuantity} onClick={handleCompleteSale}>
+            <AlertDialogAction disabled={isProcessing || hasInvalidQuantity || !paymentBreakdown.isValid} onClick={handleCompleteSale}>
               {t("complete_sale")}
             </AlertDialogAction>
           </div>

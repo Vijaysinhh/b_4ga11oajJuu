@@ -99,6 +99,9 @@ CREATE TABLE IF NOT EXISTS sales (
     total_profit NUMERIC NOT NULL,
     profit_margin_percent NUMERIC,
     payment_method VARCHAR(50) NOT NULL CHECK (payment_method IN ('cash', 'card', 'partial', 'udhari')),
+    paid_amount NUMERIC NOT NULL DEFAULT 0 CHECK (paid_amount >= 0),
+    due_amount NUMERIC NOT NULL DEFAULT 0 CHECK (due_amount >= 0),
+    paid_via VARCHAR(20) CHECK (paid_via IS NULL OR paid_via IN ('cash', 'card')),
     credit_customer_id BIGINT,
     credit_customer_name VARCHAR(255),
     notes TEXT,
@@ -827,3 +830,6 @@ ALTER TABLE sales ADD COLUMN IF NOT EXISTS profit_margin_percent NUMERIC;
 ALTER TABLE sales ADD COLUMN IF NOT EXISTS credit_customer_id BIGINT;
 ALTER TABLE sales ADD COLUMN IF NOT EXISTS credit_customer_name VARCHAR(255);
 ALTER TABLE sales ADD COLUMN IF NOT EXISTS notes TEXT;
+ALTER TABLE sales ADD COLUMN IF NOT EXISTS paid_amount NUMERIC NOT NULL DEFAULT 0;
+ALTER TABLE sales ADD COLUMN IF NOT EXISTS due_amount NUMERIC NOT NULL DEFAULT 0;
+ALTER TABLE sales ADD COLUMN IF NOT EXISTS paid_via VARCHAR(20);

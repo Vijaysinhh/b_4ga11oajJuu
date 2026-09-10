@@ -290,8 +290,8 @@ export function SalesItemSearch({
     if (initialQuantity <= 0 || isExpired(item)) return;
     const sellPrice = Number(item.sellPrice);
     const buyPrice = Number(item.buyPrice);
-    if (![sellPrice, buyPrice].every(Number.isFinite)) {
-      toast.error(language === "mr" ? "या वस्तूची किंमत तपासा." : "Check this product's price.");
+    if (!Number.isFinite(sellPrice) || sellPrice <= 0 || !Number.isFinite(buyPrice)) {
+      toast.error(language === "mr" ? "या वस्तूची विक्री किंमत शून्यपेक्षा जास्त ठेवा." : "Set a selling price greater than zero first.");
       return;
     }
     const baseName = language === "mr" && item.nameMarathi ? item.nameMarathi : item.name;
@@ -333,7 +333,7 @@ export function SalesItemSearch({
 
   const handleAddToCart = () => {
     const qty = parseNumberInput(quantity);
-    if (!selectedItem || !quantity || !Number.isFinite(qty) || qty <= 0 || qty > maxQuantity) return;
+    if (!selectedItem || !quantity || !Number.isFinite(qty) || qty <= 0 || qty > maxQuantity || Number(selectedItem.sellPrice) <= 0) return;
 
     // Calculate actual quantity to be sold in item's base unit
     let totalQuantityToSell = qty;
@@ -463,9 +463,10 @@ export function SalesItemSearch({
 
   return (
     <div className="space-y-3">
-      <div className="relative">
-        <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-        <Input
+      <div className="flex items-stretch gap-2">
+        <div className="relative min-w-0 flex-1">
+          <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+          <Input
           ref={searchInputRef}
           type="text"
           placeholder={t("search_items")}
@@ -481,8 +482,8 @@ export function SalesItemSearch({
           }}
           className="h-10 pl-10 pr-20"
           autoFocus
-        />
-        {searchTerm.trim() && isSearching ? (
+          />
+          {searchTerm.trim() && isSearching ? (
           <div className="absolute right-3 top-2.5 flex items-center gap-1.5 rounded-full border border-violet-200 bg-violet-50 px-2 py-1 text-[10px] font-semibold text-violet-700">
             <span className="h-2 w-2 animate-pulse rounded-full bg-violet-500" />
             Searching
@@ -491,7 +492,17 @@ export function SalesItemSearch({
           <button type="button" onClick={() => { setSearchTerm(""); focusSearch(); }} className="absolute right-1 top-0 flex h-10 w-10 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100" aria-label={language === "mr" ? "शोध पुसा" : "Clear search"}>
             <X className="h-4 w-4" />
           </button>
-        ) : null}
+          ) : null}
+        </div>
+        {searchOpen && !voiceReplacement && (
+          <Button type="button" onClick={finishSearch} variant="outline" className="h-10 shrink-0 gap-1.5 rounded-lg border-indigo-200 px-3 text-indigo-700 hover:bg-indigo-50">
+            <Check className="h-4 w-4" />
+            <span className="flex flex-col items-start leading-none">
+              <span className="text-xs font-bold">{formatNumber(new Set(addedItems.map((line) => line.itemId)).size)} {language === "mr" ? "निवडल्या" : "selected"}</span>
+              <span className="mt-1 text-[10px] font-medium">{language === "mr" ? "पूर्ण" : "Done"}</span>
+            </span>
+          </Button>
+        )}
       </div>
 
       {voiceSaleEnabled && <VoiceSaleAssistant
@@ -562,7 +573,8 @@ export function SalesItemSearch({
                 const lowStock = remaining <= Number(item.lowStockLimit || 0);
                 const outOfStock = remaining <= 0;
                 const expired = isExpired(item);
-                const unavailable = outOfStock || expired;
+                const zeroPrice = !Number.isFinite(Number(item.sellPrice)) || Number(item.sellPrice) <= 0;
+                const unavailable = outOfStock || expired || zeroPrice;
                 const alreadyAdded = addedItems.some((line) => line.itemId === item.id);
                 const baseName =
                   language === "mr" && item.nameMarathi
@@ -639,7 +651,9 @@ export function SalesItemSearch({
 
                         <div className="mt-2 flex items-center justify-between gap-3">
                           <div className="text-[11px] text-slate-500">
-                            {expired
+                            {zeroPrice
+                              ? language === "mr" ? "विक्री किंमत उपलब्ध नाही" : "Selling price not set"
+                              : expired
                               ? language === "mr" ? "मुदत संपली" : "Expired"
                               : lowStock && !outOfStock
                               ? "Low stock"
@@ -675,7 +689,7 @@ export function SalesItemSearch({
                         </div>
                         {unavailable ? (
                           <span className="mt-2 inline-flex min-h-10 items-center rounded-lg bg-slate-200 px-3 text-xs font-semibold text-slate-500">
-                            {expired ? (language === "mr" ? "मुदत संपली" : "Expired") : (language === "mr" ? "उपलब्ध नाही" : "Unavailable")}
+                            {zeroPrice ? (language === "mr" ? "किंमत नाही" : "No price") : expired ? (language === "mr" ? "मुदत संपली" : "Expired") : (language === "mr" ? "उपलब्ध नाही" : "Unavailable")}
                           </span>
                         ) : voiceReplacement ? (
                           <button type="button" onClick={() => handleItemSelect(item)} className="mt-2 min-h-10 rounded-lg bg-blue-600 px-3 text-xs font-semibold text-white hover:bg-blue-700">
@@ -709,20 +723,6 @@ export function SalesItemSearch({
         <p className="rounded-lg bg-indigo-50 px-3 py-2 text-xs text-indigo-700">
           {language === "mr" ? "पुढील वस्तू शोधण्यासाठी नाव टाइप करा." : "Type the next product name to continue selecting."}
         </p>
-      )}
-
-      {searchOpen && !voiceReplacement && (
-        <div className="sticky bottom-2 z-20 flex items-center justify-between gap-3 rounded-xl border border-indigo-200 bg-white/95 p-3 shadow-lg backdrop-blur">
-          <div>
-            <p className="text-xs text-slate-500">{language === "mr" ? "बिलात निवडलेल्या वस्तू" : "Products selected"}</p>
-            <p aria-live="polite" className="text-sm font-bold text-slate-900">
-              {formatNumber(new Set(addedItems.map((line) => line.itemId)).size)} {language === "mr" ? "वस्तू" : "products"}
-            </p>
-          </div>
-          <Button type="button" onClick={finishSearch} className="min-h-11 rounded-xl bg-indigo-600 px-5 font-semibold hover:bg-indigo-700">
-            <Check className="mr-2 h-4 w-4" /> {language === "mr" ? "निवड पूर्ण" : "Done selecting"}
-          </Button>
-        </div>
       )}
 
       {selectedItem && (
@@ -866,6 +866,7 @@ export function SalesItemSearch({
             onClick={handleAddToCart}
             disabled={
               !quantity ||
+              Number(selectedItem.sellPrice) <= 0 ||
               !Number.isFinite(parseNumberInput(quantity)) ||
               parseNumberInput(quantity) <= 0 ||
               parseNumberInput(quantity) > maxQuantity

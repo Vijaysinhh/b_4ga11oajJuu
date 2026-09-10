@@ -99,7 +99,7 @@ export function VoiceSaleAssistant({
     if (!Number.isFinite(line.quantity) || line.quantity <= 0) return { state: "quantity" as const };
     const quantity = convertVoiceQuantity(line.quantity, line.requestedUnit, unitName);
     if (quantity === null) return { state: "unit" as const, item, unitName };
-    if (item.sellPrice == null || item.buyPrice == null || !Number.isFinite(Number(item.sellPrice)) || Number(item.sellPrice) < 0 ||
+    if (item.sellPrice == null || item.buyPrice == null || !Number.isFinite(Number(item.sellPrice)) || Number(item.sellPrice) <= 0 ||
         !Number.isFinite(Number(item.buyPrice)) || !Number.isFinite(Number(item.quantity))) {
       return { state: "variant" as const, item };
     }

@@ -25,6 +25,13 @@ export function hasInvalidSaleQuantity(lines: Array<{ quantity?: unknown; packCo
   });
 }
 
+export function hasInvalidSalePrice(lines: Array<{ pricePerUnit?: unknown }>) {
+  return lines.some((line) => {
+    const price = Number(line.pricePerUnit);
+    return !Number.isFinite(price) || price <= 0;
+  });
+}
+
 export function editableSaleQuantity(line: QuantityLine) {
   return line.priceTierId != null && line.packCount != null && line.packCount > 0
     ? line.packCount

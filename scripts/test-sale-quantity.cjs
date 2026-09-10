@@ -15,9 +15,33 @@ function load(name) {
   return module.exports;
 }
 
-const { editableSaleQuantity, hasInvalidSaleQuantity, isSaleQuantityApplied, maxSaleQuantity, maxBillLineQuantity, resizeSaleLine, stepSaleQuantity } = load('sale-quantity');
+const { editableSaleQuantity, hasInvalidSalePrice, hasInvalidSaleQuantity, isSaleQuantityApplied, maxSaleQuantity, maxBillLineQuantity, resizeSaleLine, stepSaleQuantity } = load('sale-quantity');
+const { getSalePaymentBreakdown, getStoredCreditAmount } = load('sale-payment');
 const rice = { itemId: 1, quantity: 1, unitShortForm: 'KG', pricePerUnit: 50, costPerUnit: 40, displayQuantity: '1 KG', totalPrice: 50, totalCost: 40 };
 const pack = { ...rice, quantity: 0.2, priceTierId: 7, packCount: 1, priceTierQuantity: 200, priceTierUnitShortForm: 'g', displayQuantity: '1 x 200 g', totalPrice: 10, totalCost: 8 };
+
+test('partial payment records only the unpaid amount as Udhar', () => {
+  assert.deepEqual(getSalePaymentBreakdown(100, 'partial', 40, 'cash'), {
+    paidAmount: 40, dueAmount: 60, paidVia: 'cash', isValid: true,
+  });
+  assert.equal(getSalePaymentBreakdown(100, 'partial', 0, 'cash').isValid, false);
+  assert.equal(getSalePaymentBreakdown(100, 'partial', 100, 'card').isValid, false);
+  assert.equal(getSalePaymentBreakdown(100, 'partial', 110, 'cash').isValid, false);
+});
+
+test('cash, online and Udhar produce unambiguous payment splits', () => {
+  assert.deepEqual(getSalePaymentBreakdown(100, 'cash'), {
+    paidAmount: 100, dueAmount: 0, paidVia: 'cash', isValid: true,
+  });
+  assert.deepEqual(getSalePaymentBreakdown(100, 'card'), {
+    paidAmount: 100, dueAmount: 0, paidVia: 'card', isValid: true,
+  });
+  assert.deepEqual(getSalePaymentBreakdown(100, 'udhar'), {
+    paidAmount: 0, dueAmount: 100, paidVia: null, isValid: true,
+  });
+  assert.equal(getStoredCreditAmount({ payment_method: 'partial', subtotal: 100, due_amount: 60 }), 60);
+  assert.equal(getStoredCreditAmount({ payment_method: 'udhari', subtotal: 100, due_amount: 0 }), 100);
+});
 
 test('stepper increases, decreases, caps at stock and never goes negative', () => {
   assert.equal(stepSaleQuantity(1, 1, 2), 2);
@@ -33,13 +57,19 @@ test('zero, negative and invalid quantities can never be submitted as a sale', (
   assert.equal(hasInvalidSaleQuantity([{quantity: NaN}]), true);
   assert.equal(hasInvalidSaleQuantity([{quantity: 1, packCount: 0}]), true);
 });
+test('zero, negative and invalid selling prices can never be submitted as a sale', () => {
+  assert.equal(hasInvalidSalePrice([{pricePerUnit: 10}, {pricePerUnit: 0.5}]), false);
+  assert.equal(hasInvalidSalePrice([{pricePerUnit: 0}]), true);
+  assert.equal(hasInvalidSalePrice([{pricePerUnit: -1}]), true);
+  assert.equal(hasInvalidSalePrice([{pricePerUnit: NaN}]), true);
+});
 test('Sell search stays open for multi-product selection', () => {
   const component = fs.readFileSync(path.resolve(__dirname, '../components/sales-item-search.tsx'), 'utf8');
   assert.match(component, /searchOpen\s*&&\s*searchTerm\s*&&\s*\(/);
   assert.match(component, /handleQuickAdd\(item\)/);
   assert.match(component, /handleSearchChange\(event\.target\.value\)/);
   assert.match(component, /setSearchOpen\(false\)/);
-  assert.match(component, /Done selecting/);
+  assert.match(component, /selected/);
   assert.match(component, /alreadyAdded/);
   const quickAdd = component.slice(component.indexOf('const handleQuickAdd'), component.indexOf('const finishSearch'));
   assert.doesNotMatch(quickAdd, /focusSearch\(\)/);
