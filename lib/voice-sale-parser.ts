@@ -188,6 +188,8 @@ const speechAliases: Record<string, string> = {
 export function normalizeVoiceText(value: string, applyAliases = true) {
   const normalized = value
     .normalize("NFC")
+    .replace(/\u200B/g, " ")
+    .replace(/[\u200C\u200D\u2060\uFEFF]/g, "")
     .toLowerCase()
     .replace(/[०-९]/g, (digit) => String("०१२३४५६७८९".indexOf(digit)))
     .replace(
@@ -214,12 +216,26 @@ export function normalizeVoiceText(value: string, applyAliases = true) {
 
 function numberFromToken(token: string) {
   if (/^\d+(?:\.\d+)?$/.test(token)) return Number(token);
-  return numberWords[token];
+  return Object.prototype.hasOwnProperty.call(numberWords, token) ? numberWords[token] : undefined;
 }
 
-/** Collapse a stutter, not separate items or an explicit quantity + price. */
+// Only familiar grocery words are safe to collapse without catalog context.
+// Do not deduplicate arbitrary names (for example, "Good Good") or whole items.
+const groceryStutterWords = new Set(["doodh", "biscuit", "bread", "sugar", "salt", "rice", "oil"]);
+
+/** Clean speech before parsing quantities or looking up products. */
 export function cleanVoiceRepetitions(value: string) {
-  return value.split(/\r?\n/).map((line) => cleanVoiceLineRepetitions(line)).join("\n").trim();
+  return value
+    .normalize("NFC")
+    .replace(/\u200B/g, " ")
+    .replace(/[\u200C\u200D\u2060\uFEFF]/g, "")
+    .replace(/\r\n?/g, "\n")
+    .replace(/\.{2,}|…/g, " ")
+    // Preserve order boundaries even when the repeated token has punctuation.
+    .split(/([,;।!?\n]+)/)
+    .map((part, index) => index % 2 ? part : cleanVoiceLineRepetitions(part))
+    .join("")
+    .trim();
 }
 
 function cleanVoiceLineRepetitions(value: string) {
@@ -227,11 +243,33 @@ function cleanVoiceLineRepetitions(value: string) {
   // Compare recognised quantities across scripts without translating the text
   // shown to the shopkeeper. This also runs before parser normalisation.
   const comparable = tokens.map((token) => normalizeVoiceText(token, false));
-  return tokens.filter((_, index) => {
-    if (!index || /[,;।!?]/.test(tokens[index - 1]) || priceVariantWords.has(comparable[index + 1])) return true;
-    const quantity = numberFromToken(comparable[index]);
-    return quantity === undefined || quantity !== numberFromToken(comparable[index - 1]);
-  }).join(" ");
+  const cleaned: string[] = [];
+  for (let index = 0; index < tokens.length;) {
+    const token = comparable[index];
+    const quantity = numberFromToken(token);
+    let end = index + 1;
+    while (end < tokens.length && (quantity === undefined
+      ? comparable[end] === token
+      : numberFromToken(comparable[end]) === quantity)) end += 1;
+
+    // पाव is also bread: only treat it as a fraction before a unit/price.
+    const isQuantity = quantity !== undefined &&
+      (token !== "पाव" || Boolean(unitAliases[comparable[end]]) || priceVariantWords.has(comparable[end]));
+    const isGroceryStutter = groceryStutterWords.has(speechAliases[token] || token);
+    const isUnitStutter = Boolean(unitAliases[token]) &&
+      index > 0 && numberFromToken(comparable[index - 1]) !== undefined;
+
+    if (end - index > 1 && (isQuantity || isGroceryStutter || isUnitStutter)) {
+      cleaned.push(tokens[index]);
+      // "दोन दोन रुपयांचे" is quantity 2 at ₹2, not a single stutter.
+      if (isQuantity && priceVariantWords.has(comparable[end])) cleaned.push(tokens[end - 1]);
+    } else {
+      cleaned.push(...tokens.slice(index, end));
+    }
+    index = end;
+  }
+  // Keep separator spacing stable in the readable transcript.
+  return (value.startsWith(" ") ? " " : "") + cleaned.join(" ") + (value.endsWith(" ") && cleaned.length ? " " : "");
 }
 
 function quantityStartIndexes(tokens: string[]) {
@@ -251,15 +289,17 @@ function quantityStartIndexes(tokens: string[]) {
 }
 
 function splitRequests(value: string) {
-  const normalized = cleanVoiceRepetitions(normalizeVoiceText(value
+  const normalized = normalizeVoiceText(cleanVoiceRepetitions(value)
     .replace(/₹\s*([\d०-९]+(?:\.[\d०-९]+)?)/g, "$1 rupees")
-    .replace(/[,;।]+/g, " | "), false)
+    .replace(/[,;।!?\n]+/g, " | "), false)
     .replace(/\b(?:and|then|plus|ani|mag|aani)\b/g, "|")
-    .split(/\s+/).map((token) => ["आणि", "मग", "तथा"].includes(token) ? "|" : token).join(" "));
+    .split(/\s+/).map((token) => ["आणि", "मग", "तथा"].includes(token) ? "|" : token).join(" ");
 
   const clauses = normalized
     .split("|")
-    .map((part) => part.trim())
+    // Normalisation can expose stutters joined by dashes/parentheses. Clean
+    // these tokens too, still before interpreting quantities or matching names.
+    .map((part) => cleanVoiceRepetitions(part))
     .filter(Boolean);
 
   const resolved: string[] = [];

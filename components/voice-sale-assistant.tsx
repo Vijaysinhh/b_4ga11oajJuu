@@ -227,7 +227,7 @@ export function VoiceSaleAssistant({
     setStableCommand("");
     setNeedsCorrection(false);
     setListening(true);
-    setMessage(label("Listening… tap Done when finished.", "ऐकत आहे… बोलून झाल्यावर पूर्ण झाले दाबा."));
+    setMessage(label("Say your items. They’ll appear when you finish speaking.", "वस्तू सांगा. बोलून झाल्यावर त्या दिसतील."));
     const id = ++recordingId.current;
     const session = createVoiceRecording(() => new Recognition(), "mr-IN", {
       onText: (text) => { if (recordingId.current === id) setCommand(text); },
@@ -321,7 +321,7 @@ export function VoiceSaleAssistant({
         <Button type="button" disabled={busy} onClick={listening ? stopListening : startListening}
           className={`h-12 gap-2 rounded-xl ${listening ? "bg-red-600 hover:bg-red-700" : "bg-indigo-600 hover:bg-indigo-700"}`}>
           <Mic className="h-5 w-5" />
-          {listening ? label("Done", "पूर्ण झाले") : label("Speak order", "बोलून वस्तू जोडा")}
+          {listening ? label("Done", "पूर्ण झाले") : draft.length > 0 ? label("Speak more", "आणखी वस्तू सांगा") : label("Speak order", "बोलून वस्तू जोडा")}
         </Button>
         {listening && <Button type="button" variant="ghost" className="h-12" onClick={cancelVoice}>{label("Cancel", "रद्द करा")}</Button>}
         {!listening && draft.length === 0 && !command && !message &&

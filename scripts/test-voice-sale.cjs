@@ -29,6 +29,16 @@ for (const [spoken, expected] of [
   ['one १ एक 1 ek बिस्किट', [{quantity: 1, productQuery: 'बिस्किट'}]],
   ['दोन दोन दोन दूध', [{quantity: 2, productQuery: 'दूध'}]],
   ['दोन 2 दोन दूध', [{quantity: 2, productQuery: 'दूध'}]],
+  ['एक-एक-एक बिस्किट', [{quantity: 1, productQuery: 'बिस्किट'}]],
+  ['one (one) one biscuit', [{quantity: 1, productQuery: 'biscuit'}]],
+  ['एक\u200D एक\u200C १\u2060 ek बिस्किट', [{quantity: 1, productQuery: 'बिस्किट'}]],
+  ['एक\u200Bएक\u200Bबिस्किट', [{quantity: 1, productQuery: 'बिस्किट'}]],
+  ['एक… एक... एक बिस्किट बिस्किट', [{quantity: 1, productQuery: 'बिस्किट'}]],
+  ['दोन दोन दूध दूध आणि एक एक bread bread', [{quantity: 2, productQuery: 'दूध'}, {quantity: 1, productQuery: 'bread'}]],
+  ['अर्धा अर्धा लिटर लिटर दूध दूध', [{quantity: 0.5, productQuery: 'दूध', requestedUnit: 'l'}]],
+  ['१.५ 1.5 किलो साखर', [{quantity: 1.5, productQuery: 'साखर', requestedUnit: 'kg'}]],
+  ['दोन दोन दोन दोन रुपयांचे बिस्किट', [{quantity: 2, productQuery: 'बिस्किट', priceOverride: 2}]],
+  ['दोन दोन ₹२ बिस्किट', [{quantity: 2, productQuery: 'बिस्किट', priceOverride: 2}]],
   ['दोन दोन रुपयांचे बिस्किट', [{quantity: 2, productQuery: 'बिस्किट', priceOverride: 2}]],
   ['दोन दूध आणि दोन दूध', [{quantity: 2, productQuery: 'दूध'}, {quantity: 2, productQuery: 'दूध'}]],
   ['दोन दूध आणि आणखी दोन दूध', [{quantity: 2, productQuery: 'दूध'}, {quantity: 2, productQuery: 'दूध'}]],
@@ -41,6 +51,8 @@ for (const [spoken, expected] of [
     { quantity: 250, productQuery: 'चहा', requestedUnit: 'g' },
   ]],
   ['दूध आणि ब्रेड', [{quantity: 1, productQuery: 'दूध'}, {quantity: 1, productQuery: 'ब्रेड'}]],
+  ['दूध\nब्रेड', [{quantity: 1, productQuery: 'दूध'}, {quantity: 1, productQuery: 'ब्रेड'}]],
+  ['दूध;ब्रेड', [{quantity: 1, productQuery: 'दूध'}, {quantity: 1, productQuery: 'ब्रेड'}]],
   ['दूध दोन लिटर', [{quantity: 2, productQuery: 'दूध', requestedUnit: 'l'}]],
   ['एक डझन अंडी', [{quantity: 1, productQuery: 'अंडी', requestedUnit: 'dozen'}]],
   ['शून्य दूध', [{quantity: 0, productQuery: 'दूध'}]],
@@ -97,6 +109,8 @@ test('stock checks include bill quantities, pending quantities and expiry', () =
 test('result revisions never duplicate a product; Done processes once', (t) => {
   const h = harness(t), engine = h.engines[0];
   assert.equal(engine.lang, 'mr-IN');
+  assert.equal(engine.continuous, false);
+  assert.equal(engine.interimResults, true);
   h.result(engine, [['दोन दूध', false]]);
   h.result(engine, [['दोन दूध'], ['एक ब्रेड', false]]);
   h.result(engine, [['दोन दूध'], ['एक ब्रेड']]);
@@ -118,12 +132,11 @@ test('Marathi quantity loops are cleaned live, not only when parsing', (t) => {
   assert.deepEqual(parse(h.finished[0]), [{quantity: 1, productQuery: 'बिस्किट'}]);
 });
 
-test('repeated quantity fragments across result slots and restarts remain one quantity', (t) => {
-  const h = harness(t);
-  h.result(h.engines[0], [['एक'], ['एक']]);
-  h.engines[0].onend(); t.mock.timers.tick(250);
-  h.result(h.engines[1], [['one'], ['१ एक बिस्किट']]);
-  h.recording.stop(); h.engines[1].onend();
+test('repeated quantity fragments across result slots remain one quantity', (t) => {
+  const h = harness(t), engine = h.engines[0];
+  h.result(engine, [['एक'], ['एक']]);
+  h.result(engine, [['एक'], ['एक'], ['one'], ['१ एक बिस्किट']]);
+  h.recording.stop(); engine.onend();
   assert.deepEqual(h.finished, ['एक बिस्किट']);
 });
 
@@ -137,7 +150,7 @@ test('quantity corrections can replace a previously displayed interim quantity',
 });
 
 test('cleanup preserves explicit additional items, price variants and product names', () => {
-  for (const text of ['दोन दूध आणि आणखी दोन दूध', 'एक बिस्किट एक बिस्किट', 'दोन दोन रुपयांचे बिस्किट', 'एक, एक बिस्किट', 'एक\nएक बिस्किट', 'Good Good biscuit']) {
+  for (const text of ['दोन दूध आणि आणखी दोन दूध', 'एक बिस्किट एक बिस्किट', 'दोन दोन रुपयांचे बिस्किट', 'एक, एक बिस्किट', 'एक\nएक बिस्किट', 'Good Good biscuit', '50-50 biscuit', 'पाव पाव', 'दूध, दूध', 'दूध आणि दूध']) {
     assert.equal(cleanRepeats(text), text);
   }
   assert.equal(cleanRepeats('One १ एक ek बिस्किट'), 'One बिस्किट');
@@ -149,25 +162,26 @@ test('new price context is retained even if the earlier interim text was cleaned
   h.result(engine, [['दोन दोन रुपयांचे बिस्किट']]);
   assert.deepEqual(h.texts, ['दोन', 'दोन दोन रुपयांचे बिस्किट']);
 });
-test('short pauses restart while preserving the order', (t) => {
-  const h = harness(t);
-  h.result(h.engines[0], [['दोन दूध']]); h.engines[0].onend();
-  t.mock.timers.tick(250);
-  assert.equal(h.engines.length, 2);
-  h.result(h.engines[1], [['एक ब्रेड']]);
-  h.recording.stop(); h.engines[1].onend();
+test('one session captures a multi-item order and finishes without another tap', (t) => {
+  const h = harness(t), engine = h.engines[0];
+  h.result(engine, [['दोन दूध', false]]);
+  h.result(engine, [['दोन दूध एक ब्रेड']]);
+  engine.onend();
+  t.mock.timers.tick(125000);
+  assert.equal(h.engines.length, 1);
   assert.deepEqual(h.finished, ['दोन दूध एक ब्रेड']);
+  assert.deepEqual(h.errors, []);
 });
-test('Done between browser sessions does not reopen mic', (t) => {
+test('Done after the browser finishes does not reopen mic or process twice', (t) => {
   const h = harness(t);
   h.result(h.engines[0], [['दूध']]); h.engines[0].onend();
   h.recording.stop(); t.mock.timers.tick(1000);
   assert.equal(h.engines.length, 1);
   assert.deepEqual(h.finished, ['दूध']);
 });
-test('Cancel ignores queued callbacks and clears restart timers', (t) => {
-  const h = harness(t), result = h.engines[0].onresult;
-  h.engines[0].onend(); h.recording.cancel();
+test('Cancel ignores queued callbacks and clears recording timers', (t) => {
+  const h = harness(t), result = h.engines[0].onresult, end = h.engines[0].onend;
+  h.recording.cancel(); end();
   result({ results: [{isFinal: true, 0: {transcript: 'late'}}] });
   t.mock.timers.tick(125000);
   assert.equal(h.engines.length, 1);
@@ -238,15 +252,60 @@ test('Done timeout requires review when only an interim guess exists', (t) => {
   assert.deepEqual(h.finished, ['एक बिस्किट']);
   assert.deepEqual(h.statuses, [{needsReview: true}]);
 });
-test('confirmed orders finish after two empty restarts', (t) => {
-  const h = harness(t);
-  h.result(h.engines[0], [['दूध']]); h.engines[0].onend();
-  t.mock.timers.tick(250); h.engines[1].onend();
-  t.mock.timers.tick(250); h.engines[2].onend();
-  t.mock.timers.tick(1000);
-  assert.equal(h.engines.length, 3);
+test('confirmed orders finish immediately and detach late browser callbacks', (t) => {
+  const h = harness(t), engine = h.engines[0], end = engine.onend, result = engine.onresult;
+  h.result(engine, [['दूध']]); end();
+  assert.deepEqual(h.finished, ['दूध']);
+  assert.equal(engine.onresult, null);
+  assert.equal(engine.onend, null);
+  result({results: [{isFinal: true, 0: {transcript: 'दूध दूध'}}]});
+  end(); h.recording.start();
+  t.mock.timers.tick(125000);
+  assert.equal(h.engines.length, 1);
   assert.deepEqual(h.finished, ['दूध']);
   assert.deepEqual(h.statuses, [{needsReview: false}]);
+});
+test('no-speech ends once without depending on a browser end event', (t) => {
+  const h = harness(t), end = h.engines[0].onend;
+  h.engines[0].onerror({error: 'no-speech'});
+  end(); t.mock.timers.tick(125000);
+  assert.equal(h.engines.length, 1);
+  assert.deepEqual(h.finished, ['']);
+  assert.deepEqual(h.errors, []);
+});
+test('cleaning is idempotent and retains order separators', () => {
+  for (const [input, expected] of [
+    ['एक एक, एक एक बिस्किट', 'एक, एक बिस्किट'],
+    ['दूध दूध;ब्रेड ब्रेड', 'दूध;ब्रेड'],
+    ['एक\u200D एक\u200C बिस्किट बिस्किट', 'एक बिस्किट'],
+    ['दोन दोन दोन दोन रुपयांचे बिस्किट', 'दोन दोन रुपयांचे बिस्किट'],
+    ['दोन दूध आणि आणखी दोन दूध', 'दोन दूध आणि आणखी दोन दूध'],
+  ]) {
+    assert.equal(cleanRepeats(input), expected);
+    assert.equal(cleanRepeats(cleanRepeats(input)), expected);
+    assert.deepEqual(parse(input), parse(expected));
+  }
+});
+test('noisy recording is cleaned, parsed and matched before checking stock', (t) => {
+  const h = harness(t), engine = h.engines[0];
+  const products = [{id: 1, name: 'Milk', quantity: 4}, {id: 2, name: 'Biscuits', brand: 'Parle-G', quantity: 3}];
+  h.result(engine, [['एक एक', false]]);
+  h.result(engine, [['एक एक एक\u200D बिस्किट बिस्किट आणि दोन 2 दोन दूध दूध']]);
+  engine.onend();
+  assert.deepEqual(h.finished, ['एक बिस्किट आणि दोन दूध']);
+  const requests = parse(h.finished[0]);
+  const lines = requests.map((request) => {
+    const item = products.find((item) => item.id === match(request.productQuery, products).selectedId);
+    assert.ok(item);
+    assert.equal(stock(item, request.quantity, 0, 0).state, 'ready');
+    return {itemId: item.id, quantity: request.quantity};
+  });
+  assert.deepEqual(lines, [{itemId: 2, quantity: 1}, {itemId: 1, quantity: 2}]);
+});
+test('long numeric loops do not multiply quantities, including with an explicit extra item', () => {
+  const requests = parse(`${'दोन 2 two २ '.repeat(125)}दूध आणि आणखी दोन दूध`);
+  assert.deepEqual(requests, [{quantity: 2, productQuery: 'दूध'}, {quantity: 2, productQuery: 'दूध'}]);
+  assert.equal(requests.reduce((sum, request) => sum + request.quantity, 0), 4);
 });
 test('voice matching has no AI service dependency', () => {
   const component = fs.readFileSync(path.resolve(__dirname, '../components/voice-sale-assistant.tsx'), 'utf8');

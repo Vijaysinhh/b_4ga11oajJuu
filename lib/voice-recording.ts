@@ -15,7 +15,7 @@ export interface RecognitionEngine {
   abort(): void;
 }
 
-/** One user recording may span several browser recognition sessions. */
+/** One tap starts one browser session. Never restart the microphone silently. */
 export function createVoiceRecording(
   createEngine: () => RecognitionEngine,
   language: string,
@@ -35,14 +35,11 @@ export function createVoiceRecording(
   let stableText = "";
   let publishedStableText = "";
   let interimText = "";
-  let emptySessions = 0;
-  let restart: ReturnType<typeof setTimeout> | undefined;
   let stopDeadline: ReturnType<typeof setTimeout> | undefined;
   let recordingDeadline: ReturnType<typeof setTimeout> | undefined;
 
   const cleanup = () => {
     active = false;
-    clearTimeout(restart);
     clearTimeout(stopDeadline);
     clearTimeout(recordingDeadline);
     if (engine) {
@@ -66,12 +63,12 @@ export function createVoiceRecording(
     let instance: RecognitionEngine;
     try { instance = createEngine(); } catch { fail("start-failed"); return; }
     engine = instance;
-    // Only confirmed words may cross a browser-session boundary.
-    const prefix = stableText;
     const finals = new Map<number, string>();
     interimText = "";
     instance.lang = language;
-    instance.continuous = true;
+    // Avoid replaying words across continuous recognition / restart boundaries.
+    // Keep each spoken order in a single session, including on Android.
+    instance.continuous = false;
     instance.interimResults = true;
     instance.maxAlternatives = 1;
     const current = () => active && engine === instance;
@@ -89,7 +86,7 @@ export function createVoiceRecording(
         }
       });
       const confirmed = [...finals].sort(([a], [b]) => a - b).map(([, words]) => words).join(" ");
-      stableText = `${prefix} ${confirmed}`.trim();
+      stableText = confirmed.trim();
       interimText = pending.join(" ").trim();
       text = `${stableText} ${interimText}`.trim();
       const stable = cleanVoiceRepetitions(stableText);
@@ -105,21 +102,15 @@ export function createVoiceRecording(
     };
     instance.onerror = ({ error }) => {
       if (!current()) return;
-      if (error === "no-speech") return;
+      if (error === "no-speech") { finish(); return; }
       if (error === "aborted" && stopping) { finish(); return; }
       fail(error);
     };
     instance.onend = () => {
       if (!current()) return;
-      engine = null;
-      if (stopping) { finish(); return; }
-      // Do not promote unfinished guesses into the next session's permanent
-      // prefix. Preserve them for an explicit correction instead.
-      if (interimText) { finish(); return; }
-      emptySessions = stableText === prefix ? emptySessions + 1 : 0;
-      if (emptySessions >= 2 && stableText) { finish(); return; }
-      if (emptySessions >= 5) { fail("no-speech"); return; }
-      restart = setTimeout(session, 250);
+      // Process confirmed speech immediately. Unfinished guesses are returned
+      // with needsReview, never replayed into another recording.
+      finish();
     };
     try { instance.start(); } catch { fail("start-failed"); }
   };
@@ -134,7 +125,6 @@ export function createVoiceRecording(
     stop() {
       if (!active || stopping) return;
       stopping = true;
-      clearTimeout(restart);
       if (!engine) { finish(); return; }
       stopDeadline = setTimeout(finish, 1500);
       try { engine.stop(); } catch { finish(); }
