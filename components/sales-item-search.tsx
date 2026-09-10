@@ -308,7 +308,6 @@ export function SalesItemSearch({
       costPerUnit: buyPrice,
       totalCost: initialQuantity * buyPrice,
     });
-    focusSearch();
   };
 
   const finishSearch = () => {

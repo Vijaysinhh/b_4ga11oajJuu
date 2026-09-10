@@ -15,6 +15,16 @@ type QuantityLine = {
   totalCost: number;
 };
 
+export function hasInvalidSaleQuantity(lines: Array<{ quantity?: unknown; packCount?: unknown }>) {
+  return lines.some((line) => {
+    const quantity = Number(line.quantity);
+    if (!Number.isFinite(quantity) || quantity <= 0) return true;
+    if (line.packCount == null) return false;
+    const packCount = Number(line.packCount);
+    return !Number.isFinite(packCount) || packCount <= 0;
+  });
+}
+
 export function editableSaleQuantity(line: QuantityLine) {
   return line.priceTierId != null && line.packCount != null && line.packCount > 0
     ? line.packCount

@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase";
 import type { Database } from "@/lib/db-supabase-types";
 import { dateKey } from "@/lib/utils";
+import { hasInvalidSaleQuantity } from "@/lib/sale-quantity";
 import {
   createOfflineId,
   executeWithOfflineDelete,
@@ -788,6 +789,9 @@ export function useSales(shopId?: number) {
 
   const createSale = useCallback(
     async (saleData: any) => {
+      if (!Array.isArray(saleData.items) || saleData.items.length === 0 || hasInvalidSaleQuantity(saleData.items)) {
+        throw new Error("Every sale item must have a quantity greater than zero.");
+      }
       const effectiveShopId = resolveShopId(shopId);
       if (!effectiveShopId) return null;
       const now = new Date().toISOString();
@@ -1198,6 +1202,9 @@ export function useSales(shopId?: number) {
 
   const updateSale = useCallback(
     async (saleId: number, updatedSaleData: any) => {
+      if (!Array.isArray(updatedSaleData.items) || updatedSaleData.items.length === 0 || hasInvalidSaleQuantity(updatedSaleData.items)) {
+        throw new Error("Every sale item must have a quantity greater than zero.");
+      }
       const effectiveShopId = resolveShopId(shopId);
       if (!effectiveShopId) return;
 
