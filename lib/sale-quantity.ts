@@ -38,6 +38,16 @@ export function maxSaleQuantity(stock: number, reserved: number, baseUnitsPerQua
   return Math.floor((Math.max(0, stock - reserved) / baseUnitsPerQuantity + 1e-10) * 1e6) / 1e6;
 }
 
+/** Units where adding exactly one is a safe, predictable quick-sale action. */
+export function canQuickAddUnit(unit: string) {
+  return new Set([
+    "unit", "units", "pc", "pcs", "piece", "pieces", "नग",
+    "packet", "packets", "pack", "pkt", "पॅकेट",
+    "box", "boxes", "डबा", "sachet", "sachets", "bottle", "bottles",
+    "dozen", "dz", "डझन",
+  ]).has(unit.trim().toLowerCase());
+}
+
 export function maxBillLineQuantity(stock: number, lines: QuantityLine[], index: number) {
   const line = lines[index];
   if (!line) return 0;

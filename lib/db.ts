@@ -21,6 +21,7 @@ export interface Item {
   categoryId: number;
   unitId: number;
   quantity: number;
+  expiryDate?: string | number | null;
   buyPrice: number; // Buy price per unit
   sellPrice: number; // Sell price per unit
   marginAmount?: number; // Auto-calculated: sellPrice - buyPrice

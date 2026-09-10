@@ -23,7 +23,7 @@ import { normalizeVoiceText } from "@/lib/voice-sale-parser";
 import { convertVoiceQuantity } from "@/lib/voice-sale-matching";
 import { voiceSaleEnabled } from "@/lib/feature-flags";
 import { SaleQuantityControl } from "./sale-quantity-control";
-import { maxSaleQuantity } from "@/lib/sale-quantity";
+import { canQuickAddUnit, maxSaleQuantity } from "@/lib/sale-quantity";
 
 // Keep experimental voice code in its own chunk. Production does not request
 // this chunk while the feature flag is off.
@@ -213,12 +213,15 @@ export function SalesItemSearch({
         });
       }
       const matchText = normalizeVoiceText(searchTerm);
-      const exactMatch =
-        normalizeVoiceText(
-          [item.name, item.nameMarathi, item.brand, item.brandMarathi]
-            .filter(Boolean)
-            .join(" "),
-        ).includes(matchText) && matchText.length > 1;
+      const exactPhrases = [
+        item.name,
+        item.nameMarathi,
+        item.brand,
+        item.brandMarathi,
+        [item.name, item.brand].filter(Boolean).join(" "),
+        [item.nameMarathi, item.brandMarathi].filter(Boolean).join(" "),
+      ].filter(Boolean).map((value) => normalizeVoiceText(String(value)));
+      const exactMatch = matchText.length > 1 && exactPhrases.includes(matchText);
       return {
         item,
         tierSummaries,
@@ -244,6 +247,70 @@ export function SalesItemSearch({
     }
     // Now calculate remaining stock: current stock minus (other items in cart)
     return Math.max(0, item.quantity - inCart);
+  };
+
+  const isExpired = (item: Item) => {
+    if (!item.expiryDate) return false;
+    const expiry = new Date(item.expiryDate);
+    if (!Number.isFinite(expiry.getTime())) return true;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    expiry.setHours(0, 0, 0, 0);
+    return expiry < today;
+  };
+
+  const clearSelectedProduct = () => {
+    setSelectedItem(null);
+    setQuantity("");
+    setSelectedPriceTier(null);
+    voiceProductAdded.current = null;
+  };
+
+  const handleSearchChange = (value: string) => {
+    setSearchTerm(value);
+    // Typing the next product abandons only the unfinished detail card. Items
+    // already placed in the bill remain untouched.
+    if (value.trim() && selectedItem && !itemToEdit) clearSelectedProduct();
+  };
+
+  const focusSearch = () => {
+    window.requestAnimationFrame(() => {
+      searchInputRef.current?.focus({ preventScroll: true });
+    });
+  };
+
+  const handleQuickAdd = (item: Item) => {
+    const unit = units.find((entry) => entry.id === item.unitId);
+    const unitShortForm = unit?.shortForm || "unit";
+    if (!canQuickAddUnit(unitShortForm)) {
+      handleItemSelect(item);
+      return;
+    }
+    const remaining = getRemainingStock(item);
+    if (remaining < 1 || isExpired(item)) return;
+    const sellPrice = Number(item.sellPrice);
+    const buyPrice = Number(item.buyPrice);
+    if (![sellPrice, buyPrice].every(Number.isFinite)) {
+      toast.error(language === "mr" ? "या वस्तूची किंमत तपासा." : "Check this product's price.");
+      return;
+    }
+    const baseName = language === "mr" && item.nameMarathi ? item.nameMarathi : item.name;
+    const brandName = language === "mr" && item.brandMarathi ? item.brandMarathi : item.brand;
+    onItemAdded({
+      itemId: item.id || 0,
+      itemName: brandName ? `${baseName} (${brandName})` : baseName,
+      quantity: 1,
+      displayQuantity: `1 ${unitShortForm}`,
+      unitId: item.unitId,
+      unitShortForm,
+      pricePerUnit: sellPrice,
+      totalPrice: sellPrice,
+      costPerUnit: buyPrice,
+      totalCost: buyPrice,
+    });
+    clearSelectedProduct();
+    setSearchTerm("");
+    focusSearch();
   };
 
   const handleItemSelect = (item: Item) => {
@@ -399,7 +466,16 @@ export function SalesItemSearch({
           type="text"
           placeholder={t("search_items")}
           value={searchTerm}
-          onChange={(event) => setSearchTerm(event.target.value)}
+          onChange={(event) => handleSearchChange(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key !== "Enter" || isSearching) return;
+            const exact = filteredWithTierSummary.filter((entry) => entry.exactMatch);
+            if (exact.length !== 1) return;
+            event.preventDefault();
+            const unit = units.find((entry) => entry.id === exact[0].item.unitId)?.shortForm || "";
+            if (canQuickAddUnit(unit)) handleQuickAdd(exact[0].item);
+            else handleItemSelect(exact[0].item);
+          }}
           className="h-10 pl-10 pr-20"
           autoFocus
         />
@@ -444,7 +520,7 @@ export function SalesItemSearch({
         <Button type="button" variant="ghost" size="sm" onClick={() => { setVoiceReplacement(null); setSearchTerm(""); }}>{language === "mr" ? "रद्द करा" : "Cancel"}</Button>
       </div>}
 
-      {searchTerm && !selectedItem && (
+      {searchTerm && (
         <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
           {isSearching ? (
             <div className="space-y-2 p-3">
@@ -478,6 +554,9 @@ export function SalesItemSearch({
                     : 0;
                 const lowStock = remaining <= Number(item.lowStockLimit || 0);
                 const outOfStock = remaining <= 0;
+                const expired = isExpired(item);
+                const unavailable = outOfStock || expired;
+                const quickAdd = canQuickAddUnit(unitShort);
                 const baseName =
                   language === "mr" && item.nameMarathi
                     ? item.nameMarathi
@@ -494,7 +573,7 @@ export function SalesItemSearch({
                   <div
                     key={item.id}
                     className={`border-b border-slate-200 bg-white p-3 last:border-b-0 transition ${
-                      outOfStock
+                      unavailable
                         ? "bg-gray-50/70 opacity-60"
                         : "hover:bg-violet-50/70"
                     }`}
@@ -553,7 +632,9 @@ export function SalesItemSearch({
 
                         <div className="mt-2 flex items-center justify-between gap-3">
                           <div className="text-[11px] text-slate-500">
-                            {lowStock && !outOfStock
+                            {expired
+                              ? language === "mr" ? "मुदत संपली" : "Expired"
+                              : lowStock && !outOfStock
                               ? "Low stock"
                               : outOfStock
                                 ? "Out of stock"
@@ -585,18 +666,24 @@ export function SalesItemSearch({
                         <div className="mt-1 text-[10px] font-semibold text-green-700">
                           Profit: ₹{formatMoney(profitPer)}
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => !outOfStock && handleItemSelect(item)}
-                          disabled={outOfStock}
-                          className={`mt-2 inline-flex items-center rounded-md px-2.5 py-1.5 text-[10px] font-semibold transition ${
-                            outOfStock
-                              ? "cursor-not-allowed bg-slate-200 text-slate-400"
-                              : "bg-blue-600 text-white hover:bg-blue-700"
-                          }`}
-                        >
-                          {outOfStock ? (language === "mr" ? "उपलब्ध नाही" : "Unavailable") : voiceReplacement ? (language === "mr" ? "ही वस्तू निवडा" : "Use this product") : (language === "mr" ? "जोडा" : "Add")}
-                        </button>
+                        {unavailable ? (
+                          <span className="mt-2 inline-flex min-h-10 items-center rounded-lg bg-slate-200 px-3 text-xs font-semibold text-slate-500">
+                            {expired ? (language === "mr" ? "मुदत संपली" : "Expired") : (language === "mr" ? "उपलब्ध नाही" : "Unavailable")}
+                          </span>
+                        ) : voiceReplacement ? (
+                          <button type="button" onClick={() => handleItemSelect(item)} className="mt-2 min-h-10 rounded-lg bg-blue-600 px-3 text-xs font-semibold text-white hover:bg-blue-700">
+                            {language === "mr" ? "ही वस्तू निवडा" : "Use product"}
+                          </button>
+                        ) : (
+                          <div className="mt-2 flex items-center justify-end gap-1.5">
+                            <button type="button" onClick={() => handleItemSelect(item)} className="min-h-10 rounded-lg border border-slate-300 bg-white px-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                              {language === "mr" ? "प्रमाण" : "Quantity"}
+                            </button>
+                            {quickAdd && <button type="button" onClick={() => handleQuickAdd(item)} className="inline-flex min-h-10 items-center gap-1 rounded-lg bg-emerald-600 px-3 text-xs font-bold text-white hover:bg-emerald-700">
+                              <Plus className="h-4 w-4" /> {language === "mr" ? "१ जोडा" : "Add 1"}
+                            </button>}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>

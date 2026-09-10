@@ -15,7 +15,7 @@ function load(name) {
   return module.exports;
 }
 
-const { editableSaleQuantity, isSaleQuantityApplied, maxSaleQuantity, maxBillLineQuantity, resizeSaleLine, stepSaleQuantity } = load('sale-quantity');
+const { canQuickAddUnit, editableSaleQuantity, isSaleQuantityApplied, maxSaleQuantity, maxBillLineQuantity, resizeSaleLine, stepSaleQuantity } = load('sale-quantity');
 const rice = { itemId: 1, quantity: 1, unitShortForm: 'KG', pricePerUnit: 50, costPerUnit: 40, displayQuantity: '1 KG', totalPrice: 50, totalCost: 40 };
 const pack = { ...rice, quantity: 0.2, priceTierId: 7, packCount: 1, priceTierQuantity: 200, priceTierUnitShortForm: 'g', displayQuantity: '1 x 200 g', totalPrice: 10, totalCost: 8 };
 
@@ -25,6 +25,22 @@ test('stepper increases, decreases, caps at stock and never goes negative', () =
   assert.equal(stepSaleQuantity(1.5, 1, 2), 2);
   assert.equal(stepSaleQuantity(0.5, -1, 2), 0);
   assert.equal(stepSaleQuantity(NaN, 1, 0.5), 0.5);
+});
+test('quick add is limited to predictable countable units', () => {
+  for (const unit of ['pcs', 'PCS', 'packet', 'Pack', 'box', 'sachet', 'bottle', 'dozen', 'dz', 'नग', 'पॅकेट', 'डझन']) {
+    assert.equal(canQuickAddUnit(unit), true);
+  }
+  for (const unit of ['kg', 'g', 'l', 'ml', 'meter', '']) {
+    assert.equal(canQuickAddUnit(unit), false);
+  }
+});
+test('Sell search keeps rapid add and detailed quantity as separate actions', () => {
+  const component = fs.readFileSync(path.resolve(__dirname, '../components/sales-item-search.tsx'), 'utf8');
+  assert.match(component, /searchTerm\s*&&\s*\(/);
+  assert.doesNotMatch(component, /searchTerm\s*&&\s*!selectedItem/);
+  assert.match(component, /handleQuickAdd\(item\)/);
+  assert.match(component, /canQuickAddUnit\(unitShort\)/);
+  assert.match(component, /handleSearchChange\(event\.target\.value\)/);
 });
 test('remaining stock includes other lines but excludes the edited line once', () => {
   assert.equal(maxBillLineQuantity(2, [rice], 0), 2);
