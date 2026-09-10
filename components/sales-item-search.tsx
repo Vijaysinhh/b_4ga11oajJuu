@@ -7,7 +7,7 @@ import { useLanguage } from "@/providers/language-provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
-import { Search, Plus, X } from "lucide-react";
+import { Check, Search, Plus, X } from "lucide-react";
 import { HelpTooltip } from "@/components/help-tooltip";
 import { calculatePriceTierCost, convertUnit } from "@/lib/unit-conversion";
 import { toast } from "sonner";
@@ -23,7 +23,7 @@ import { normalizeVoiceText } from "@/lib/voice-sale-parser";
 import { convertVoiceQuantity } from "@/lib/voice-sale-matching";
 import { voiceSaleEnabled } from "@/lib/feature-flags";
 import { SaleQuantityControl } from "./sale-quantity-control";
-import { canQuickAddUnit, maxSaleQuantity } from "@/lib/sale-quantity";
+import { maxSaleQuantity } from "@/lib/sale-quantity";
 
 // Keep experimental voice code in its own chunk. Production does not request
 // this chunk while the feature flag is off.
@@ -69,6 +69,7 @@ export function SalesItemSearch({
   const { t, language } = useLanguage();
 
   const [searchTerm, setSearchTerm] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<Item | null>(null);
   const [quantity, setQuantity] = useState("");
   const [isSearching, setIsSearching] = useState(false);
@@ -267,6 +268,7 @@ export function SalesItemSearch({
   };
 
   const handleSearchChange = (value: string) => {
+    setSearchOpen(true);
     setSearchTerm(value);
     // Typing the next product abandons only the unfinished detail card. Items
     // already placed in the bill remain untouched.
@@ -282,12 +284,10 @@ export function SalesItemSearch({
   const handleQuickAdd = (item: Item) => {
     const unit = units.find((entry) => entry.id === item.unitId);
     const unitShortForm = unit?.shortForm || "unit";
-    if (!canQuickAddUnit(unitShortForm)) {
-      handleItemSelect(item);
-      return;
-    }
+    if (addedItems.some((line) => line.itemId === item.id)) return;
     const remaining = getRemainingStock(item);
-    if (remaining < 1 || isExpired(item)) return;
+    const initialQuantity = Math.min(1, remaining);
+    if (initialQuantity <= 0 || isExpired(item)) return;
     const sellPrice = Number(item.sellPrice);
     const buyPrice = Number(item.buyPrice);
     if (![sellPrice, buyPrice].every(Number.isFinite)) {
@@ -299,18 +299,23 @@ export function SalesItemSearch({
     onItemAdded({
       itemId: item.id || 0,
       itemName: brandName ? `${baseName} (${brandName})` : baseName,
-      quantity: 1,
-      displayQuantity: `1 ${unitShortForm}`,
+      quantity: initialQuantity,
+      displayQuantity: `${formatNumber(initialQuantity)} ${unitShortForm}`,
       unitId: item.unitId,
       unitShortForm,
       pricePerUnit: sellPrice,
-      totalPrice: sellPrice,
+      totalPrice: initialQuantity * sellPrice,
       costPerUnit: buyPrice,
-      totalCost: buyPrice,
+      totalCost: initialQuantity * buyPrice,
     });
-    clearSelectedProduct();
-    setSearchTerm("");
     focusSearch();
+  };
+
+  const finishSearch = () => {
+    setSearchOpen(false);
+    setSearchTerm("");
+    if (!itemToEdit) clearSelectedProduct();
+    searchInputRef.current?.blur();
   };
 
   const handleItemSelect = (item: Item) => {
@@ -466,25 +471,28 @@ export function SalesItemSearch({
           type="text"
           placeholder={t("search_items")}
           value={searchTerm}
+          onFocus={() => setSearchOpen(true)}
           onChange={(event) => handleSearchChange(event.target.value)}
           onKeyDown={(event) => {
             if (event.key !== "Enter" || isSearching) return;
             const exact = filteredWithTierSummary.filter((entry) => entry.exactMatch);
             if (exact.length !== 1) return;
             event.preventDefault();
-            const unit = units.find((entry) => entry.id === exact[0].item.unitId)?.shortForm || "";
-            if (canQuickAddUnit(unit)) handleQuickAdd(exact[0].item);
-            else handleItemSelect(exact[0].item);
+            handleQuickAdd(exact[0].item);
           }}
           className="h-10 pl-10 pr-20"
           autoFocus
         />
-        {searchTerm.trim() && isSearching && (
+        {searchTerm.trim() && isSearching ? (
           <div className="absolute right-3 top-2.5 flex items-center gap-1.5 rounded-full border border-violet-200 bg-violet-50 px-2 py-1 text-[10px] font-semibold text-violet-700">
             <span className="h-2 w-2 animate-pulse rounded-full bg-violet-500" />
             Searching
           </div>
-        )}
+        ) : searchTerm.trim() ? (
+          <button type="button" onClick={() => { setSearchTerm(""); focusSearch(); }} className="absolute right-1 top-0 flex h-10 w-10 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100" aria-label={language === "mr" ? "शोध पुसा" : "Clear search"}>
+            <X className="h-4 w-4" />
+          </button>
+        ) : null}
       </div>
 
       {voiceSaleEnabled && <VoiceSaleAssistant
@@ -520,7 +528,7 @@ export function SalesItemSearch({
         <Button type="button" variant="ghost" size="sm" onClick={() => { setVoiceReplacement(null); setSearchTerm(""); }}>{language === "mr" ? "रद्द करा" : "Cancel"}</Button>
       </div>}
 
-      {searchTerm && (
+      {searchOpen && searchTerm && (
         <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
           {isSearching ? (
             <div className="space-y-2 p-3">
@@ -556,7 +564,7 @@ export function SalesItemSearch({
                 const outOfStock = remaining <= 0;
                 const expired = isExpired(item);
                 const unavailable = outOfStock || expired;
-                const quickAdd = canQuickAddUnit(unitShort);
+                const alreadyAdded = addedItems.some((line) => line.itemId === item.id);
                 const baseName =
                   language === "mr" && item.nameMarathi
                     ? item.nameMarathi
@@ -674,15 +682,14 @@ export function SalesItemSearch({
                           <button type="button" onClick={() => handleItemSelect(item)} className="mt-2 min-h-10 rounded-lg bg-blue-600 px-3 text-xs font-semibold text-white hover:bg-blue-700">
                             {language === "mr" ? "ही वस्तू निवडा" : "Use product"}
                           </button>
+                        ) : alreadyAdded ? (
+                          <span className="mt-2 inline-flex min-h-10 items-center gap-1 rounded-lg bg-emerald-50 px-3 text-xs font-bold text-emerald-700">
+                            <Check className="h-4 w-4" /> {language === "mr" ? "जोडली" : "Added"}
+                          </span>
                         ) : (
-                          <div className="mt-2 flex items-center justify-end gap-1.5">
-                            <button type="button" onClick={() => handleItemSelect(item)} className="min-h-10 rounded-lg border border-slate-300 bg-white px-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
-                              {language === "mr" ? "प्रमाण" : "Quantity"}
-                            </button>
-                            {quickAdd && <button type="button" onClick={() => handleQuickAdd(item)} className="inline-flex min-h-10 items-center gap-1 rounded-lg bg-emerald-600 px-3 text-xs font-bold text-white hover:bg-emerald-700">
-                              <Plus className="h-4 w-4" /> {language === "mr" ? "१ जोडा" : "Add 1"}
-                            </button>}
-                          </div>
+                          <button type="button" onClick={() => handleQuickAdd(item)} className="mt-2 inline-flex min-h-10 items-center gap-1 rounded-lg bg-emerald-600 px-3 text-xs font-bold text-white hover:bg-emerald-700">
+                            <Plus className="h-4 w-4" /> {language === "mr" ? "जोडा" : "Add"}
+                          </button>
                         )}
                       </div>
                     </div>
@@ -696,6 +703,26 @@ export function SalesItemSearch({
               item name or brand.
             </div>
           )}
+        </div>
+      )}
+
+      {searchOpen && !searchTerm && !voiceReplacement && (
+        <p className="rounded-lg bg-indigo-50 px-3 py-2 text-xs text-indigo-700">
+          {language === "mr" ? "पुढील वस्तू शोधण्यासाठी नाव टाइप करा." : "Type the next product name to continue selecting."}
+        </p>
+      )}
+
+      {searchOpen && !voiceReplacement && (
+        <div className="sticky bottom-2 z-20 flex items-center justify-between gap-3 rounded-xl border border-indigo-200 bg-white/95 p-3 shadow-lg backdrop-blur">
+          <div>
+            <p className="text-xs text-slate-500">{language === "mr" ? "बिलात निवडलेल्या वस्तू" : "Products selected"}</p>
+            <p aria-live="polite" className="text-sm font-bold text-slate-900">
+              {formatNumber(new Set(addedItems.map((line) => line.itemId)).size)} {language === "mr" ? "वस्तू" : "products"}
+            </p>
+          </div>
+          <Button type="button" onClick={finishSearch} className="min-h-11 rounded-xl bg-indigo-600 px-5 font-semibold hover:bg-indigo-700">
+            <Check className="mr-2 h-4 w-4" /> {language === "mr" ? "निवड पूर्ण" : "Done selecting"}
+          </Button>
         </div>
       )}
 

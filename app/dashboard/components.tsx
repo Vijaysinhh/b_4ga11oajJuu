@@ -175,7 +175,7 @@ function EditSaleDialog({
 
   const handleItemAdded = (item: any) => {
     setItems([...items, item]);
-    toast.success(`${item.itemName} ${t("success")}`);
+    toast.success(`${item.itemName} ${t("success")}`, { id: "sale-item-added" });
   };
 
   const handleRemoveItem = (index: number) => {

@@ -110,7 +110,7 @@ export function SalesTransaction() {
 
   const handleItemAdded = (item: LineItem) => {
     setItems((current) => [...current, item]);
-    toast.success(`${item.itemName} ${t("success")}`);
+    toast.success(`${item.itemName} ${t("success")}`, { id: "sale-item-added" });
   };
 
   const handleRemoveItem = (index: number) => {

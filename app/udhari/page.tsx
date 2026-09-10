@@ -213,7 +213,7 @@ export default function UdhariPage() {
 
   const handleItemAdded = (item: any) => {
     setSaleEditItems((prev) => [...prev, item]);
-    toast.success(`${item.itemName} ${t("success")}`);
+    toast.success(`${item.itemName} ${t("success")}`, { id: "sale-item-added" });
   };
 
   const handleRemoveItem = (index: number) => {
