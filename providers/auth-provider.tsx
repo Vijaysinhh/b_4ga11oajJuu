@@ -11,6 +11,7 @@ import React, {
 import { createClient } from "@/lib/supabase";
 import type { Database } from "@/lib/db-supabase-types";
 import { isBrowserOnline } from "@/lib/offline-sync";
+import { getAuthCredentials } from "@/lib/auth-config";
 
 // Define permission types
 export type UserPermissions = {
@@ -328,8 +329,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [currentUserId, fetchUserPermissions, supabase]);
 
   useEffect(() => {
-    checkAuth();
-  }, []);
+    void checkAuth();
+    const { data } = supabase.auth.onAuthStateChange(() => {
+      window.setTimeout(() => void checkAuth(), 0);
+    });
+    return () => data.subscription.unsubscribe();
+  }, [supabase]);
 
   // Listen for realtime changes to user_roles and users for current user
   useEffect(() => {
@@ -397,70 +402,42 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const checkAuth = async () => {
     try {
-      const savedUser = localStorage.getItem("auth_user");
-      if (savedUser) {
-        const parsedUser = JSON.parse(savedUser);
-        setUser(parsedUser);
+      const { data: authData, error: authError } = await supabase.auth.getUser();
+      if (authError || !authData.user) {
+        setUser(null);
+        setCurrentShop(null);
+        localStorage.removeItem("auth_user");
+        return;
+      }
 
-        if (!isBrowserOnline()) {
-          return;
-        }
+      const { data, error } = await (supabase as any)
+        .from("users")
+        .select("*")
+        .eq("auth_user_id", authData.user.id)
+        .single();
+      if (error || !data) throw error || new Error("Missing user profile");
 
-        // Check if user exists in Supabase
-        if (parsedUser.id === 0) {
-          // Super admin
-          const superAdminWithPerms = {
-            ...parsedUser,
-            permissions: normalizeUserPermissions(
-              "super_admin",
-              FULL_PERMISSIONS,
-            ),
-          };
-          setUser(superAdminWithPerms);
-          // Set auth cookie if not present
-          document.cookie = `authToken=token-super-${Date.now()}; path=/; max-age=${60 * 60 * 24 * 7}`;
-        } else {
-          const { data, error } = await (supabase as any)
-            .from("users")
-            .select("*")
-            .eq("id", parsedUser.id)
-            .single();
+      const permissions = await fetchUserPermissions(data.id, data.shop_id, data.role);
+      const mappedUser = { ...mapUser(data), permissions };
+      setUser(mappedUser);
+      localStorage.setItem("auth_user", JSON.stringify(mappedUser));
 
-          if (error) {
-            return;
-          }
-
-          if (data) {
-            const permissions = await fetchUserPermissions(
-              data.id,
-              data.shop_id,
-              data.role,
-            );
-            const mappedUser = {
-              ...mapUser(data),
-              permissions,
-            };
-            setUser(mappedUser);
-            localStorage.setItem("auth_user", JSON.stringify(mappedUser));
-            // Set auth cookie if not present
-            document.cookie = `authToken=token-${data.id}-${Date.now()}; path=/; max-age=${60 * 60 * 24 * 7}`;
-
-            if (data.shop_id) {
-              const { data: shop } = await (supabase as any)
-                .from("shops")
-                .select("*")
-                .eq("id", data.shop_id)
-                .single();
-
-              if (shop) {
-                setCurrentShop(mapShop(shop));
-              }
-            }
-          }
-        }
+      if (data.shop_id) {
+        const { data: shop, error: shopError } = await (supabase as any)
+          .from("shops")
+          .select("*")
+          .eq("id", data.shop_id)
+          .single();
+        if (shopError) throw shopError;
+        setCurrentShop(shop ? mapShop(shop) : null);
+      } else {
+        setCurrentShop(null);
       }
     } catch (e) {
-      // Fail silently so cached auth remains usable.
+      console.error("Unable to load authenticated profile:", e);
+      setUser(null);
+      setCurrentShop(null);
+      localStorage.removeItem("auth_user");
     } finally {
       setIsLoading(false);
     }
@@ -469,141 +446,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const login = useCallback(
     async (username: string, password: string) => {
       try {
-        // First, check if it's a super admin (credentials should be from env vars in production!)
-        // NOTE: Remove hardcoded credentials and use environment variables
-        if (
-          username === "vijaysinhjadhav23@gmail.com" &&
-          password === "Vijaysinh@23"
-        ) {
-          const superAdminUser: User = {
-            id: 0,
-            shop_id: null,
-            username: "vijaysinhjadhav23@gmail.com",
-            password: "[REDACTED]",
-            role: "super_admin",
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
-            permissions: normalizeUserPermissions(
-              "super_admin",
-              FULL_PERMISSIONS,
-            ),
-          };
-          setUser(superAdminUser);
-          localStorage.setItem("auth_user", JSON.stringify(superAdminUser));
-          // Set auth cookie
-          document.cookie = `authToken=token-super-${Date.now()}; path=/; max-age=${60 * 60 * 24 * 7}`;
-          return { success: true };
-        }
-
-        // Check if it's a shop owner (login via shop phone and password)
-        const { data: shops } = await (supabase as any)
-          .from("shops")
-          .select("*")
-          .eq("phone_number", username)
-          .eq("password", password);
-
-        const shop = shops?.[0];
-        if (shop) {
-          // Check if owner user exists, if not create one
-          const { data: existingUsers } = await (supabase as any)
-            .from("users")
-            .select("*")
-            .eq("shop_id", shop.id)
-            .eq("role", "owner");
-
-          let ownerUser = existingUsers?.[0];
-
-          if (!ownerUser) {
-            const { data: newUser } = await (supabase as any)
-              .from("users")
-              .insert({
-                shop_id: shop.id,
-                username: shop.owner_name,
-                password: password,
-                role: "owner",
-              })
-              .select("*")
-              .single();
-            ownerUser = newUser || undefined;
-          }
-
-          if (ownerUser) {
-            const permissions = normalizeUserPermissions(
-              "owner",
-              FULL_PERMISSIONS,
-            );
-
-            const mappedUser = {
-              ...mapUser(ownerUser),
-              permissions,
-            };
-            const mappedShop = mapShop(shop);
-            setUser(mappedUser);
-            setCurrentShop(mappedShop);
-            localStorage.setItem("auth_user", JSON.stringify(mappedUser));
-            // Set auth cookie
-            document.cookie = `authToken=token-${ownerUser.id}-${Date.now()}; path=/; max-age=${60 * 60 * 24 * 7}`;
-            return { success: true };
-          }
-        }
-
-        // Check for workers
-        const { data: users } = await (supabase as any)
-          .from("users")
-          .select("*")
-          .eq("username", username)
-          .eq("password", password)
-          .eq("role", "worker");
-
-        const worker = users?.[0];
-        if (worker) {
-          const permissions = await fetchUserPermissions(
-            worker.id,
-            worker.shop_id,
-            worker.role,
-          );
-          const mappedUser = {
-            ...mapUser(worker),
-            permissions,
-          };
-          setUser(mappedUser);
-
-          if (worker.shop_id) {
-            const { data: shop } = await (supabase as any)
-              .from("shops")
-              .select("*")
-              .eq("id", worker.shop_id)
-              .single();
-
-            if (shop) {
-              setCurrentShop(mapShop(shop));
-            }
-          }
-
-          localStorage.setItem("auth_user", JSON.stringify(mappedUser));
-          // Set auth cookie
-          document.cookie = `authToken=token-${worker.id}-${Date.now()}; path=/; max-age=${60 * 60 * 24 * 7}`;
-          return { success: true };
-        }
-
-        return { success: false, error: "Invalid username or password" };
+        setIsLoading(true);
+        const { error } = await supabase.auth.signInWithPassword(
+          getAuthCredentials(username, password),
+        );
+        if (error) return { success: false, error: "Invalid login credentials" };
+        await checkAuth();
+        return { success: true };
       } catch (e) {
         console.error("Login error:", e);
         return { success: false, error: "An error occurred" };
       }
     },
-    [fetchUserPermissions, supabase],
+    [supabase],
   );
 
   const logout = useCallback(async () => {
+    await supabase.auth.signOut();
     setUser(null);
     setCurrentShop(null);
     localStorage.removeItem("auth_user");
-    // Clear auth cookie
-    document.cookie = "authToken=; path=/; max-age=0";
-  }, []);
+  }, [supabase]);
 
   return (
     <AuthContext.Provider

@@ -60,9 +60,18 @@ export function Navigation() {
   const headerPulse = useMemo(() => {
     const today = new Date().toDateString();
     const revenue = sales
-      .filter((sale) => new Date(sale.createdAt || sale.timestamp || sale.date).toDateString() === today)
+      .filter(
+        (sale) =>
+          new Date(
+            sale.createdAt || sale.timestamp || sale.date,
+          ).toDateString() === today,
+      )
       .reduce((sum, sale) => sum + Number(sale.subtotal || sale.total || 0), 0);
-    const lowStock = items.filter((item) => Number(item.lowStockLimit || 0) > 0 && Number(item.quantity || 0) <= Number(item.lowStockLimit || 0)).length;
+    const lowStock = items.filter(
+      (item) =>
+        Number(item.lowStockLimit || 0) > 0 &&
+        Number(item.quantity || 0) <= Number(item.lowStockLimit || 0),
+    ).length;
     return { revenue, lowStock };
   }, [items, sales]);
 
@@ -180,7 +189,7 @@ export function Navigation() {
   // Navigation items based on role and permissions
   const getNavItems = () => {
     if (user?.role === "super_admin") {
-      return [{ href: "/super-admin", icon: Shield, label: "Dashboard" }];
+      return [{ href: "/super-admin", icon: Shield, label: t("dashboard") }];
     }
 
     if (user?.role === "worker") {
@@ -193,7 +202,7 @@ export function Navigation() {
         workerItems.push({
           href: "/sales",
           icon: ShoppingCart,
-          label: "Sales",
+          label: t("sale"),
         });
       }
       if (canViewDashboard) {
@@ -213,7 +222,7 @@ export function Navigation() {
       { href: "/dashboard", icon: Home, label: t("home") },
       { href: "/items", icon: Package, label: t("stock") },
       { href: "/udhari", icon: Users, label: t("udhari") },
-      { href: "/staff", icon: Users, label: "Staff" },
+      { href: "/staff", icon: Users, label: t("staff") },
     ];
   };
 
@@ -239,8 +248,10 @@ export function Navigation() {
             </h1>
             <p className="text-xs text-muted-foreground truncate hidden sm:block">
               {user?.username}
-              {user?.role === "owner" && " • Owner"}
-              {user?.role === "worker" && " • Worker"}
+              {user?.role === "owner" &&
+                ` • ${language === "mr" ? "मालक" : "Owner"}`}
+              {user?.role === "worker" &&
+                ` • ${language === "mr" ? "कर्मचारी" : "Worker"}`}
             </p>
           </div>
         </div>
@@ -252,12 +263,24 @@ export function Navigation() {
           canViewUdhari) && (
           <div className="flex flex-1 items-center gap-2 mx-4">
             <div className="hidden lg:flex items-center gap-1.5 text-xs">
-              <Link href="/dashboard" className="rounded-full border border-emerald-100 bg-emerald-50 px-2.5 py-1.5 font-medium text-emerald-700 hover:bg-emerald-100">
-                Today ₹{Math.round(headerPulse.revenue).toLocaleString("en-IN")}
+              <Link
+                href="/dashboard"
+                className="rounded-full border border-emerald-100 bg-emerald-50 px-2.5 py-1.5 font-medium text-emerald-700 hover:bg-emerald-100"
+              >
+                {language === "mr" ? "आज" : "Today"} ₹
+                {Math.round(headerPulse.revenue).toLocaleString(
+                  language === "mr" ? "mr-IN" : "en-IN",
+                )}
               </Link>
-              {headerPulse.lowStock > 0 && <Link href="/items?stock=lowStock" className="rounded-full border border-amber-100 bg-amber-50 px-2.5 py-1.5 font-medium text-amber-800 hover:bg-amber-100">
-                {headerPulse.lowStock} low stock
-              </Link>}
+              {headerPulse.lowStock > 0 && (
+                <Link
+                  href="/items?stock=lowStock"
+                  className="rounded-full border border-amber-100 bg-amber-50 px-2.5 py-1.5 font-medium text-amber-800 hover:bg-amber-100"
+                >
+                  {headerPulse.lowStock}{" "}
+                  {language === "mr" ? "कमी स्टॉक" : "low stock"}
+                </Link>
+              )}
             </div>
             <div className="relative flex-1 max-w-md search-container">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -291,7 +314,7 @@ export function Navigation() {
                   {searchResults.items.length > 0 && (
                     <div className="p-3 border-b border-border">
                       <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wide mb-2">
-                        Items
+                        {t("items")}
                       </h3>
                       <div className="space-y-1">
                         {searchResults.items.slice(0, 5).map((item) => (
@@ -322,7 +345,7 @@ export function Navigation() {
                   {searchResults.sales.length > 0 && (
                     <div className="p-3 border-b border-border">
                       <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wide mb-2">
-                        Sales
+                        {t("sale")}
                       </h3>
                       <div className="space-y-1">
                         {searchResults.sales.slice(0, 5).map((sale) => (
@@ -350,7 +373,7 @@ export function Navigation() {
                   {searchResults.customers.length > 0 && (
                     <div className="p-3">
                       <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wide mb-2">
-                        Udhari Customers
+                        {t("udhari")} {t("customers")}
                       </h3>
                       <div className="space-y-1">
                         {searchResults.customers.slice(0, 5).map((customer) => (
@@ -379,7 +402,9 @@ export function Navigation() {
                     searchResults.sales.length === 0 &&
                     searchResults.customers.length === 0 && (
                       <div className="p-8 text-center text-muted-foreground">
-                        No results found
+                        {language === "mr"
+                          ? "काही परिणाम आढळले नाहीत"
+                          : "No results found"}
                       </div>
                     )}
                 </div>
@@ -448,10 +473,16 @@ export function Navigation() {
                   <span className="font-semibold">{user?.username}</span>
                   <span className="text-xs text-muted-foreground">
                     {user?.role === "owner"
-                      ? "Owner"
+                      ? language === "mr"
+                        ? "मालक"
+                        : "Owner"
                       : user?.role === "super_admin"
-                        ? "Super Admin"
-                        : "Worker"}
+                        ? language === "mr"
+                          ? "सुपर प्रशासक"
+                          : "Super Admin"
+                        : language === "mr"
+                          ? "कर्मचारी"
+                          : "Worker"}
                   </span>
                 </div>
               </DropdownMenuLabel>
@@ -462,7 +493,7 @@ export function Navigation() {
                   className="cursor-pointer flex items-center gap-2"
                 >
                   <User className="h-4 w-4" />
-                  <span>Profile</span>
+                  <span>{language === "mr" ? "प्रोफाइल" : "Profile"}</span>
                 </Link>
               </DropdownMenuItem>
               {user?.role === "owner" && (
@@ -472,7 +503,7 @@ export function Navigation() {
                     className="cursor-pointer flex items-center gap-2"
                   >
                     <Settings className="h-4 w-4" />
-                    <span>Settings</span>
+                    <span>{t("settings")}</span>
                   </Link>
                 </DropdownMenuItem>
               )}
@@ -482,7 +513,7 @@ export function Navigation() {
                 className="cursor-pointer flex items-center gap-2 text-red-600"
               >
                 <LogOut className="h-4 w-4" />
-                <span>Logout</span>
+                <span>{t("logout")}</span>
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

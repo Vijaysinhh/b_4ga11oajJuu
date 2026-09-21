@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import Dexie, { type Table } from 'dexie';
+import Dexie, { type Table } from "dexie";
 
 export interface PriceTier {
   id?: number;
@@ -51,8 +51,8 @@ export interface Unit {
 
 export interface AppSettings {
   id?: number;
-  language: 'en' | 'mr'; // en = English, mr = Marathi
-  theme: 'light' | 'dark' | 'system';
+  language: "en" | "mr"; // en = English, mr = Marathi
+  theme: "light" | "dark" | "system";
   setupComplete: boolean;
   lastBackup?: number;
   updatedAt: number;
@@ -85,7 +85,7 @@ export interface StockHistory {
   id?: number;
   itemId: number;
   itemName: string;
-  type: 'purchase' | 'sale' | 'adjustment' | 'damage' | 'expiry'; // Type of stock change
+  type: "purchase" | "sale" | "adjustment" | "damage" | "expiry"; // Type of stock change
   quantityChanged: number; // Positive or negative
   quantityBefore: number; // Stock before change
   quantityAfter: number; // Stock after change
@@ -107,7 +107,7 @@ export interface Batch {
   quantityAvailable: number; // quantityReceived - quantitySold
   costPerUnit: number; // Cost when purchased
   supplierId?: string; // Which supplier
-  status: 'active' | 'expiring' | 'expired'; // Status
+  status: "active" | "expiring" | "expired"; // Status
   createdAt: number;
   updatedAt: number;
 }
@@ -116,9 +116,9 @@ export interface Alert {
   id?: number;
   itemId: number;
   itemName: string;
-  alertType: 'low_stock' | 'expiring' | 'slow_moving' | 'expired'; // Type of alert
+  alertType: "low_stock" | "expiring" | "slow_moving" | "expired"; // Type of alert
   message: string; // Alert message
-  severity: 'info' | 'warning' | 'critical'; // Alert level
+  severity: "info" | "warning" | "critical"; // Alert level
   data?: any; // Additional data (quantity, days until expiry, etc)
   read: boolean; // Has user seen this?
   createdAt: number;
@@ -147,7 +147,7 @@ export interface Subscription {
   endDate: number; // Unix timestamp (1 month later)
   paymentMethod: string; // 'upi', 'cash', 'card', etc.
   transactionId?: string; // UPI transaction ID
-  status: 'active' | 'pending' | 'failed' | 'cancelled';
+  status: "active" | "pending" | "failed" | "cancelled";
   createdAt: number;
   updatedAt: number;
 }
@@ -169,7 +169,7 @@ export interface User {
   shopId: number; // Which shop does this user belong to?
   username: string;
   password: string;
-  role: 'super_admin' | 'owner' | 'worker';
+  role: "super_admin" | "owner" | "worker";
   createdAt: number;
   updatedAt: number;
 }
@@ -178,16 +178,16 @@ export interface Sale {
   id?: number;
   date: string; // YYYY-MM-DD format
   timestamp: number; // Unix timestamp
-  items: (Omit<SaleItem, 'saleId'> & { saleId?: number })[]; // Array of items sold (saleId optional for new sales)
+  items: (Omit<SaleItem, "saleId"> & { saleId?: number })[]; // Array of items sold (saleId optional for new sales)
   totalQuantityItems: number; // Count of item types
   subtotal: number; // Sum of all item prices
   totalCost: number; // Sum of all item costs
   totalProfit: number; // subtotal - totalCost
   profitMarginPercent: number; // (totalProfit / subtotal) * 100
-  paymentMethod: 'cash' | 'card' | 'partial' | 'udhar'; // How they paid
+  paymentMethod: "cash" | "card" | "partial" | "udhar"; // How they paid
   paidAmount?: number;
   dueAmount?: number;
-  paidVia?: 'cash' | 'card';
+  paidVia?: "cash" | "card";
   creditCustomerId?: number; // Customer when all or part of the bill is on credit
   creditCustomerName?: string;
   notes?: string; // Optional notes
@@ -222,7 +222,7 @@ export interface CreditEntry {
   id?: number;
   customerId: number;
   customerName: string;
-  type: 'credit' | 'payment';
+  type: "credit" | "payment";
   amount: number;
   note?: string;
   saleId?: number;
@@ -232,7 +232,7 @@ export interface CreditEntry {
   createdAt: number;
 }
 
-export type OfflineSyncOperation = 'upsert' | 'delete';
+export type OfflineSyncOperation = "upsert" | "delete";
 
 export interface SyncQueueEntry {
   id?: number;
@@ -244,6 +244,7 @@ export interface SyncQueueEntry {
   createdAt: number;
   attempts: number;
   lastError?: string;
+  status?: "pending" | "failed";
 }
 
 export interface CloudCacheEntry {
@@ -277,89 +278,92 @@ export class DukanDB extends Dexie {
   cloudCache!: Table<CloudCacheEntry>;
 
   constructor() {
-    super('DukanDB');
+    super("DukanDB");
     this.version(1).stores({
-      items: '++id, categoryId, updatedAt',
-      priceTiers: '++id, itemId, updatedAt',
-      categories: '++id, updatedAt',
-      units: '++id, updatedAt',
-      appSettings: '++id',
-      sales: '++id, date, timestamp',
-      saleItems: '++id, saleId, itemId',
-      stockHistory: '++id, itemId, createdAt',
-      batches: '++id, itemId, expiryDate',
-      alerts: '++id, itemId, alertType, createdAt',
+      items: "++id, categoryId, updatedAt",
+      priceTiers: "++id, itemId, updatedAt",
+      categories: "++id, updatedAt",
+      units: "++id, updatedAt",
+      appSettings: "++id",
+      sales: "++id, date, timestamp",
+      saleItems: "++id, saleId, itemId",
+      stockHistory: "++id, itemId, createdAt",
+      batches: "++id, itemId, expiryDate",
+      alerts: "++id, itemId, alertType, createdAt",
     });
     this.version(2).stores({
-      items: '++id, categoryId, updatedAt',
-      priceTiers: '++id, itemId, updatedAt',
-      categories: '++id, updatedAt',
-      units: '++id, updatedAt',
-      appSettings: '++id',
-      sales: '++id, date, timestamp',
-      saleItems: '++id, saleId, itemId',
-      stockHistory: '++id, itemId, createdAt',
-      batches: '++id, itemId, expiryDate',
-      alerts: '++id, itemId, alertType, createdAt',
-      creditCustomers: '++id, name, updatedAt',
-      creditEntries: '++id, customerId, date, timestamp',
+      items: "++id, categoryId, updatedAt",
+      priceTiers: "++id, itemId, updatedAt",
+      categories: "++id, updatedAt",
+      units: "++id, updatedAt",
+      appSettings: "++id",
+      sales: "++id, date, timestamp",
+      saleItems: "++id, saleId, itemId",
+      stockHistory: "++id, itemId, createdAt",
+      batches: "++id, itemId, expiryDate",
+      alerts: "++id, itemId, alertType, createdAt",
+      creditCustomers: "++id, name, updatedAt",
+      creditEntries: "++id, customerId, date, timestamp",
     });
     // New version with shops and users tables
     this.version(3).stores({
-      items: '++id, categoryId, updatedAt',
-      priceTiers: '++id, itemId, updatedAt',
-      categories: '++id, updatedAt',
-      units: '++id, updatedAt',
-      appSettings: '++id',
-      sales: '++id, date, timestamp',
-      saleItems: '++id, saleId, itemId',
-      stockHistory: '++id, itemId, createdAt',
-      batches: '++id, itemId, expiryDate',
-      alerts: '++id, itemId, alertType, createdAt',
-      creditCustomers: '++id, name, updatedAt',
-      creditEntries: '++id, customerId, date, timestamp',
-      shops: '++id, shopName, ownerName, isPaused, subscriptionEndDate, updatedAt',
-      users: '++id, shopId, username, role, updatedAt',
+      items: "++id, categoryId, updatedAt",
+      priceTiers: "++id, itemId, updatedAt",
+      categories: "++id, updatedAt",
+      units: "++id, updatedAt",
+      appSettings: "++id",
+      sales: "++id, date, timestamp",
+      saleItems: "++id, saleId, itemId",
+      stockHistory: "++id, itemId, createdAt",
+      batches: "++id, itemId, expiryDate",
+      alerts: "++id, itemId, alertType, createdAt",
+      creditCustomers: "++id, name, updatedAt",
+      creditEntries: "++id, customerId, date, timestamp",
+      shops:
+        "++id, shopName, ownerName, isPaused, subscriptionEndDate, updatedAt",
+      users: "++id, shopId, username, role, updatedAt",
     });
     // New version with subscription tables
     this.version(4).stores({
-      items: '++id, categoryId, updatedAt',
-      priceTiers: '++id, itemId, updatedAt',
-      categories: '++id, updatedAt',
-      units: '++id, updatedAt',
-      appSettings: '++id',
-      sales: '++id, date, timestamp',
-      saleItems: '++id, saleId, itemId',
-      stockHistory: '++id, itemId, createdAt',
-      batches: '++id, itemId, expiryDate',
-      alerts: '++id, itemId, alertType, createdAt',
-      creditCustomers: '++id, name, updatedAt',
-      creditEntries: '++id, customerId, date, timestamp',
-      shops: '++id, shopName, ownerName, isPaused, subscriptionEndDate, updatedAt',
-      users: '++id, shopId, username, role, updatedAt',
-      subscriptions: '++id, shopId, status, startDate, endDate, updatedAt',
-      shopPaymentInfo: '++id, shopId, updatedAt',
+      items: "++id, categoryId, updatedAt",
+      priceTiers: "++id, itemId, updatedAt",
+      categories: "++id, updatedAt",
+      units: "++id, updatedAt",
+      appSettings: "++id",
+      sales: "++id, date, timestamp",
+      saleItems: "++id, saleId, itemId",
+      stockHistory: "++id, itemId, createdAt",
+      batches: "++id, itemId, expiryDate",
+      alerts: "++id, itemId, alertType, createdAt",
+      creditCustomers: "++id, name, updatedAt",
+      creditEntries: "++id, customerId, date, timestamp",
+      shops:
+        "++id, shopName, ownerName, isPaused, subscriptionEndDate, updatedAt",
+      users: "++id, shopId, username, role, updatedAt",
+      subscriptions: "++id, shopId, status, startDate, endDate, updatedAt",
+      shopPaymentInfo: "++id, shopId, updatedAt",
     });
     // Local-first cloud snapshots and mutations waiting for connectivity.
     this.version(5).stores({
-      items: '++id, categoryId, updatedAt',
-      priceTiers: '++id, itemId, updatedAt',
-      categories: '++id, updatedAt',
-      units: '++id, updatedAt',
-      appSettings: '++id',
-      sales: '++id, date, timestamp',
-      saleItems: '++id, saleId, itemId',
-      stockHistory: '++id, itemId, createdAt',
-      batches: '++id, itemId, expiryDate',
-      alerts: '++id, itemId, alertType, createdAt',
-      creditCustomers: '++id, name, updatedAt',
-      creditEntries: '++id, customerId, date, timestamp',
-      shops: '++id, shopName, ownerName, isPaused, subscriptionEndDate, updatedAt',
-      users: '++id, shopId, username, role, updatedAt',
-      subscriptions: '++id, shopId, status, startDate, endDate, updatedAt',
-      shopPaymentInfo: '++id, shopId, updatedAt',
-      syncQueue: '++id, shopId, table, createdAt',
-      cloudCache: '&key, shopId, table, updatedAt',
+      items: "++id, categoryId, updatedAt",
+      priceTiers: "++id, itemId, updatedAt",
+      categories: "++id, updatedAt",
+      units: "++id, updatedAt",
+      appSettings: "++id",
+      sales: "++id, date, timestamp",
+      saleItems: "++id, saleId, itemId",
+      stockHistory: "++id, itemId, createdAt",
+      batches: "++id, itemId, expiryDate",
+      alerts: "++id, itemId, alertType, createdAt",
+      creditCustomers: "++id, name, updatedAt",
+      creditEntries: "++id, customerId, date, timestamp",
+      shops:
+        "++id, shopName, ownerName, isPaused, subscriptionEndDate, updatedAt",
+      users: "++id, shopId, username, role, updatedAt",
+      subscriptions: "++id, shopId, status, startDate, endDate, updatedAt",
+      shopPaymentInfo: "++id, shopId, updatedAt",
+      syncQueue: "++id, shopId, table, createdAt",
+      cloudCache: "&key, shopId, table, updatedAt",
     });
   }
 }
@@ -367,47 +371,119 @@ export class DukanDB extends Dexie {
 export const db = new DukanDB();
 
 // Pre-loaded default categories for quick setup
-export function getDefaultCategories(): Omit<Category, 'id'>[] {
+export function getDefaultCategories(): Omit<Category, "id">[] {
   const now = Date.now();
   return [
-    { name: 'Grocery', nameMarathi: 'किराणा', color: '#3b82f6', createdAt: now, updatedAt: now },
-    { name: 'Dairy & Milk', nameMarathi: 'दुग्ध', color: '#f59e0b', createdAt: now, updatedAt: now },
-    { name: 'Beverages', nameMarathi: 'पेय पदार्थ', color: '#ef4444', createdAt: now, updatedAt: now },
-    { name: 'Snacks & Sweets', nameMarathi: 'स्नॅक्स', color: '#8b5cf6', createdAt: now, updatedAt: now },
-    { name: 'Household Items', nameMarathi: 'घरेलू', color: '#06b6d4', createdAt: now, updatedAt: now },
-    { name: 'Personal Care', nameMarathi: 'व्यक्तिगत', color: '#ec4899', createdAt: now, updatedAt: now },
+    {
+      name: "Grocery",
+      nameMarathi: "किराणा",
+      color: "#3b82f6",
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      name: "Dairy & Milk",
+      nameMarathi: "दुग्ध",
+      color: "#f59e0b",
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      name: "Beverages",
+      nameMarathi: "पेय पदार्थ",
+      color: "#ef4444",
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      name: "Snacks & Sweets",
+      nameMarathi: "स्नॅक्स",
+      color: "#8b5cf6",
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      name: "Household Items",
+      nameMarathi: "घरेलू",
+      color: "#06b6d4",
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      name: "Personal Care",
+      nameMarathi: "व्यक्तिगत",
+      color: "#ec4899",
+      createdAt: now,
+      updatedAt: now,
+    },
   ];
 }
 
 // Pre-loaded default units for quick setup
-export function getDefaultUnits(): Omit<Unit, 'id'>[] {
+export function getDefaultUnits(): Omit<Unit, "id">[] {
   const now = Date.now();
   return [
-    { name: 'Kilogram', nameMarathi: 'किलोग्राम', shortForm: 'kg', createdAt: now, updatedAt: now },
-    { name: 'Gram', nameMarathi: 'ग्राम', shortForm: 'g', createdAt: now, updatedAt: now },
-    { name: 'Liter', nameMarathi: 'लिटर', shortForm: 'l', createdAt: now, updatedAt: now },
-    { name: 'Milliliter', nameMarathi: 'मिली लिटर', shortForm: 'ml', createdAt: now, updatedAt: now },
-    { name: 'Piece', nameMarathi: 'तुकडे', shortForm: 'pcs', createdAt: now, updatedAt: now },
-    { name: 'Box', nameMarathi: 'डिब्बा', shortForm: 'box', createdAt: now, updatedAt: now },
+    {
+      name: "Kilogram",
+      nameMarathi: "किलोग्राम",
+      shortForm: "kg",
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      name: "Gram",
+      nameMarathi: "ग्राम",
+      shortForm: "g",
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      name: "Liter",
+      nameMarathi: "लिटर",
+      shortForm: "l",
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      name: "Milliliter",
+      nameMarathi: "मिली लिटर",
+      shortForm: "ml",
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      name: "Piece",
+      nameMarathi: "तुकडे",
+      shortForm: "pcs",
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      name: "Box",
+      nameMarathi: "डिब्बा",
+      shortForm: "box",
+      createdAt: now,
+      updatedAt: now,
+    },
   ];
 }
 
-export const DEMO_ITEMS: Omit<Item, 'id'>[] = [];
+export const DEMO_ITEMS: Omit<Item, "id">[] = [];
 
 // Initialize database with default categories and units on first load
 export async function initializeDatabase() {
-  if (typeof window === 'undefined') return;
-  
+  if (typeof window === "undefined") return;
+
   try {
     if (!db.isOpen()) {
       await db.open();
     }
 
     const settingsCount = await db.appSettings.count();
-    
+
     if (settingsCount === 0) {
-      console.log('[Dukan] Initializing default settings...');
-      
+      console.log("[Dukan] Initializing default settings...");
+
       // Check if categories already exist before adding
       const categoryCount = await db.categories.count();
       if (categoryCount === 0) {
@@ -421,15 +497,17 @@ export async function initializeDatabase() {
       }
 
       await db.appSettings.add({
-        language: 'mr',
-        theme: 'light',
+        language: "mr",
+        theme: "light",
         setupComplete: true,
         updatedAt: Date.now(),
       });
 
-      console.log('[Dukan] Database initialized with default categories and units');
+      console.log(
+        "[Dukan] Database initialized with default categories and units",
+      );
     }
   } catch (error) {
-    console.error('[Dukan] Database initialization error:', error);
+    console.error("[Dukan] Database initialization error:", error);
   }
 }

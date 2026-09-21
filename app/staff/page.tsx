@@ -1,39 +1,77 @@
-'use client';
+"use client";
 
-import { useMemo, useState } from 'react';
-import { useStaff } from '@/hooks/use-staff';
+import { useState } from "react";
+import { useStaff } from "@/hooks/use-staff";
 import {
   useAuth,
   UserPermissions,
   DEFAULT_WORKER_PERMISSIONS,
   normalizeUserPermissions,
-} from '@/providers/auth-provider';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Switch } from '@/components/ui/switch';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { Plus, Trash2, Users, Shield, Edit2 } from 'lucide-react';
-import { useToast } from '@/components/ui/use-toast';
-import { PageContainer, PageHeader } from '@/components/page-shell';
+} from "@/providers/auth-provider";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Switch } from "@/components/ui/switch";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Plus, Trash2, Users, Shield, Edit2 } from "lucide-react";
+import { useToast } from "@/components/ui/use-toast";
+import { PageContainer, PageHeader } from "@/components/page-shell";
+import { useLanguage } from "@/providers/language-provider";
 
 export default function StaffManagementPage() {
   const { user } = useAuth();
-  const { staff, isLoading, addStaff, updateStaff, updateStaffPermissions, removeStaff } = useStaff();
-  const [newUsername, setNewUsername] = useState('');
-  const [newPassword, setNewPassword] = useState('');
+  const {
+    staff,
+    isLoading,
+    addStaff,
+    updateStaff,
+    updateStaffPermissions,
+    removeStaff,
+  } = useStaff();
+  const [newUsername, setNewUsername] = useState("");
+  const [newPassword, setNewPassword] = useState("");
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editingStaff, setEditingStaff] = useState<any>(null);
-  const [editUsername, setEditUsername] = useState('');
-  const [editPassword, setEditPassword] = useState('');
+  const [editUsername, setEditUsername] = useState("");
+  const [editPassword, setEditPassword] = useState("");
   const { toast } = useToast();
+  const { t } = useLanguage();
+  const permissionOptions = [
+    {
+      key: "canViewDashboard",
+      label: t("view_dashboard"),
+      desc: t("open_dashboard"),
+    },
+    { key: "canViewItems", label: t("view_items"), desc: t("see_stock_items") },
+    {
+      key: "canViewSales",
+      label: t("view_sales"),
+      desc: t("see_sales_history"),
+    },
+    {
+      key: "canCreateSales",
+      label: t("create_sales"),
+      desc: t("record_new_sales"),
+    },
+    {
+      key: "canViewUdhari",
+      label: t("view_udhari"),
+      desc: t("see_credit_records"),
+    },
+  ] as const;
 
-  if (user?.role !== 'owner') {
+  if (user?.role !== "owner") {
     return (
       <PageContainer size="wide">
         <PageHeader
-          title="Access Denied"
-          description="Only owners can access this page."
+          title={t("access_denied")}
+          description={t("owners_only_staff")}
         />
       </PageContainer>
     );
@@ -44,25 +82,32 @@ export default function StaffManagementPage() {
     const success = await addStaff(newUsername, newPassword);
     if (!success) {
       toast({
-        title: "Error",
-        description: "Could not add staff member. Please try again.",
+        title: t("error"),
+        description: t("add_staff_error"),
         variant: "destructive",
       });
       return;
     }
-    setNewUsername('');
-    setNewPassword('');
+    setNewUsername("");
+    setNewPassword("");
     toast({
-      title: "Success",
-      description: "Staff member added successfully!",
+      title: t("success"),
+      description: t("staff_added"),
     });
   };
 
-  const handleTogglePermission = async (userId: number, key: keyof UserPermissions, currentValue: boolean) => {
-    const staffMember = staff.find(s => s.id === userId);
+  const handleTogglePermission = async (
+    userId: number,
+    key: keyof UserPermissions,
+    currentValue: boolean,
+  ) => {
+    const staffMember = staff.find((s) => s.id === userId);
     if (!staffMember) return;
 
-    const normalizedPermissions = normalizeUserPermissions('worker', staffMember.permissions);
+    const normalizedPermissions = normalizeUserPermissions(
+      "worker",
+      staffMember.permissions,
+    );
     const newPermissions = {
       ...normalizedPermissions,
       [key]: !currentValue,
@@ -70,15 +115,15 @@ export default function StaffManagementPage() {
     const success = await updateStaffPermissions(userId, newPermissions);
     if (!success) {
       toast({
-        title: "Error",
-        description: "Permission update failed. Please try again.",
+        title: t("error"),
+        description: t("permission_update_error"),
         variant: "destructive",
       });
       return;
     }
     toast({
-      title: "Success",
-      description: "Permission updated!",
+      title: t("success"),
+      description: t("permission_updated"),
     });
   };
 
@@ -97,15 +142,17 @@ export default function StaffManagementPage() {
     const success = await updateStaffPermissions(userId, newPermissions);
     if (!success) {
       toast({
-        title: "Error",
-        description: "Permission update failed. Please try again.",
+        title: t("error"),
+        description: t("permission_update_error"),
         variant: "destructive",
       });
       return;
     }
     toast({
-      title: "Success",
-      description: enabled ? "All permissions updated!" : "Default permissions restored!",
+      title: t("success"),
+      description: enabled
+        ? t("all_permissions_updated")
+        : t("default_permissions_restored"),
     });
   };
 
@@ -113,32 +160,36 @@ export default function StaffManagementPage() {
     const success = await removeStaff(userId);
     if (!success) {
       toast({
-        title: "Error",
-        description: "Could not remove staff member. Please try again.",
+        title: t("error"),
+        description: t("remove_staff_error"),
         variant: "destructive",
       });
       return;
     }
     toast({
-      title: "Success",
-      description: "Staff member removed!",
+      title: t("success"),
+      description: t("staff_removed"),
     });
   };
 
   const handleOpenEditDialog = (staffMember: any) => {
     setEditingStaff(staffMember);
     setEditUsername(staffMember.username);
-    setEditPassword('');
+    setEditPassword("");
     setEditDialogOpen(true);
   };
 
   const handleUpdateStaff = async () => {
     if (!editingStaff) return;
-    const success = await updateStaff(editingStaff.id, editUsername, editPassword);
+    const success = await updateStaff(
+      editingStaff.id,
+      editUsername,
+      editPassword,
+    );
     if (!success) {
       toast({
-        title: "Error",
-        description: "Could not update staff member. Please try again.",
+        title: t("error"),
+        description: t("update_staff_error"),
         variant: "destructive",
       });
       return;
@@ -146,27 +197,16 @@ export default function StaffManagementPage() {
     setEditDialogOpen(false);
     setEditingStaff(null);
     toast({
-      title: "Success",
-      description: "Staff member updated!",
+      title: t("success"),
+      description: t("staff_updated"),
     });
   };
-
-  const permissionOptions = useMemo(
-    () => [
-      { key: 'canViewDashboard', label: 'View Dashboard', desc: 'Open the dashboard' },
-      { key: 'canViewItems', label: 'View Items', desc: 'See stock items' },
-      { key: 'canViewSales', label: 'View Sales', desc: 'See sales history' },
-      { key: 'canCreateSales', label: 'Create Sales', desc: 'Record new sales' },
-      { key: 'canViewUdhari', label: 'View Udhari', desc: 'See credit records' },
-    ] as const,
-    [],
-  );
 
   return (
     <PageContainer size="wide">
       <PageHeader
-        title="Staff Management"
-        description="Manage your team and their permissions"
+        title={t("staff_management")}
+        description={t("staff_management_desc")}
         help={<Users className="h-5 w-5 text-primary" />}
       />
 
@@ -175,33 +215,40 @@ export default function StaffManagementPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2 font-semibold tracking-tight">
             <Plus className="w-5 h-5" />
-            Add New Staff Member
+            {t("add_new_staff")}
           </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="flex flex-col sm:flex-row gap-4">
             <div className="flex-1">
-              <label className="mb-2 block text-sm font-medium">Username</label>
-              <Input 
-                placeholder="Enter username"
+              <label className="mb-2 block text-sm font-medium">
+                {t("username")}
+              </label>
+              <Input
+                placeholder={t("enter_username")}
                 value={newUsername}
                 onChange={(e) => setNewUsername(e.target.value)}
                 className="rounded-xl border-slate-200 transition-all duration-200 focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100"
               />
             </div>
             <div className="flex-1">
-              <label className="mb-2 block text-sm font-medium">Password</label>
-              <Input 
+              <label className="mb-2 block text-sm font-medium">
+                {t("password")}
+              </label>
+              <Input
                 type="password"
-                placeholder="Enter password"
+                placeholder={t("enter_password")}
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
                 className="rounded-xl border-slate-200 transition-all duration-200 focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100"
               />
             </div>
             <div className="flex items-end">
-              <Button onClick={handleAddStaff} className="h-11 w-full rounded-xl shadow-[0_5px_14px_rgba(79,70,229,0.22)] transition-all duration-150 hover:-translate-y-px hover:shadow-[0_8px_18px_rgba(79,70,229,0.28)] active:scale-[0.98] sm:w-auto">
-                Add Staff
+              <Button
+                onClick={handleAddStaff}
+                className="h-11 w-full rounded-xl shadow-[0_5px_14px_rgba(79,70,229,0.22)] transition-all duration-150 hover:-translate-y-px hover:shadow-[0_8px_18px_rgba(79,70,229,0.28)] active:scale-[0.98] sm:w-auto"
+              >
+                {t("add_staff")}
               </Button>
             </div>
           </div>
@@ -212,80 +259,97 @@ export default function StaffManagementPage() {
       <div className="space-y-4 [content-visibility:auto] [contain-intrinsic-size:auto_700px]">
         {isLoading ? (
           <div className="text-center py-12">
-            <p className="text-muted-foreground">Loading staff...</p>
+            <p className="text-muted-foreground">{t("loading_staff")}</p>
           </div>
         ) : staff.length === 0 ? (
           <Card>
             <CardContent className="pt-8 text-center">
               <Users className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-              <p className="text-muted-foreground">No staff members yet. Add your first one above!</p>
+              <p className="text-muted-foreground">{t("no_staff")}</p>
             </CardContent>
           </Card>
         ) : (
           staff.map((staffMember) => (
-            <Card key={staffMember.id} className="rounded-2xl border border-slate-200/80 bg-card shadow-[0_4px_16px_rgba(15,23,42,0.045)] transition-[transform,box-shadow,border-color] duration-200 hover:-translate-y-0.5 hover:border-indigo-200 hover:shadow-[0_10px_24px_rgba(79,70,229,0.10)]">
+            <Card
+              key={staffMember.id}
+              className="rounded-2xl border border-slate-200/80 bg-card shadow-[0_4px_16px_rgba(15,23,42,0.045)] transition-[transform,box-shadow,border-color] duration-200 hover:-translate-y-0.5 hover:border-indigo-200 hover:shadow-[0_10px_24px_rgba(79,70,229,0.10)]"
+            >
               <CardHeader className="flex flex-row items-center justify-between">
                 <CardTitle className="flex items-center gap-2 font-semibold tracking-tight">
                   <Shield className="w-5 h-5 text-primary" />
                   {staffMember.username}
                 </CardTitle>
                 <div className="flex gap-2">
-                  <Button 
-                    variant="secondary" 
+                  <Button
+                    variant="secondary"
                     size="sm"
                     className="rounded-xl transition-all duration-150 hover:-translate-y-px active:scale-[0.97]"
                     onClick={() => handleOpenEditDialog(staffMember)}
                   >
                     <Edit2 className="w-4 h-4 mr-2" />
-                    Edit
+                    {t("edit_staff")}
                   </Button>
-                  <Button 
-                    variant="destructive" 
+                  <Button
+                    variant="destructive"
                     size="sm"
                     className="rounded-xl transition-all duration-150 hover:-translate-y-px active:scale-[0.97]"
                     onClick={() => handleRemoveStaff(staffMember.id)}
                   >
                     <Trash2 className="w-4 h-4 mr-2" />
-                    Remove
+                    {t("remove_staff")}
                   </Button>
                 </div>
               </CardHeader>
               <CardContent>
                 {/* Quick Actions */}
                 <div className="flex gap-2 mb-6 pb-4 border-b border-border">
-                  <Button 
-                    variant="secondary" 
+                  <Button
+                    variant="secondary"
                     size="sm"
-                    onClick={() => handleSetAllPermissions(staffMember.id, true)}
+                    onClick={() =>
+                      handleSetAllPermissions(staffMember.id, true)
+                    }
                   >
-                    Allow All
+                    {t("allow_all")}
                   </Button>
-                  <Button 
-                    variant="secondary" 
+                  <Button
+                    variant="secondary"
                     size="sm"
-                    onClick={() => handleSetAllPermissions(staffMember.id, false)}
+                    onClick={() =>
+                      handleSetAllPermissions(staffMember.id, false)
+                    }
                   >
-                    Reset to Default
+                    {t("reset_to_default")}
                   </Button>
                 </div>
 
                 {/* Permissions Grid */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   {permissionOptions.map((perm) => {
-                    const currentValue = !!normalizeUserPermissions('worker', staffMember.permissions)[perm.key as keyof UserPermissions];
+                    const currentValue = !!normalizeUserPermissions(
+                      "worker",
+                      staffMember.permissions,
+                    )[perm.key as keyof UserPermissions];
                     return (
-                      <div key={perm.key} className="flex items-center justify-between rounded-xl border border-border/60 bg-background/70 p-3 shadow-sm">
+                      <div
+                        key={perm.key}
+                        className="flex items-center justify-between rounded-xl border border-border/60 bg-background/70 p-3 shadow-sm"
+                      >
                         <div>
                           <p className="font-medium text-sm">{perm.label}</p>
-                          <p className="text-xs text-muted-foreground">{perm.desc}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {perm.desc}
+                          </p>
                         </div>
                         <Switch
                           checked={currentValue}
-                          onCheckedChange={() => handleTogglePermission(
-                            staffMember.id,
-                            perm.key as keyof UserPermissions,
-                            currentValue
-                          )}
+                          onCheckedChange={() =>
+                            handleTogglePermission(
+                              staffMember.id,
+                              perm.key as keyof UserPermissions,
+                              currentValue,
+                            )
+                          }
                         />
                       </div>
                     );
@@ -306,15 +370,17 @@ export default function StaffManagementPage() {
           <div className="space-y-4 py-4">
             <div className="space-y-2">
               <label className="block text-sm font-medium mb-2">Username</label>
-              <Input 
+              <Input
                 placeholder="Enter username"
                 value={editUsername}
                 onChange={(e) => setEditUsername(e.target.value)}
               />
             </div>
             <div className="space-y-2">
-              <label className="block text-sm font-medium mb-2">Password (leave empty to keep current)</label>
-              <Input 
+              <label className="block text-sm font-medium mb-2">
+                Password (leave empty to keep current)
+              </label>
+              <Input
                 type="password"
                 placeholder="Enter new password"
                 value={editPassword}
@@ -323,7 +389,9 @@ export default function StaffManagementPage() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setEditDialogOpen(false)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setEditDialogOpen(false)}>
+              Cancel
+            </Button>
             <Button onClick={handleUpdateStaff}>Update Staff</Button>
           </DialogFooter>
         </DialogContent>

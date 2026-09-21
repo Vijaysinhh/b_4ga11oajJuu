@@ -9,7 +9,8 @@
     "lint": "eslint .",
     "type-check": "tsc --noEmit",
     "test:voice": "node --test scripts/test-voice-sale.cjs",
-    "test:sale": "node --test scripts/test-sale-quantity.cjs"
+    "test:sale": "node --test scripts/test-sale-quantity.cjs",
+    "auth:provision": "node scripts/provision-auth-users.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",
@@ -76,6 +77,8 @@
     "@types/node": "^22",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
+    "eslint": "^9.39.5",
+    "eslint-config-next": "^16.3.5",
     "postcss": "^8.5",
     "tailwindcss": "^4.2.0",
     "tw-animate-css": "1.3.3",

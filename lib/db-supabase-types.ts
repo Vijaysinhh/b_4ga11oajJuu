@@ -57,7 +57,8 @@ export interface Database {
           id: number;
           shop_id: number | null;
           username: string;
-          password: string;
+          password: string | null;
+          auth_user_id: string | null;
           role: 'super_admin' | 'owner' | 'worker';
           created_at: string;
           updated_at: string;
@@ -66,7 +67,8 @@ export interface Database {
           id?: number;
           shop_id?: number | null;
           username: string;
-          password: string;
+          password?: string | null;
+          auth_user_id?: string | null;
           role: 'super_admin' | 'owner' | 'worker';
           created_at?: string;
           updated_at?: string;
@@ -75,7 +77,8 @@ export interface Database {
           id?: number;
           shop_id?: number | null;
           username?: string;
-          password?: string;
+          password?: string | null;
+          auth_user_id?: string | null;
           role?: 'super_admin' | 'owner' | 'worker';
           created_at?: string;
           updated_at?: string;

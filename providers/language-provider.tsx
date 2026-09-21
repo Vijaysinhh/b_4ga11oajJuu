@@ -242,6 +242,98 @@ const translations: Record<string, Record<"en" | "mr", string>> = {
     mr: "ही क्रिया पूर्ववत करता येणार नाही.",
   },
 
+  // Staff Management
+  staff: { en: "Staff", mr: "कर्मचारी" },
+  staff_management: { en: "Staff Management", mr: "कर्मचारी व्यवस्थापन" },
+  staff_management_desc: {
+    en: "Manage your team and their permissions",
+    mr: "तुमच्या टीमचे आणि त्यांच्या परवानग्यांचे व्यवस्थापन करा",
+  },
+  access_denied: { en: "Access Denied", mr: "प्रवेश नाकारला" },
+  owners_only_staff: {
+    en: "Only owners can access this page.",
+    mr: "या पृष्ठावर फक्त मालक प्रवेश करू शकतात.",
+  },
+  add_new_staff: { en: "Add New Staff Member", mr: "नवीन कर्मचारी जोडा" },
+  username: { en: "Username", mr: "वापरकर्तानाव" },
+  enter_username: { en: "Enter username", mr: "वापरकर्तानाव प्रविष्ट करा" },
+  add_staff: { en: "Add Staff", mr: "कर्मचारी जोडा" },
+  loading_staff: { en: "Loading staff...", mr: "कर्मचारी लोड होत आहेत..." },
+  no_staff: {
+    en: "No staff members yet. Add your first one above!",
+    mr: "अद्याप कर्मचारी नाहीत. वरून पहिला कर्मचारी जोडा!",
+  },
+  view_dashboard: { en: "View Dashboard", mr: "डॅशबोर्ड पहा" },
+  open_dashboard: { en: "Open the dashboard", mr: "डॅशबोर्ड उघडा" },
+  view_items: { en: "View Items", mr: "वस्तू पहा" },
+  see_stock_items: { en: "See stock items", mr: "स्टॉकमधील वस्तू पहा" },
+  view_sales: { en: "View Sales", mr: "विक्री पहा" },
+  see_sales_history: { en: "See sales history", mr: "विक्रीचा इतिहास पहा" },
+  create_sales: { en: "Create Sales", mr: "विक्री नोंदवा" },
+  record_new_sales: { en: "Record new sales", mr: "नवीन विक्री नोंदवा" },
+  view_udhari: { en: "View Udhari", mr: "उधारी पहा" },
+  see_credit_records: { en: "See credit records", mr: "उधारीच्या नोंदी पहा" },
+  allow_all: { en: "Allow All", mr: "सर्व परवानगी द्या" },
+  reset_to_default: {
+    en: "Reset to Default",
+    mr: "मूळ परवानग्या पुनर्संचयित करा",
+  },
+  staff_added: {
+    en: "Staff member added successfully!",
+    mr: "कर्मचारी यशस्वीरित्या जोडला!",
+  },
+  staff_removed: { en: "Staff member removed!", mr: "कर्मचारी हटवला!" },
+  staff_updated: { en: "Staff member updated!", mr: "कर्मचारी अद्यतनित केला!" },
+  permission_updated: {
+    en: "Permission updated!",
+    mr: "परवानगी अद्यतनित केली!",
+  },
+  all_permissions_updated: {
+    en: "All permissions updated!",
+    mr: "सर्व परवानग्या अद्यतनित केल्या!",
+  },
+  default_permissions_restored: {
+    en: "Default permissions restored!",
+    mr: "मूळ परवानग्या पुनर्संचयित केल्या!",
+  },
+  add_staff_error: {
+    en: "Could not add staff member. Please try again.",
+    mr: "कर्मचारी जोडता आला नाही. पुन्हा प्रयत्न करा.",
+  },
+  update_staff_error: {
+    en: "Could not update staff member. Please try again.",
+    mr: "कर्मचारी अद्यतनित करता आला नाही. पुन्हा प्रयत्न करा.",
+  },
+  remove_staff_error: {
+    en: "Could not remove staff member. Please try again.",
+    mr: "कर्मचारी हटवता आला नाही. पुन्हा प्रयत्न करा.",
+  },
+  permission_update_error: {
+    en: "Permission update failed. Please try again.",
+    mr: "परवानगी अद्यतन अयशस्वी झाले. पुन्हा प्रयत्न करा.",
+  },
+  sales_recorded: { en: "sales recorded", mr: "विक्री नोंदवली" },
+  report_insights_desc: {
+    en: "Visual report with sales, profit, stock, brand, and udhari insights",
+    mr: "विक्री, नफा, स्टॉक, ब्रँड आणि उधारीची दृश्य माहिती",
+  },
+  specific_month: { en: "Specific Month", mr: "विशिष्ट महिना" },
+  top_items: { en: "Top Items", mr: "सर्वाधिक विक्रीच्या वस्तू" },
+  premium_visual_report: {
+    en: "Premium visual report",
+    mr: "प्रीमियम दृश्य अहवाल",
+  },
+  premium_report_desc: {
+    en: "Overview, sales, stock, payment, and udhari insights for this period.",
+    mr: "या कालावधीतील आढावा, विक्री, स्टॉक, पेमेंट आणि उधारीची माहिती.",
+  },
+  sales_profit: { en: "Sales + profit", mr: "विक्री + नफा" },
+  stock_alerts: { en: "Stock alerts", mr: "स्टॉक सूचना" },
+  udhari_control: { en: "Udhari control", mr: "उधारी नियंत्रण" },
+  brand_staff: { en: "Brand + staff", mr: "ब्रँड + कर्मचारी" },
+  edit_staff: { en: "Edit", mr: "संपादित करा" },
+  remove_staff: { en: "Remove", mr: "हटवा" },
+
   // Login
   login_title: { en: "Dukan", mr: "दुकान" },
   login_subtitle: {

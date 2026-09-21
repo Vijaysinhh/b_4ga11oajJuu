@@ -81,8 +81,14 @@ import {
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 const BrandComparison = dynamic(
-  () => import("@/app/brand-comparison/components").then((module) => module.BrandComparison),
-  { ssr: false, loading: () => <div className="h-48 rounded-2xl border bg-card" /> },
+  () =>
+    import("@/app/brand-comparison/components").then(
+      (module) => module.BrandComparison,
+    ),
+  {
+    ssr: false,
+    loading: () => <div className="h-48 rounded-2xl border bg-card" />,
+  },
 );
 
 type ReportKey = "today" | "month" | "sixMonths" | "year";
@@ -175,7 +181,9 @@ function EditSaleDialog({
 
   const handleItemAdded = (item: any) => {
     setItems([...items, item]);
-    toast.success(`${item.itemName} ${t("success")}`, { id: "sale-item-added" });
+    toast.success(`${item.itemName} ${t("success")}`, {
+      id: "sale-item-added",
+    });
   };
 
   const handleRemoveItem = (index: number) => {
@@ -711,12 +719,7 @@ export function Dashboard() {
         }
       }
 
-      const revenue = filteredSales.reduce(
-        (sum, sale) => sum + sale.subtotal,
-        0,
-      );
-      const cost = filteredSales.reduce((sum, sale) => sum + sale.totalCost, 0);
-      const profit = revenue - cost;
+      const { revenue, cost, profit, margin } = summarizeSales(filteredSales);
 
       return {
         label,
@@ -725,7 +728,7 @@ export function Dashboard() {
         revenue,
         cost,
         profit,
-        margin: revenue > 0 ? (profit / revenue) * 100 : 0,
+        margin,
         topItems: Array.from(itemAgg.entries())
           .map(([name, value]) => ({ name, ...value }))
           .sort((a, b) => b.revenue - a.revenue)
@@ -739,6 +742,11 @@ export function Dashboard() {
 
     let filteredSales: typeof sales;
     let reportLabel: string;
+    const filterThroughSelectedDate = (startDate: string) =>
+      sales.filter((sale) => {
+        const saleDate = typeof sale?.date === "string" ? sale.date : "";
+        return saleDate >= startDate && saleDate <= selectedDateKey;
+      });
 
     switch (selectedReportType) {
       case "today":
@@ -749,10 +757,7 @@ export function Dashboard() {
         reportLabel = t("today");
         break;
       case "month":
-        filteredSales = sales.filter((sale) => {
-          const saleDate = typeof sale?.date === "string" ? sale.date : "";
-          return saleDate.startsWith(thisMonth);
-        });
+        filteredSales = filterThroughSelectedDate(`${thisMonth}-01`);
         reportLabel = t("this_month");
         break;
       case "sixMonths":
@@ -764,24 +769,27 @@ export function Dashboard() {
         const sixMonthStart = dateKey(sixMonthsAgo);
         filteredSales = sales.filter((sale) => {
           const saleDate = typeof sale?.date === "string" ? sale.date : "";
-          return saleDate >= sixMonthStart;
+          return saleDate >= sixMonthStart && saleDate <= selectedDateKey;
         });
         reportLabel = t("six_months");
         break;
       case "year":
-        filteredSales = sales.filter((sale) => {
-          const saleDate = typeof sale?.date === "string" ? sale.date : "";
-          return saleDate.startsWith(thisYear);
-        });
+        filteredSales = filterThroughSelectedDate(`${thisYear}-01-01`);
         reportLabel = t("this_year");
         break;
       case "specificMonth":
-        filteredSales = sales.filter((sale) => {
-          const saleDate = typeof sale?.date === "string" ? sale.date : "";
-          return saleDate.startsWith(selectedMonth);
-        });
         const [year, monthNum] = selectedMonth.split("-");
         const monthDate = new Date(parseInt(year), parseInt(monthNum) - 1, 1);
+        const nextMonthDate = new Date(parseInt(year), parseInt(monthNum), 1);
+        const monthEndKey = dateKey(
+          new Date(nextMonthDate.getTime() - 24 * 60 * 60 * 1000),
+        );
+        const reportEnd =
+          selectedMonth === thisMonth ? selectedDateKey : monthEndKey;
+        filteredSales = sales.filter((sale) => {
+          const saleDate = typeof sale?.date === "string" ? sale.date : "";
+          return saleDate.startsWith(selectedMonth) && saleDate <= reportEnd;
+        });
         reportLabel = monthDate.toLocaleDateString(
           language === "mr" ? "mr-IN" : "en-IN",
           {
@@ -998,7 +1006,7 @@ export function Dashboard() {
   const stockRiskSubtext =
     urgentStockInsight.expiredValue > 0 || urgentStockInsight.expiringValue > 0
       ? language === "mr"
-        ? `${expiredItems.length + expiringItems.length} expiry alert`
+        ? `${expiredItems.length + expiringItems.length} एक्सपायरी सूचना`
         : `${expiredItems.length + expiringItems.length} expiry alerts`
       : lowStockItems.length > 0
         ? language === "mr"
@@ -1009,20 +1017,22 @@ export function Dashboard() {
           : "No urgent stock risk";
   const udhariRiskLabel =
     urgentUdhari?.pressure.riskLevel === "high"
-      ? "🔴 High risk"
+      ? language === "mr"
+        ? "🔴 जास्त धोका"
+        : "🔴 High risk"
       : urgentUdhari?.pressure.riskLevel === "recover"
         ? language === "mr"
           ? "🟠 लवकर वसूल करा"
           : "🟠 Recover soon"
         : language === "mr"
-          ? "🟢 Fresh"
+          ? "🟢 नवीन"
           : "🟢 Fresh";
   const udhariSubtext = urgentUdhari
     ? language === "mr"
-      ? `₹${formatMoney(urgentUdhari.customer.balance)} ${urgentUdhari.pressure.daysPending} दिवस pending`
+      ? `₹${formatMoney(urgentUdhari.customer.balance)} ${urgentUdhari.pressure.daysPending} दिवस प्रलंबित`
       : `₹${formatMoney(urgentUdhari.customer.balance)} pending for ${urgentUdhari.pressure.daysPending} days`
     : language === "mr"
-      ? "उधारी pending नाही"
+      ? "उधारी प्रलंबित नाही"
       : "No pending udhari";
   const itemFocusHref = (itemId?: number, filter?: string | null) => {
     const params = new URLSearchParams();
@@ -1994,20 +2004,24 @@ export function Dashboard() {
         <Card className="border border-emerald-200/80 bg-gradient-to-br from-emerald-50 to-white shadow-[0_4px_16px_rgba(16,185,129,0.07)] transition-[transform,box-shadow,border-color] duration-200 hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow-[0_10px_24px_rgba(16,185,129,0.12)] dark:border-green-900/50 dark:bg-green-950/20">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium tracking-tight">
-              🟢 Today's Profit
+              🟢 {t("today_profit")}
             </CardTitle>
             <TrendingUp className="h-4 w-4 text-green-600" />
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
               <div className="flex items-baseline justify-between">
-                <span className="text-xs font-medium text-muted-foreground">Sales:</span>
+                <span className="text-xs font-medium text-muted-foreground">
+                  {t("sale")}:
+                </span>
                 <span className="text-lg font-semibold tabular-nums text-blue-700 dark:text-blue-300">
                   ₹{formatMoney(daySummary.revenue)}
                 </span>
               </div>
               <div className="flex items-baseline justify-between">
-                <span className="text-xs font-medium text-muted-foreground">Profit:</span>
+                <span className="text-xs font-medium text-muted-foreground">
+                  {t("profit_amount")}:
+                </span>
                 <span className="text-lg font-semibold tabular-nums text-green-800 dark:text-green-300">
                   ₹{formatMoney(daySummary.profit)}
                 </span>
@@ -2027,7 +2041,9 @@ export function Dashboard() {
 
         <Card className="border border-slate-200/80 bg-card shadow-[0_4px_16px_rgba(15,23,42,0.045)] transition-[transform,box-shadow,border-color] duration-200 hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-[0_10px_24px_rgba(37,99,235,0.10)]">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Bills today</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              {t("bills_today")}
+            </CardTitle>
             <ShoppingBag className="h-4 w-4 text-blue-600" />
           </CardHeader>
           <CardContent>
@@ -2035,7 +2051,7 @@ export function Dashboard() {
               {daySummary.transactions}
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
-              {daySummary.transactions === 1 ? "sale recorded" : "sales recorded"}
+              {daySummary.transactions} {t("sales_recorded")}
             </p>
             <p
               className={`mt-1 text-xs font-semibold ${
@@ -2074,7 +2090,9 @@ export function Dashboard() {
           tabIndex={0}
         >
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">⚠️ Risk</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              ⚠️ {language === "mr" ? "धोका" : "Risk"}
+            </CardTitle>
             <AlertTriangle className="h-4 w-4 text-orange-600" />
           </CardHeader>
           <CardContent>
@@ -2106,7 +2124,9 @@ export function Dashboard() {
             <WalletCards className="h-4 w-4 text-orange-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-xl font-semibold tabular-nums">{udhariRiskLabel}</div>
+            <div className="text-xl font-semibold tabular-nums">
+              {udhariRiskLabel}
+            </div>
             <p className="mt-1 text-xs text-muted-foreground">
               {udhariSubtext}
             </p>
@@ -2177,7 +2197,9 @@ export function Dashboard() {
             {language === "mr" ? "लक्ष देण्याच्या गोष्टी" : "Needs attention"}
           </h2>
           <span className="text-xs text-muted-foreground">
-            {language === "mr" ? "दुकानासाठी महत्त्वाच्या गोष्टी" : "Important shop actions, updated live"}
+            {language === "mr"
+              ? "दुकानासाठी महत्त्वाच्या गोष्टी"
+              : "Important shop actions, updated live"}
           </span>
         </div>
         <div className="grid grid-cols-3 gap-2">
@@ -2186,24 +2208,42 @@ export function Dashboard() {
             onClick={() => router.push(itemFocusHref(undefined, "lowStock"))}
             className="rounded-xl border border-red-100 bg-red-50 p-2.5 text-left transition-all hover:-translate-y-px hover:shadow-sm active:scale-[0.98]"
           >
-            <span className="block text-lg font-semibold tabular-nums text-red-700">{lowStockItems.length}</span>
-            <span className="block text-xs font-medium text-red-800">{language === "mr" ? "पुन्हा मागवा" : "Reorder"}</span>
+            <span className="block text-lg font-semibold tabular-nums text-red-700">
+              {lowStockItems.length}
+            </span>
+            <span className="block text-xs font-medium text-red-800">
+              {language === "mr" ? "पुन्हा मागवा" : "Reorder"}
+            </span>
           </button>
           <button
             type="button"
-            onClick={() => router.push(itemFocusHref(undefined, urgentStockInsight.targetFilter))}
+            onClick={() =>
+              router.push(
+                itemFocusHref(undefined, urgentStockInsight.targetFilter),
+              )
+            }
             className="rounded-xl border border-amber-100 bg-amber-50 p-2.5 text-left transition-all hover:-translate-y-px hover:shadow-sm active:scale-[0.98]"
           >
-            <span className="block text-lg font-semibold tabular-nums text-amber-700">{expiredItems.length + expiringItems.length}</span>
-            <span className="block text-xs font-medium text-amber-800">{language === "mr" ? "एक्सपायरी" : "Expiry"}</span>
+            <span className="block text-lg font-semibold tabular-nums text-amber-700">
+              {expiredItems.length + expiringItems.length}
+            </span>
+            <span className="block text-xs font-medium text-amber-800">
+              {language === "mr" ? "एक्सपायरी" : "Expiry"}
+            </span>
           </button>
           <button
             type="button"
-            onClick={() => router.push(customerFocusHref(urgentUdhari?.customer.id))}
+            onClick={() =>
+              router.push(customerFocusHref(urgentUdhari?.customer.id))
+            }
             className="rounded-xl border border-orange-100 bg-orange-50 p-2.5 text-left transition-all hover:-translate-y-px hover:shadow-sm active:scale-[0.98]"
           >
-            <span className="block text-lg font-semibold tabular-nums text-orange-700">{udhariPressures.length}</span>
-            <span className="block text-xs font-medium text-orange-800">{language === "mr" ? "उधारी वसूल" : "Collect udhari"}</span>
+            <span className="block text-lg font-semibold tabular-nums text-orange-700">
+              {udhariPressures.length}
+            </span>
+            <span className="block text-xs font-medium text-orange-800">
+              {language === "mr" ? "उधारी वसूल" : "Collect udhari"}
+            </span>
           </button>
         </div>
       </section>
@@ -2259,292 +2299,315 @@ export function Dashboard() {
               {language === "mr" ? "दिवसाची विक्री" : "Sales activity"}
             </span>
             <span className="block text-xs text-muted-foreground">
-              {daySales.length} {language === "mr" ? "बिले" : daySales.length === 1 ? "bill" : "bills"} · ₹{formatMoney(daySummary.revenue)}
+              {daySales.length}{" "}
+              {language === "mr"
+                ? "बिले"
+                : daySales.length === 1
+                  ? "bill"
+                  : "bills"}{" "}
+              · ₹{formatMoney(daySummary.revenue)}
             </span>
           </span>
-          {showDayActivity ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+          {showDayActivity ? (
+            <ChevronUp className="h-4 w-4 text-muted-foreground" />
+          ) : (
+            <ChevronDown className="h-4 w-4 text-muted-foreground" />
+          )}
         </button>
 
         {showDayActivity && (
           <div className="space-y-3 animate-in fade-in-0 slide-in-from-top-1 duration-200">
-
-        {/* Day summary bar */}
-        {daySales.length > 0 && (
-          <Card className="border bg-gradient-to-r from-green-50 to-blue-50 shadow-sm dark:from-green-950/30 dark:to-blue-950/30">
-            <CardContent className="py-3">
-              <div className="grid grid-cols-4 gap-1 text-center text-xs">
-                <div>
-                  <p className="text-muted-foreground">{t("revenue")}</p>
-                  <p className="text-sm font-bold">
-                    ₹{formatMoney(daySummary.revenue)}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground">{t("profit_amount")}</p>
-                  <p className="text-sm font-bold text-green-700 dark:text-green-400">
-                    ₹{formatMoney(daySummary.profit)}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground">{t("margin")}</p>
-                  <p className="text-sm font-bold">
-                    {formatPercent(daySummary.margin)}%
-                  </p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground">{t("transactions")}</p>
-                  <p className="text-sm font-bold">{daySummary.transactions}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {dayTopProduct && (
-          <Card className="border border-amber-200 bg-amber-50/80 shadow-sm dark:border-amber-900/50 dark:bg-amber-950/20">
-            <CardContent className="flex items-center justify-between gap-3 py-3">
-              <div className="min-w-0">
-                <p className="text-xs font-semibold text-amber-800 dark:text-amber-200">
-                  🏆{" "}
-                  {language === "mr"
-                    ? "आजचा बेस्ट विकणारा माल"
-                    : "Today's best seller"}
-                </p>
-                <p className="truncate text-base font-bold">
-                  {dayTopProduct.name}
-                </p>
-              </div>
-              <div className="shrink-0 text-right">
-                <p className="text-sm font-bold text-amber-800 dark:text-amber-200">
-                  ₹{formatMoney(dayTopProduct.revenue)}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {formatNumber(dayTopProduct.quantity)} {t("sold")}
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Empty state */}
-        {daySales.length === 0 && (
-          <Card className="border border-dashed shadow-sm">
-            <CardContent className="py-10 text-center">
-              <ShoppingBag className="mx-auto mb-3 h-10 w-10 text-muted-foreground/50" />
-              <p className="font-medium text-muted-foreground">
-                {t("no_sales_day")}
-              </p>
-              <p className="mt-1 text-xs text-muted-foreground/70">
-                {t("no_sales_day_desc")}
-              </p>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Transaction list */}
-        <div className="space-y-2">
-          {daySales.map((sale, index) => {
-            const isExpanded = expandedSaleId === sale.id;
-            const saleItems = sale.items || [];
-            const isUdhar = sale.paymentMethod === "udhar";
-
-            return (
-              <Card
-                key={sale.id ?? index}
-              className={`overflow-hidden rounded-2xl border border-slate-200/80 bg-card shadow-[0_3px_14px_rgba(15,23,42,0.04)] transition-[transform,box-shadow,border-color] duration-200 hover:border-indigo-200 hover:shadow-[0_8px_20px_rgba(79,70,229,0.08)] ${
-                  isUdhar ? "border-orange-200 dark:border-orange-800/50" : ""
-                }`}
-              >
-                {/* Collapsed header – always visible */}
-                <div className="flex items-center gap-3 px-3 py-3">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setExpandedSaleId(isExpanded ? null : (sale.id ?? null))
-                    }
-                    className="-mx-3 -my-3 flex min-w-0 flex-1 items-center gap-2.5 rounded-xl px-3 py-3 text-left transition-colors duration-150 hover:bg-slate-50 active:bg-slate-100"
-                  >
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-bold text-muted-foreground">
-                      <Clock className="h-3.5 w-3.5" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-semibold tabular-nums">
-                          {formatTime(sale.timestamp)}
-                        </span>
-                        <span
-                          className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${paymentBadgeStyles[sale.paymentMethod] || paymentBadgeStyles.cash}`}
-                        >
-                          {sale.paymentMethod === "udhar" &&
-                          sale.creditCustomerName
-                            ? sale.creditCustomerName
-                            : t(
-                                sale.paymentMethod === "udhar"
-                                  ? "udhar"
-                                  : sale.paymentMethod,
-                              )}
-                        </span>
-                      </div>
-                      <p className="truncate text-xs text-muted-foreground">
-                        {saleItems.length} {t("items_sold")} · ₹
-                        {formatMoney(sale.subtotal)}
+            {/* Day summary bar */}
+            {daySales.length > 0 && (
+              <Card className="border bg-gradient-to-r from-green-50 to-blue-50 shadow-sm dark:from-green-950/30 dark:to-blue-950/30">
+                <CardContent className="py-3">
+                  <div className="grid grid-cols-4 gap-1 text-center text-xs">
+                    <div>
+                      <p className="text-muted-foreground">{t("revenue")}</p>
+                      <p className="text-sm font-bold">
+                        ₹{formatMoney(daySummary.revenue)}
                       </p>
                     </div>
-                  </button>
-
-                  <div className="flex items-center gap-2 shrink-0 z-10">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-blue-600"
-                      onClick={() => setEditingSale(sale)}
-                    >
-                      <Edit className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-red-600"
-                      onClick={() => setDeleteSaleId(sale.id)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                    <div className="text-right">
-                      <p className="text-sm font-semibold tabular-nums">
-                        ₹{formatMoney(sale.subtotal)}
+                    <div>
+                      <p className="text-muted-foreground">
+                        {t("profit_amount")}
                       </p>
-                      <p className="text-[11px] font-medium text-green-600 dark:text-green-400">
-                        +₹{formatMoney(sale.totalProfit)}
+                      <p className="text-sm font-bold text-green-700 dark:text-green-400">
+                        ₹{formatMoney(daySummary.profit)}
                       </p>
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8"
-                      onClick={() =>
-                        setExpandedSaleId(isExpanded ? null : (sale.id ?? null))
-                      }
-                    >
-                      {isExpanded ? (
-                        <ChevronUp className="h-4 w-4 text-muted-foreground" />
-                      ) : (
-                        <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                      )}
-                    </Button>
+                    <div>
+                      <p className="text-muted-foreground">{t("margin")}</p>
+                      <p className="text-sm font-bold">
+                        {formatPercent(daySummary.margin)}%
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">
+                        {t("transactions")}
+                      </p>
+                      <p className="text-sm font-bold">
+                        {daySummary.transactions}
+                      </p>
+                    </div>
                   </div>
-                </div>
+                </CardContent>
+              </Card>
+            )}
 
-                {/* Expanded detail – per-item breakdown */}
-                {isExpanded && (
-                  <div className="border-t bg-muted/20 px-3 pb-3 pt-2">
-                    <div className="space-y-2">
-                      {saleItems.map((saleItem: any, idx: number) => {
-                        const displayItem = inferSaleLineDisplayFields(
-                          saleItem,
-                          priceTiers,
-                          units,
-                          saleItem.itemId,
-                        );
-                        const currentStock = saleItem.itemId
-                          ? itemMap.get(saleItem.itemId)
-                          : null;
-                        const itemProfit = Number(saleItem.profit || 0);
-                        const itemMargin =
-                          Number(saleItem.totalPrice) > 0
-                            ? (itemProfit / Number(saleItem.totalPrice)) * 100
-                            : 0;
+            {dayTopProduct && (
+              <Card className="border border-amber-200 bg-amber-50/80 shadow-sm dark:border-amber-900/50 dark:bg-amber-950/20">
+                <CardContent className="flex items-center justify-between gap-3 py-3">
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-amber-800 dark:text-amber-200">
+                      🏆{" "}
+                      {language === "mr"
+                        ? "आजचा बेस्ट विकणारा माल"
+                        : "Today's best seller"}
+                    </p>
+                    <p className="truncate text-base font-bold">
+                      {dayTopProduct.name}
+                    </p>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <p className="text-sm font-bold text-amber-800 dark:text-amber-200">
+                      ₹{formatMoney(dayTopProduct.revenue)}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {formatNumber(dayTopProduct.quantity)} {t("sold")}
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
 
-                        return (
-                          <div
-                            key={idx}
-                            className="rounded-lg border bg-background p-2.5"
-                          >
-                            <div className="flex items-start justify-between gap-2">
-                              <div className="min-w-0 flex-1">
-                                <p className="truncate text-sm font-semibold">
-                                  {language === "mr" &&
-                                  currentStock?.nameMarathi
-                                    ? currentStock.nameMarathi
-                                    : saleItem.itemName}
-                                </p>
-                                <p className="text-xs text-muted-foreground">
-                                  {formatSaleLineSubtitle(displayItem)}
-                                </p>
-                              </div>
-                              <p className="shrink-0 text-sm font-bold">
-                                ₹{formatMoney(saleItem.totalPrice)}
-                              </p>
-                            </div>
+            {/* Empty state */}
+            {daySales.length === 0 && (
+              <Card className="border border-dashed shadow-sm">
+                <CardContent className="py-10 text-center">
+                  <ShoppingBag className="mx-auto mb-3 h-10 w-10 text-muted-foreground/50" />
+                  <p className="font-medium text-muted-foreground">
+                    {t("no_sales_day")}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground/70">
+                    {t("no_sales_day_desc")}
+                  </p>
+                </CardContent>
+              </Card>
+            )}
 
-                            <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
-                              <span className="text-green-600 dark:text-green-400">
-                                {t("profit_amount")}: ₹{formatMoney(itemProfit)}
-                              </span>
-                              <span className="text-muted-foreground">
-                                {t("margin")}: {formatPercent(itemMargin)}%
-                              </span>
-                              {currentStock && (
-                                <span className="text-blue-600 dark:text-blue-400">
-                                  {t("stock_left")}:{" "}
-                                  {formatNumber(currentStock.quantity)}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
+            {/* Transaction list */}
+            <div className="space-y-2">
+              {daySales.map((sale, index) => {
+                const isExpanded = expandedSaleId === sale.id;
+                const saleItems = sale.items || [];
+                const isUdhar = sale.paymentMethod === "udhar";
 
-                    {/* Transaction-level footer with Edit/Delete buttons */}
-                    <div className="mt-2 space-y-2">
-                      <div className="flex items-center justify-between rounded-md bg-muted/60 px-2.5 py-2 text-xs">
-                        <div className="flex gap-3">
-                          <span>
-                            {t("cost")}:{" "}
-                            <span className="font-semibold">
-                              ₹{formatMoney(sale.totalCost)}
-                            </span>
-                          </span>
-                          <span className="text-green-700 dark:text-green-400">
-                            {t("profit_amount")}:{" "}
-                            <span className="font-semibold">
-                              ₹{formatMoney(sale.totalProfit)}
-                            </span>
-                          </span>
+                return (
+                  <Card
+                    key={sale.id ?? index}
+                    className={`overflow-hidden rounded-2xl border border-slate-200/80 bg-card shadow-[0_3px_14px_rgba(15,23,42,0.04)] transition-[transform,box-shadow,border-color] duration-200 hover:border-indigo-200 hover:shadow-[0_8px_20px_rgba(79,70,229,0.08)] ${
+                      isUdhar
+                        ? "border-orange-200 dark:border-orange-800/50"
+                        : ""
+                    }`}
+                  >
+                    {/* Collapsed header – always visible */}
+                    <div className="flex items-center gap-3 px-3 py-3">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setExpandedSaleId(
+                            isExpanded ? null : (sale.id ?? null),
+                          )
+                        }
+                        className="-mx-3 -my-3 flex min-w-0 flex-1 items-center gap-2.5 rounded-xl px-3 py-3 text-left transition-colors duration-150 hover:bg-slate-50 active:bg-slate-100"
+                      >
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-bold text-muted-foreground">
+                          <Clock className="h-3.5 w-3.5" />
                         </div>
-                        <span className="font-semibold">
-                          {formatPercent(sale.profitMarginPercent)}%
-                        </span>
-                      </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-semibold tabular-nums">
+                              {formatTime(sale.timestamp)}
+                            </span>
+                            <span
+                              className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${paymentBadgeStyles[sale.paymentMethod] || paymentBadgeStyles.cash}`}
+                            >
+                              {sale.paymentMethod === "udhar" &&
+                              sale.creditCustomerName
+                                ? sale.creditCustomerName
+                                : t(
+                                    sale.paymentMethod === "udhar"
+                                      ? "udhar"
+                                      : sale.paymentMethod,
+                                  )}
+                            </span>
+                          </div>
+                          <p className="truncate text-xs text-muted-foreground">
+                            {saleItems.length} {t("items_sold")} · ₹
+                            {formatMoney(sale.subtotal)}
+                          </p>
+                        </div>
+                      </button>
 
-                      {/* Edit and Delete buttons */}
-                      <div className="flex gap-2">
+                      <div className="flex items-center gap-2 shrink-0 z-10">
                         <Button
-                          variant="outline"
-                          size="sm"
-                          className="flex-1"
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-blue-600"
                           onClick={() => setEditingSale(sale)}
                         >
-                          <Edit className="h-4 w-4 mr-1" />
-                          Edit
+                          <Edit className="h-4 w-4" />
                         </Button>
                         <Button
-                          variant="destructive"
-                          size="sm"
-                          className="flex-1"
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-red-600"
                           onClick={() => setDeleteSaleId(sale.id)}
                         >
-                          <Trash2 className="h-4 w-4 mr-1" />
-                          Delete
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                        <div className="text-right">
+                          <p className="text-sm font-semibold tabular-nums">
+                            ₹{formatMoney(sale.subtotal)}
+                          </p>
+                          <p className="text-[11px] font-medium text-green-600 dark:text-green-400">
+                            +₹{formatMoney(sale.totalProfit)}
+                          </p>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={() =>
+                            setExpandedSaleId(
+                              isExpanded ? null : (sale.id ?? null),
+                            )
+                          }
+                        >
+                          {isExpanded ? (
+                            <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                          ) : (
+                            <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                          )}
                         </Button>
                       </div>
                     </div>
-                  </div>
-                )}
-              </Card>
-            );
-          })}
-        </div>
+
+                    {/* Expanded detail – per-item breakdown */}
+                    {isExpanded && (
+                      <div className="border-t bg-muted/20 px-3 pb-3 pt-2">
+                        <div className="space-y-2">
+                          {saleItems.map((saleItem: any, idx: number) => {
+                            const displayItem = inferSaleLineDisplayFields(
+                              saleItem,
+                              priceTiers,
+                              units,
+                              saleItem.itemId,
+                            );
+                            const currentStock = saleItem.itemId
+                              ? itemMap.get(saleItem.itemId)
+                              : null;
+                            const itemProfit = Number(saleItem.profit || 0);
+                            const itemMargin =
+                              Number(saleItem.totalPrice) > 0
+                                ? (itemProfit / Number(saleItem.totalPrice)) *
+                                  100
+                                : 0;
+
+                            return (
+                              <div
+                                key={idx}
+                                className="rounded-lg border bg-background p-2.5"
+                              >
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="min-w-0 flex-1">
+                                    <p className="truncate text-sm font-semibold">
+                                      {language === "mr" &&
+                                      currentStock?.nameMarathi
+                                        ? currentStock.nameMarathi
+                                        : saleItem.itemName}
+                                    </p>
+                                    <p className="text-xs text-muted-foreground">
+                                      {formatSaleLineSubtitle(displayItem)}
+                                    </p>
+                                  </div>
+                                  <p className="shrink-0 text-sm font-bold">
+                                    ₹{formatMoney(saleItem.totalPrice)}
+                                  </p>
+                                </div>
+
+                                <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
+                                  <span className="text-green-600 dark:text-green-400">
+                                    {t("profit_amount")}: ₹
+                                    {formatMoney(itemProfit)}
+                                  </span>
+                                  <span className="text-muted-foreground">
+                                    {t("margin")}: {formatPercent(itemMargin)}%
+                                  </span>
+                                  {currentStock && (
+                                    <span className="text-blue-600 dark:text-blue-400">
+                                      {t("stock_left")}:{" "}
+                                      {formatNumber(currentStock.quantity)}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        {/* Transaction-level footer with Edit/Delete buttons */}
+                        <div className="mt-2 space-y-2">
+                          <div className="flex items-center justify-between rounded-md bg-muted/60 px-2.5 py-2 text-xs">
+                            <div className="flex gap-3">
+                              <span>
+                                {t("cost")}:{" "}
+                                <span className="font-semibold">
+                                  ₹{formatMoney(sale.totalCost)}
+                                </span>
+                              </span>
+                              <span className="text-green-700 dark:text-green-400">
+                                {t("profit_amount")}:{" "}
+                                <span className="font-semibold">
+                                  ₹{formatMoney(sale.totalProfit)}
+                                </span>
+                              </span>
+                            </div>
+                            <span className="font-semibold">
+                              {formatPercent(sale.profitMarginPercent)}%
+                            </span>
+                          </div>
+
+                          {/* Edit and Delete buttons */}
+                          <div className="flex gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="flex-1"
+                              onClick={() => setEditingSale(sale)}
+                            >
+                              <Edit className="h-4 w-4 mr-1" />
+                              Edit
+                            </Button>
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              className="flex-1"
+                              onClick={() => setDeleteSaleId(sale.id)}
+                            >
+                              <Trash2 className="h-4 w-4 mr-1" />
+                              Delete
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </Card>
+                );
+              })}
+            </div>
           </div>
         )}
       </section>
@@ -2559,8 +2622,7 @@ export function Dashboard() {
             <div>
               <h2 className="text-xl font-bold">{t("reports")}</h2>
               <p className="text-xs text-muted-foreground">
-                Visual report with sales, profit, stock, brand, and udhari
-                insights
+                {t("report_insights_desc")}
               </p>
             </div>
           </div>
@@ -2583,7 +2645,7 @@ export function Dashboard() {
                     <SelectItem value="sixMonths">{t("six_months")}</SelectItem>
                     <SelectItem value="year">{t("this_year")}</SelectItem>
                     <SelectItem value="specificMonth">
-                      Specific Month
+                      {t("specific_month")}
                     </SelectItem>
                   </SelectContent>
                 </Select>
@@ -2635,7 +2697,7 @@ export function Dashboard() {
                     className="h-9 gap-2 border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 hover:text-blue-800"
                   >
                     <BarChart3 className="h-4 w-4" />
-                    View report
+                    {t("view_report")}
                   </Button>
                 </div>
               </div>
@@ -2679,7 +2741,7 @@ export function Dashboard() {
                 {currentReport.topItems.length > 0 && (
                   <div className="mt-4">
                     <p className="text-xs text-muted-foreground mb-2 font-semibold">
-                      Top Items
+                      {t("top_items")}
                     </p>
                     <div className="space-y-1">
                       {currentReport.topItems.map((item, index) => (
@@ -2702,11 +2764,10 @@ export function Dashboard() {
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="text-sm font-semibold text-blue-950">
-                      Premium visual report
+                      {t("premium_visual_report")}
                     </p>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      Overview, sales, stock, payment, and udhari insights for
-                      this period.
+                      {t("premium_report_desc")}
                     </p>
                   </div>
                   <BarChart3 className="h-5 w-5 shrink-0 text-blue-700" />
@@ -2714,19 +2775,19 @@ export function Dashboard() {
                 <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
                   <div className="flex items-center gap-2 rounded-md bg-white/80 px-2 py-2">
                     <TrendingUp className="h-3.5 w-3.5 text-green-600" />
-                    <span>Sales + profit</span>
+                    <span>{t("sales_profit")}</span>
                   </div>
                   <div className="flex items-center gap-2 rounded-md bg-white/80 px-2 py-2">
                     <Package className="h-3.5 w-3.5 text-amber-600" />
-                    <span>Stock alerts</span>
+                    <span>{t("stock_alerts")}</span>
                   </div>
                   <div className="flex items-center gap-2 rounded-md bg-white/80 px-2 py-2">
                     <WalletCards className="h-3.5 w-3.5 text-orange-600" />
-                    <span>Udhari control</span>
+                    <span>{t("udhari_control")}</span>
                   </div>
                   <div className="flex items-center gap-2 rounded-md bg-white/80 px-2 py-2">
                     <BarChart3 className="h-3.5 w-3.5 text-blue-600" />
-                    <span>Brand + staff</span>
+                    <span>{t("brand_staff")}</span>
                   </div>
                 </div>
               </div>
@@ -2736,17 +2797,17 @@ export function Dashboard() {
       </section>
 
       {/* ─── Brand Comparison Section ─── */}
-      {(
-      <div className="order-9 [content-visibility:auto] [contain-intrinsic-size:auto_500px] animate-in fade-in-0 slide-in-from-top-1 duration-200">
-        <BrandComparison
-          showOnlyTop5={true}
-          selectedReportType={selectedReportType}
-          setSelectedReportType={setSelectedReportType}
-          selectedMonth={selectedMonth}
-          setSelectedMonth={setSelectedMonth}
-        />
-      </div>
-      )}
+      {
+        <div className="order-9 [content-visibility:auto] [contain-intrinsic-size:auto_500px] animate-in fade-in-0 slide-in-from-top-1 duration-200">
+          <BrandComparison
+            showOnlyTop5={true}
+            selectedReportType={selectedReportType}
+            setSelectedReportType={setSelectedReportType}
+            selectedMonth={selectedMonth}
+            setSelectedMonth={setSelectedMonth}
+          />
+        </div>
+      }
 
       {/* ─── Highest Udhar Customer ─── */}
       {highestUdharCustomer && (
@@ -2935,7 +2996,10 @@ export function Dashboard() {
           </div>
           {lowStockItems.length > 8 && (
             <p className="text-xs text-muted-foreground text-center pt-2">
-              +{lowStockItems.length - 8} more items with low stock
+              +{lowStockItems.length - 8}{" "}
+              {language === "mr"
+                ? "कमी स्टॉकच्या आणखी वस्तू"
+                : "more items with low stock"}
             </p>
           )}
         </section>
@@ -2948,7 +3012,7 @@ export function Dashboard() {
             <div className="flex items-center gap-2">
               <AlertTriangle className="w-5 h-5 text-orange-600" />
               <h2 className="text-xl font-bold text-orange-700">
-                Expiry Alerts
+                {language === "mr" ? "एक्सपायरी सूचना" : "Expiry Alerts"}
               </h2>
               <span className="inline-flex items-center justify-center w-6 h-6 bg-orange-600 text-white text-xs font-bold rounded-full">
                 {expiredItems.length + expiringItems.length}
@@ -2960,7 +3024,7 @@ export function Dashboard() {
               onClick={() => (window.location.href = "/items")}
               className="text-xs"
             >
-              Manage Items
+              {language === "mr" ? "वस्तू व्यवस्थापित करा" : "Manage Items"}
             </Button>
           </div>
 
@@ -2969,7 +3033,8 @@ export function Dashboard() {
             <div className="space-y-2">
               <h3 className="text-sm font-semibold text-red-700 flex items-center gap-1">
                 <span className="w-2 h-2 bg-red-600 rounded-full"></span>
-                Expired ({expiredItems.length})
+                {language === "mr" ? "कालबाह्य" : "Expired"} (
+                {expiredItems.length})
               </h3>
               <div className="grid gap-2">
                 {expiredItems.slice(0, 5).map((item) => {
@@ -2997,7 +3062,9 @@ export function Dashboard() {
                             : item.name}
                         </p>
                         <p className="text-xs text-red-700 mt-1">
-                          Expired on:{" "}
+                          {language === "mr"
+                            ? "कालबाह्य तारीख:"
+                            : "Expired on:"}{" "}
                           {expiryDate.toLocaleDateString(
                             language === "mr" ? "mr-IN" : "en-IN",
                           )}
@@ -3017,7 +3084,10 @@ export function Dashboard() {
               </div>
               {expiredItems.length > 5 && (
                 <p className="text-xs text-red-600 text-center pt-1">
-                  +{expiredItems.length - 5} more expired items
+                  +{expiredItems.length - 5}{" "}
+                  {language === "mr"
+                    ? "आणखी कालबाह्य वस्तू"
+                    : "more expired items"}
                 </p>
               )}
             </div>

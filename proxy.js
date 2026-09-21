@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
+import { createServerClient } from "@supabase/auth-helpers-nextjs";
 
-export function proxy(request) {
+export async function proxy(request) {
   return handleAuthRedirect(request, "[Proxy]");
 }
 
-export function handleAuthRedirect(request, label = "[Proxy]") {
+export async function handleAuthRedirect(request, label = "[Proxy]") {
   const pathname = request.nextUrl.pathname;
 
   const publicRoutes = ["/login", "/login/superadmin", "/api/auth", "/offline"];
@@ -34,13 +35,25 @@ export function handleAuthRedirect(request, label = "[Proxy]") {
     return response;
   }
 
-  const cookieObj = request.cookies.get("authToken");
-  const authToken =
-    typeof cookieObj === "object" ? cookieObj?.value : cookieObj;
-
-  if (!authToken) {
+  const response = NextResponse.next();
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    {
+      cookies: {
+        getAll: () => request.cookies.getAll(),
+        setAll: (cookies) => {
+          cookies.forEach(({ name, value, options }) =>
+            response.cookies.set(name, value, options),
+          );
+        },
+      },
+    },
+  );
+  const { data: { user }, error } = await supabase.auth.getUser();
+  if (error || !user) {
     console.log(
-      `${label} Unauthenticated access to ${pathname}, redirecting to login. Cookie: ${!!cookieObj}`,
+      `${label} Unauthenticated access to ${pathname}, redirecting to login.`,
     );
     const redirectUrl = new URL("/login", request.url);
     const response = NextResponse.redirect(redirectUrl);
@@ -48,7 +61,6 @@ export function handleAuthRedirect(request, label = "[Proxy]") {
     return response;
   }
 
-  const response = NextResponse.next();
   addSecurityHeaders(response);
   return response;
 }
@@ -63,7 +75,7 @@ function addSecurityHeaders(response) {
   // Content Security Policy (CSP)
   response.headers.set(
     "Content-Security-Policy",
-    "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://*.supabase.co https://vitals.vercel-insights.com; object-src 'none'; frame-ancestors 'none'; base-uri 'self';",
+    "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://vitals.vercel-insights.com; object-src 'none'; frame-ancestors 'none'; base-uri 'self';",
   );
 }
 

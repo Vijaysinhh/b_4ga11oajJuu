@@ -20,6 +20,27 @@ export function useStaff() {
   const [isLoading, setIsLoading] = useState(false);
   const supabase = useMemo(() => createClient(), []);
 
+  const staffRequest = useCallback(
+    async (path: string, init: RequestInit) => {
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) throw new Error("Your session has expired");
+      const response = await fetch(path, {
+        ...init,
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+          ...init.headers,
+        },
+      });
+      const body = await response.json();
+      if (!response.ok)
+        throw new Error(body.error || "Staff operation failed");
+      return body;
+    },
+    [supabase],
+  );
+
   const fetchStaff = useCallback(async () => {
     if (!currentShopId || user?.role !== "owner") return;
 
@@ -90,18 +111,10 @@ export function useStaff() {
       if (!currentShopId || user?.role !== "owner") return;
 
       try {
-        const { data: newUser, error: userError } = await (supabase as any)
-          .from("users")
-          .insert({
-            shop_id: currentShopId,
-            username,
-            password,
-            role: "worker",
-          })
-          .select("*")
-          .single();
-
-        if (userError) throw userError;
+        const { user: newUser } = await staffRequest("/api/staff", {
+          method: "POST",
+          body: JSON.stringify({ username, password }),
+        });
 
         if (newUser) {
           const defaultPermissions = normalizeUserPermissions(
@@ -137,7 +150,7 @@ export function useStaff() {
       }
       return false;
     },
-    [currentShopId, user?.role, supabase, fetchStaff],
+    [currentShopId, user?.role, staffRequest, fetchStaff],
   );
 
   const updateStaff = useCallback(
@@ -145,16 +158,10 @@ export function useStaff() {
       if (!currentShopId || user?.role !== "owner") return;
 
       try {
-        const updateData: any = {};
-        if (username) updateData.username = username;
-        if (password) updateData.password = password;
-
-        const { error } = await (supabase as any)
-          .from("users")
-          .update(updateData)
-          .eq("id", userId);
-
-        if (error) throw error;
+        await staffRequest("/api/staff", {
+          method: "PATCH",
+          body: JSON.stringify({ userId, username, password }),
+        });
 
         setStaff((prev) =>
           prev.map((member) =>
@@ -175,7 +182,7 @@ export function useStaff() {
       }
       return false;
     },
-    [currentShopId, user?.role, supabase, fetchStaff],
+    [currentShopId, user?.role, staffRequest, fetchStaff],
   );
 
   const updateStaffPermissions = useCallback(
@@ -277,22 +284,10 @@ export function useStaff() {
       try {
         setStaff((prev) => prev.filter((member) => member.id !== userId));
 
-        // Delete user roles first
-        const { error: roleError } = await (supabase as any)
-          .from("user_roles")
-          .delete()
-          .eq("user_id", userId)
-          .eq("shop_id", currentShopId);
-
-        if (roleError) throw roleError;
-
-        // Delete user
-        const { error: userError } = await (supabase as any)
-          .from("users")
-          .delete()
-          .eq("id", userId);
-
-        if (userError) throw userError;
+        await staffRequest(
+          `/api/staff?userId=${encodeURIComponent(userId)}`,
+          { method: "DELETE" },
+        );
 
         await fetchStaff();
         return true;
@@ -310,7 +305,7 @@ export function useStaff() {
       }
       return false;
     },
-    [currentShopId, user?.role, supabase, fetchStaff],
+    [currentShopId, user?.role, staffRequest, fetchStaff],
   );
 
   useEffect(() => {

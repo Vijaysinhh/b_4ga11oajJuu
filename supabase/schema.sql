@@ -290,12 +290,8 @@ CREATE TABLE IF NOT EXISTS system_health_checks (
     checked_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- ============================================
--- INSERT SUPER ADMIN USER
--- ============================================
-INSERT INTO users (username, password, role) 
-VALUES ('vijaysinhjadhav23@gmail.com', 'Vijaysinh@23', 'super_admin')
-ON CONFLICT DO NOTHING;
+-- Authentication accounts must be created in Supabase Auth. Never seed
+-- credentials in public tables. Apply all migrations after this baseline.
 
 -- ============================================
 -- INDEXES

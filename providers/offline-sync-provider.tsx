@@ -50,9 +50,14 @@ export function OfflineSyncProvider({
 
     setIsSyncing(true);
     try {
-      const result = await flushPendingMutations();
+      const result = await flushPendingMutations(currentShopId ?? undefined);
       setIsOnline(true);
       setPendingCount(result.remaining);
+      if (result.failed > 0 || result.blocked > 0) {
+        console.warn(
+          `[Dukan] Offline sync paused: ${result.failed} failed and ${result.blocked} blocked mutation(s).`,
+        );
+      }
       if (result.synced > 0) {
         setLastSyncedAt(Date.now());
         window.dispatchEvent(new Event("refresh-dukan-data"));

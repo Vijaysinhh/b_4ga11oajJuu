@@ -5,6 +5,7 @@ import { db, type CloudCacheEntry, type SyncQueueEntry } from "@/lib/db";
 const OFFLINE_ID_KEY = "dukan-next-offline-id";
 const NETWORK_ERROR_PATTERN =
   /failed to fetch|fetch failed|networkerror|network request failed|timed out|abort|service unavailable|503|offline/i;
+const MAX_SYNC_ATTEMPTS = 5;
 
 export function isBrowserOnline() {
   return typeof navigator === "undefined" || navigator.onLine;
@@ -169,6 +170,7 @@ export async function queueUpsert(
     row: JSON.parse(JSON.stringify(row)),
     createdAt: Date.now(),
     attempts: 0,
+    status: "pending",
   };
   await db.syncQueue.add(entry);
   await upsertCachedRow(shopId, table, row);
@@ -183,6 +185,7 @@ export async function queueDelete(shopId: number, table: string, id: number) {
     matchId: id,
     createdAt: Date.now(),
     attempts: 0,
+    status: "pending",
   };
   await db.syncQueue.add(entry);
   await removeCachedRow(shopId, table, id);
@@ -249,17 +252,43 @@ export async function executeWithOfflineDelete(options: {
   }
 }
 
-export async function flushPendingMutations() {
+export async function flushPendingMutations(shopId?: number) {
   await ensureDatabase();
-  if (!isBrowserOnline())
-    return { synced: 0, remaining: await getPendingSyncCount() };
+  if (!isBrowserOnline()) {
+    return {
+      synced: 0,
+      failed: 0,
+      blocked: 0,
+      remaining: await getPendingSyncCount(shopId),
+    };
+  }
+
+  if (!shopId) {
+    return {
+      synced: 0,
+      failed: 0,
+      blocked: 0,
+      remaining: await getPendingSyncCount(),
+    };
+  }
 
   const { createClient } = await import("@/lib/supabase");
   const supabase = createClient();
-  const entries = await db.syncQueue.orderBy("createdAt").toArray();
+  const entries = (await db.syncQueue.orderBy("createdAt").toArray()).filter(
+    (entry) => entry.shopId === shopId,
+  );
   let synced = 0;
+  let failed = 0;
+  let blocked = 0;
 
   for (const entry of entries) {
+    if (entry.status === "failed") {
+      blocked = entries.filter(
+        (queuedEntry) => queuedEntry.createdAt >= entry.createdAt,
+      ).length;
+      break;
+    }
+
     try {
       if (entry.operation === "upsert" && entry.row) {
         const { error } = await (supabase as any)
@@ -278,10 +307,13 @@ export async function flushPendingMutations() {
       synced += 1;
     } catch (error) {
       if (entry.id !== undefined) {
+        const attempts = (entry.attempts || 0) + 1;
         await db.syncQueue.update(entry.id, {
-          attempts: (entry.attempts || 0) + 1,
+          attempts,
           lastError: error instanceof Error ? error.message : String(error),
+          status: attempts >= MAX_SYNC_ATTEMPTS ? "failed" : "pending",
         });
+        if (attempts >= MAX_SYNC_ATTEMPTS) failed += 1;
       }
       // Preserve queue order so dependent offline rows (sale -> sale items)
       // are replayed in the same order they were created.
@@ -290,7 +322,12 @@ export async function flushPendingMutations() {
   }
 
   dispatchSyncEvent();
-  return { synced, remaining: await getPendingSyncCount() };
+  return {
+    synced,
+    failed,
+    blocked,
+    remaining: await getPendingSyncCount(shopId),
+  };
 }
 
 export function dispatchSyncEvent() {

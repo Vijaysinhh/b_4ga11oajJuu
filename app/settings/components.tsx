@@ -173,7 +173,8 @@ function WorkersManagement() {
     setEditingWorker(worker);
     setFormData({
       username: worker.username,
-      password: worker.password,
+      // Passwords live only in Supabase Auth and are never readable by the app.
+      password: '',
     });
     setIsDialogOpen(true);
   };

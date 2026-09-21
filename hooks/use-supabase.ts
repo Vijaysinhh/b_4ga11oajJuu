@@ -4,8 +4,15 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase";
 import type { Database } from "@/lib/db-supabase-types";
 import { dateKey } from "@/lib/utils";
-import { hasInvalidSalePrice, hasInvalidSaleQuantity } from "@/lib/sale-quantity";
-import { getSalePaymentBreakdown, getStoredCreditAmount } from "@/lib/sale-payment";
+import {
+  hasInvalidSalePrice,
+  hasInvalidSaleQuantity,
+} from "@/lib/sale-quantity";
+import {
+  getSalePaymentBreakdown,
+  getStoredCreditAmount,
+} from "@/lib/sale-payment";
+import { summarizeSales } from "@/lib/dukan-insights";
 import {
   createOfflineId,
   executeWithOfflineDelete,
@@ -96,21 +103,21 @@ const mapUnit = (row: Partial<Unit> | Record<string, unknown>) => ({
 });
 
 const mapItem = (row: any) => ({
-  id: row.id,
-  shopId: row.shop_id,
+  id: Number(row.id),
+  shopId: Number(row.shop_id),
   name: row.name,
   nameMarathi: row.name_marathi || "",
   brand: row.brand || "",
   brandMarathi: row.brand_marathi || "",
-  categoryId: row.category_id,
-  unitId: row.unit_id,
-  quantity: row.quantity,
+  categoryId: Number(row.category_id),
+  unitId: Number(row.unit_id),
+  quantity: Number(row.quantity || 0),
   expiryDate: row.expiry_date ?? null,
-  buyPrice: row.buy_price,
-  sellPrice: row.sell_price,
-  marginAmount: row.margin_amount,
-  marginPercent: row.margin_percent,
-  lowStockLimit: row.low_stock_limit,
+  buyPrice: Number(row.buy_price || 0),
+  sellPrice: Number(row.sell_price || 0),
+  marginAmount: Number(row.margin_amount || 0),
+  marginPercent: Number(row.margin_percent || 0),
+  lowStockLimit: Number(row.low_stock_limit || 0),
   createdAt: new Date(row.created_at).getTime(),
   updatedAt: new Date(row.updated_at).getTime(),
 });
@@ -678,20 +685,21 @@ export function usePriceTiers(shopId?: number) {
 
 // --- Sales & Sale Items ---
 const mapSale = (row: any) => ({
-  id: row.id,
-  shopId: row.shop_id,
+  id: Number(row.id),
+  shopId: Number(row.shop_id),
   date: row.date,
   timestamp: new Date(row.timestamp).getTime(),
-  totalQuantityItems: row.total_quantity_items,
-  subtotal: row.subtotal,
-  totalCost: row.total_cost,
-  totalProfit: row.total_profit,
-  profitMarginPercent: row.profit_margin_percent,
+  totalQuantityItems: Number(row.total_quantity_items || 0),
+  subtotal: Number(row.subtotal || 0),
+  totalCost: Number(row.total_cost || 0),
+  totalProfit: Number(row.total_profit || 0),
+  profitMarginPercent: Number(row.profit_margin_percent || 0),
   paymentMethod: row.payment_method === "udhari" ? "udhar" : row.payment_method,
   paidAmount: Number(row.paid_amount || 0),
   dueAmount: Number(row.due_amount || 0),
   paidVia: row.paid_via || undefined,
-  creditCustomerId: row.credit_customer_id,
+  creditCustomerId:
+    row.credit_customer_id != null ? Number(row.credit_customer_id) : null,
   creditCustomerName: row.credit_customer_name,
   notes: row.notes,
   createdAt: new Date(row.created_at).getTime(),
@@ -699,14 +707,14 @@ const mapSale = (row: any) => ({
 });
 
 const mapSaleItem = (row: any) => ({
-  id: row.id,
-  shopId: row.shop_id,
-  saleId: row.sale_id,
-  itemId: row.item_id,
+  id: Number(row.id),
+  shopId: Number(row.shop_id),
+  saleId: Number(row.sale_id),
+  itemId: row.item_id != null ? Number(row.item_id) : null,
   itemName: row.item_name,
   quantity: Number(row.quantity),
   displayQuantity: row.display_quantity ?? undefined,
-  unitId: row.unit_id,
+  unitId: row.unit_id != null ? Number(row.unit_id) : null,
   unitShortForm: row.unit_short_form,
   priceTierId: row.price_tier_id ?? undefined,
   packCount: row.pack_count != null ? Number(row.pack_count) : undefined,
@@ -715,11 +723,11 @@ const mapSaleItem = (row: any) => ({
       ? Number(row.price_tier_quantity)
       : undefined,
   priceTierUnitShortForm: row.price_tier_unit_short_form ?? undefined,
-  pricePerUnit: row.price_per_unit,
-  totalPrice: row.total_price,
-  costPerUnit: row.cost_per_unit,
-  totalCost: row.total_cost,
-  profit: row.profit,
+  pricePerUnit: Number(row.price_per_unit || 0),
+  totalPrice: Number(row.total_price || 0),
+  costPerUnit: Number(row.cost_per_unit || 0),
+  totalCost: Number(row.total_cost || 0),
+  profit: Number(row.profit || 0),
   createdAt: new Date(row.created_at).getTime(),
 });
 
@@ -793,8 +801,15 @@ export function useSales(shopId?: number) {
 
   const createSale = useCallback(
     async (saleData: any) => {
-      if (!Array.isArray(saleData.items) || saleData.items.length === 0 || hasInvalidSaleQuantity(saleData.items) || hasInvalidSalePrice(saleData.items)) {
-        throw new Error("Every sale item must have a positive quantity and selling price.");
+      if (
+        !Array.isArray(saleData.items) ||
+        saleData.items.length === 0 ||
+        hasInvalidSaleQuantity(saleData.items) ||
+        hasInvalidSalePrice(saleData.items)
+      ) {
+        throw new Error(
+          "Every sale item must have a positive quantity and selling price.",
+        );
       }
       const effectiveShopId = resolveShopId(shopId);
       if (!effectiveShopId) return null;
@@ -812,7 +827,9 @@ export function useSales(shopId?: number) {
         saleData.paidVia || "cash",
       );
       if (!paymentBreakdown.isValid) {
-        throw new Error("Enter a valid payment amount before completing the sale.");
+        throw new Error(
+          "Enter a valid payment amount before completing the sale.",
+        );
       }
       if (paymentBreakdown.dueAmount > 0 && !saleData.creditCustomerId) {
         throw new Error("A customer is required when an amount remains due.");
@@ -850,7 +867,9 @@ export function useSales(shopId?: number) {
             .single();
           const isMissingPaymentColumns =
             (error as any)?.code === "PGRST204" &&
-            /(?:paid_amount|due_amount|paid_via)/.test((error as any)?.message || "");
+            /(?:paid_amount|due_amount|paid_via)/.test(
+              (error as any)?.message || "",
+            );
           if (isMissingPaymentColumns && paymentMethod !== "partial") {
             const {
               paid_amount: _paidAmount,
@@ -876,9 +895,12 @@ export function useSales(shopId?: number) {
               (error as any)?.message ||
               (error as any)?.details ||
               "Could not save the sale record";
-            throw new Error(`Sales save failed [${(error as any)?.code || "ERR"}]: ${msg}`, {
-              cause: error,
-            });
+            throw new Error(
+              `Sales save failed [${(error as any)?.code || "ERR"}]: ${msg}`,
+              {
+                cause: error,
+              },
+            );
           }
           return savedSale;
         },
@@ -965,10 +987,7 @@ export function useSales(shopId?: number) {
         if (customer) {
           const updatedCustomer = {
             ...customer,
-            balance: Math.max(
-              Number(customer.balance || 0) + creditAmount,
-              0,
-            ),
+            balance: Math.max(Number(customer.balance || 0) + creditAmount, 0),
             updated_at: now,
           };
           await executeWithOfflineUpsert({
@@ -1225,18 +1244,14 @@ export function useSales(shopId?: number) {
       const effectiveShopId = resolveShopId(shopId);
       if (!effectiveShopId) return null;
       const dailySales = salesWithItems.filter((s) => s.date === dateKey);
-      const totalRevenue = dailySales.reduce((sum, s) => sum + s.subtotal, 0);
-      const totalCost = dailySales.reduce((sum, s) => sum + s.totalCost, 0);
-      const totalProfit = totalRevenue - totalCost;
-      const profitMarginPercent =
-        totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
+      const summary = summarizeSales(dailySales);
 
       return {
         totalSales: dailySales.length,
-        totalRevenue,
-        totalCost,
-        totalProfit,
-        profitMarginPercent,
+        totalRevenue: summary.revenue,
+        totalCost: summary.cost,
+        totalProfit: summary.profit,
+        profitMarginPercent: summary.margin,
         sales: dailySales,
       };
     },
@@ -1245,8 +1260,15 @@ export function useSales(shopId?: number) {
 
   const updateSale = useCallback(
     async (saleId: number, updatedSaleData: any) => {
-      if (!Array.isArray(updatedSaleData.items) || updatedSaleData.items.length === 0 || hasInvalidSaleQuantity(updatedSaleData.items) || hasInvalidSalePrice(updatedSaleData.items)) {
-        throw new Error("Every sale item must have a positive quantity and selling price.");
+      if (
+        !Array.isArray(updatedSaleData.items) ||
+        updatedSaleData.items.length === 0 ||
+        hasInvalidSaleQuantity(updatedSaleData.items) ||
+        hasInvalidSalePrice(updatedSaleData.items)
+      ) {
+        throw new Error(
+          "Every sale item must have a positive quantity and selling price.",
+        );
       }
       const effectiveShopId = resolveShopId(shopId);
       if (!effectiveShopId) return;
@@ -1344,8 +1366,10 @@ export function useSales(shopId?: number) {
         updatedSaleData.paymentMethod === "udhar"
           ? "udhari"
           : updatedSaleData.paymentMethod;
-      const updatePaidAmount = updatedSaleData.paidAmount ?? originalSale.paid_amount ?? 0;
-      const updatePaidVia = updatedSaleData.paidVia ?? originalSale.paid_via ?? "cash";
+      const updatePaidAmount =
+        updatedSaleData.paidAmount ?? originalSale.paid_amount ?? 0;
+      const updatePaidVia =
+        updatedSaleData.paidVia ?? originalSale.paid_via ?? "cash";
       const updatedPaymentBreakdown = getSalePaymentBreakdown(
         Number(updatedSaleData.subtotal),
         updatedSaleData.paymentMethod,
@@ -1353,9 +1377,14 @@ export function useSales(shopId?: number) {
         updatePaidVia,
       );
       if (!updatedPaymentBreakdown.isValid) {
-        throw new Error("Enter a valid payment amount before updating the sale.");
+        throw new Error(
+          "Enter a valid payment amount before updating the sale.",
+        );
       }
-      if (updatedPaymentBreakdown.dueAmount > 0 && !updatedSaleData.creditCustomerId) {
+      if (
+        updatedPaymentBreakdown.dueAmount > 0 &&
+        !updatedSaleData.creditCustomerId
+      ) {
         throw new Error("A customer is required when an amount remains due.");
       }
       const saleTimestamp =
