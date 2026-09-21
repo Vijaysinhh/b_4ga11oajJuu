@@ -50,12 +50,18 @@ export async function handleAuthRedirect(request, label = "[Proxy]") {
       },
     },
   );
-  const { data: { user }, error } = await supabase.auth.getUser();
-  if (error || !user) {
+  // Validate the signed-in session from its cookie. `getClaims()` verifies the
+  // token, while `getSession()` would only read an unverified cookie value.
+  const { data, error } = await supabase.auth.getClaims();
+  const claims = data?.claims;
+  if (error || !claims) {
     console.log(
       `${label} Unauthenticated access to ${pathname}, redirecting to login.`,
     );
-    const redirectUrl = new URL("/login", request.url);
+    const loginPath = pathname.startsWith("/super-admin")
+      ? "/login/superadmin"
+      : "/login";
+    const redirectUrl = new URL(loginPath, request.url);
     const response = NextResponse.redirect(redirectUrl);
     addSecurityHeaders(response);
     return response;
