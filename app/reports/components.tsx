@@ -45,8 +45,22 @@ import {
 } from "@/components/ui/card";
 import { formatMoney, formatNumber, formatPercent } from "@/lib/number-format";
 import { cn, dateKey } from "@/lib/utils";
+import {
+  classifyBatchExpiry,
+  combinePaymentSplits,
+  creditCollectionSummary,
+  dateIsInReportRange,
+  getPreviousReportDateRange,
+  getReportDateRange,
+  reportDayCount,
+  reportNumber as safeNumber,
+  saleFinancials,
+  saleLineVariance,
+  timestampIsInReportRange,
+  type ReportPeriod,
+} from "@/lib/report-calculations";
 
-type Period = "today" | "month" | "sixMonths" | "year" | "specificMonth";
+type Period = ReportPeriod;
 type Tone = "green" | "amber" | "red" | "blue" | "purple" | "slate";
 export type ReportSection = "overview" | "sales" | "stock" | "udhari";
 type CopyText = (typeof copy)["en"] | (typeof copy)["mr"];
@@ -282,91 +296,6 @@ function pct(value: number | undefined | null) {
   return `${formatPercent(value)}%`;
 }
 
-function safeNumber(value: unknown) {
-  return Number.isFinite(Number(value)) ? Number(value) : 0;
-}
-
-function getPeriodStart(
-  period: Period,
-  selectedDate: string,
-  selectedMonth: string,
-) {
-  const start = selectedDate
-    ? new Date(`${selectedDate}T12:00:00`)
-    : new Date();
-  start.setHours(0, 0, 0, 0);
-  if (period === "month") start.setDate(1);
-  if (period === "sixMonths") {
-    start.setMonth(start.getMonth() - 5, 1);
-  }
-  if (period === "year") {
-    start.setMonth(0, 1);
-    start.setHours(0, 0, 0, 0);
-  }
-  if (period === "specificMonth" && selectedMonth) {
-    const [year, month] = selectedMonth.split("-").map(Number);
-    return new Date(year, month - 1, 1);
-  }
-  return start;
-}
-
-function getPeriodEnd(
-  period: Period,
-  selectedDate: string,
-  selectedMonth: string,
-) {
-  if (period === "specificMonth" && selectedMonth) {
-    const [year, month] = selectedMonth.split("-").map(Number);
-    const lastDay = new Date(year, month, 0);
-    const today = new Date();
-    today.setHours(23, 59, 59, 999);
-    return lastDay.getTime() > today.getTime() ? today : lastDay;
-  }
-  const end = selectedDate
-    ? new Date(`${selectedDate}T23:59:59`)
-    : new Date();
-  end.setHours(23, 59, 59, 999);
-  return end;
-}
-
-function periodDayCount(
-  period: Period,
-  selectedDate: string,
-  selectedMonth: string,
-) {
-  const start = getPeriodStart(period, selectedDate, selectedMonth);
-  const end = getPeriodEnd(period, selectedDate, selectedMonth);
-  return Math.max(
-    1,
-    Math.round((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000)) + 1,
-  );
-}
-
-function inPeriod(
-  date: string | undefined,
-  period: Period,
-  selectedDate: string,
-  selectedMonth: string,
-) {
-  if (!date) return false;
-  if (period === "today") return date === selectedDate;
-  if (period === "specificMonth" && selectedMonth) {
-    return date.startsWith(selectedMonth);
-  }
-  const saleDate = new Date(`${date}T12:00:00`);
-  if (Number.isNaN(saleDate.getTime())) return false;
-  return saleDate >= getPeriodStart(period, selectedDate, selectedMonth);
-}
-
-function inPeriodTimestamp(
-  timestamp: number | undefined,
-  period: Period,
-  selectedDate: string,
-  selectedMonth: string,
-) {
-  if (!timestamp) return false;
-  return inPeriod(dateKey(new Date(timestamp)), period, selectedDate, selectedMonth);
-}
 
 function paymentLabel(
   method: string | undefined,
@@ -407,28 +336,6 @@ function downloadCsv(filename: string, rows: string[][]) {
   link.download = filename;
   link.click();
   URL.revokeObjectURL(url);
-}
-
-function getPreviousPeriodSales(
-  sales: any[],
-  period: Period,
-  selectedDate: string,
-  selectedMonth: string,
-) {
-  const anchor = new Date(`${selectedDate}T12:00:00`);
-  const start = getPeriodStart(period, selectedDate, selectedMonth);
-  const end = new Date(anchor);
-  end.setHours(23, 59, 59, 999);
-  const duration = Math.max(
-    end.getTime() - start.getTime(),
-    24 * 60 * 60 * 1000,
-  );
-  const previousEnd = new Date(start.getTime() - 1);
-  const previousStart = new Date(previousEnd.getTime() - duration);
-  return sales.filter((sale: any) => {
-    const saleDate = new Date(`${sale.date}T12:00:00`);
-    return saleDate >= previousStart && saleDate <= previousEnd;
-  });
 }
 
 function textFor(language: "en" | "mr", en: string, mr: string) {
@@ -754,39 +661,33 @@ export function ReportsDashboard({
     useStockHistory(currentShopId);
 
   const report = useMemo(() => {
+    const periodRange = getReportDateRange(period, selectedDate, selectedMonth);
+    const previousRange = getPreviousReportDateRange(periodRange);
     const periodSales = sales.filter((sale: any) =>
-      inPeriod(sale.date, period, selectedDate, selectedMonth),
+      dateIsInReportRange(sale.date, periodRange),
     );
-    const previousSales = getPreviousPeriodSales(
-      sales,
-      period,
-      selectedDate,
-      selectedMonth,
+    const previousSales = sales.filter((sale: any) =>
+      dateIsInReportRange(sale.date, previousRange),
     );
     const revenue = periodSales.reduce(
-      (sum: number, sale: any) => sum + safeNumber(sale.subtotal),
+      (sum: number, sale: any) => sum + saleFinancials(sale).revenue,
       0,
     );
     const cost = periodSales.reduce(
-      (sum: number, sale: any) => sum + safeNumber(sale.totalCost),
+      (sum: number, sale: any) => sum + saleFinancials(sale).cost,
       0,
     );
     const profit = periodSales.reduce(
-      (sum: number, sale: any) =>
-        sum +
-        safeNumber(
-          sale.totalProfit ??
-            safeNumber(sale.subtotal) - safeNumber(sale.totalCost),
-        ),
+      (sum: number, sale: any) => sum + saleFinancials(sale).profit,
       0,
     );
     const margin = revenue > 0 ? (profit / revenue) * 100 : 0;
     const previousRevenue = previousSales.reduce(
-      (sum: number, sale: any) => sum + safeNumber(sale.subtotal),
+      (sum: number, sale: any) => sum + saleFinancials(sale).revenue,
       0,
     );
     const previousProfit = previousSales.reduce(
-      (sum: number, sale: any) => sum + safeNumber(sale.totalProfit),
+      (sum: number, sale: any) => sum + saleFinancials(sale).profit,
       0,
     );
     const unitsSold = periodSales.reduce(
@@ -810,8 +711,9 @@ export function ReportsDashboard({
         profit: 0,
         transactions: 0,
       };
-      current.revenue += safeNumber(sale.subtotal);
-      current.profit += safeNumber(sale.totalProfit);
+      const financials = saleFinancials(sale);
+      current.revenue += financials.revenue;
+      current.profit += financials.profit;
       current.transactions += 1;
       dailySales.set(sale.date, current);
     });
@@ -832,8 +734,9 @@ export function ReportsDashboard({
           profit: 0,
           transactions: 0,
         };
-        current.revenue += safeNumber(sale.subtotal);
-        current.profit += safeNumber(sale.totalProfit);
+        const financials = saleFinancials(sale);
+        current.revenue += financials.revenue;
+        current.profit += financials.profit;
         current.transactions += 1;
         monthlySales.set(key, current);
       });
@@ -889,13 +792,10 @@ export function ReportsDashboard({
         ? ["रवि", "सोम", "मंगळ", "बुध", "गुरु", "शुक्र", "शनि"]
         : ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"])[index];
     });
-    const amountByPayment = (methods: string[]) =>
-      periodSales
-        .filter((sale: any) => methods.includes(String(sale.paymentMethod)))
-        .reduce((sum: number, sale: any) => sum + safeNumber(sale.subtotal), 0);
-    const cashSales = amountByPayment(["cash"]);
-    const partialSales = amountByPayment(["partial"]);
-    const creditSales = amountByPayment(["udhar", "udhari"]);
+    const paymentSplit = combinePaymentSplits(periodSales);
+    const cashSales = paymentSplit.cash;
+    const partialSales = paymentSplit.partial;
+    const creditSales = paymentSplit.credit;
     const totalStockValue = items.reduce(
       (sum: number, item: any) =>
         sum + safeNumber(item.quantity) * safeNumber(item.buyPrice),
@@ -910,18 +810,19 @@ export function ReportsDashboard({
         (a: any, b: any) => safeNumber(a.quantity) - safeNumber(b.quantity),
       );
     const today = new Date();
-    today.setHours(0, 0, 0, 0);
     const expiring = batches
-      .filter((batch: any) => {
-        if (batch.status === "expired" || batch.status === "expiring")
-          return true;
-        if (!batch.expiryDate) return false;
-        const expiryDate = new Date(batch.expiryDate);
-        return !Number.isNaN(expiryDate.getTime()) && expiryDate <= today;
-      })
+      .filter((batch: any) => classifyBatchExpiry(batch, today) !== "none")
+      .sort((a: any, b: any) =>
+        String(a.expiryDate || a.expiry_date || "9999").localeCompare(
+          String(b.expiryDate || b.expiry_date || "9999"),
+        ),
+      )
       .slice(0, 5);
     const expiredBatches = batches.filter(
-      (batch: any) => batch.status === "expired",
+      (batch: any) => classifyBatchExpiry(batch, today) === "expired",
+    );
+    const expiringBatches = batches.filter(
+      (batch: any) => classifyBatchExpiry(batch, today) === "expiring",
     );
     const expiredProductCount = new Set(
       expiredBatches.map((batch: any) => Number(batch.itemId ?? batch.item_id)),
@@ -933,9 +834,7 @@ export function ReportsDashboard({
           safeNumber(batch.costPerUnit ?? batch.cost_per_unit),
       0,
     );
-    const expiringStockValue = batches
-      .filter((batch: any) => batch.status === "expiring")
-      .reduce(
+    const expiringStockValue = expiringBatches.reduce(
         (sum: number, batch: any) =>
           sum +
           safeNumber(batch.quantityAvailable ?? batch.quantity_available) *
@@ -943,12 +842,7 @@ export function ReportsDashboard({
         0,
       );
     const periodStockHistory = stockHistory.filter((entry: any) =>
-      inPeriodTimestamp(
-        entry.createdAt,
-        period,
-        selectedDate,
-        selectedMonth,
-      ),
+      timestampIsInReportRange(entry.createdAt, periodRange),
     );
     const stockMovement = periodStockHistory.reduce(
       (
@@ -981,15 +875,15 @@ export function ReportsDashboard({
         expiredValue: 0,
       },
     );
-    const onlineSales = amountByPayment(["card", "upi", "online"]);
-    const moneyIn = cashSales + onlineSales + partialSales;
+    const onlineSales = paymentSplit.online;
+    const moneyIn = paymentSplit.moneyIn;
     const realizedLoss = stockMovement.expiredValue + stockMovement.damagedValue;
-    const daysInPeriod = periodDayCount(period, selectedDate, selectedMonth);
+    const daysInPeriod = reportDayCount(periodRange);
     const inventoryUnits = items.reduce(
       (sum: number, item: any) => sum + Math.max(safeNumber(item.quantity), 0),
       0,
     );
-    const dailyUnitPace = unitsSold / daysInPeriod;
+    const dailyUnitPace = daysInPeriod > 0 ? unitsSold / daysInPeriod : 0;
     const daysCover =
       dailyUnitPace > 0 ? inventoryUnits / dailyUnitPace : null;
     const previousPeriod = {
@@ -1030,14 +924,10 @@ export function ReportsDashboard({
         bucket.customers += 1;
       });
     const periodCreditEntries = udhariEntries.filter((entry: any) =>
-      inPeriod(entry.date, period, selectedDate, selectedMonth),
+      dateIsInReportRange(entry.date, periodRange),
     );
-    const creditGiven = periodCreditEntries
-      .filter((entry: any) => entry.type === "credit")
-      .reduce((sum: number, entry: any) => sum + safeNumber(entry.amount), 0);
-    const collected = periodCreditEntries
-      .filter((entry: any) => entry.type === "payment")
-      .reduce((sum: number, entry: any) => sum + safeNumber(entry.amount), 0);
+    const creditSummary = creditCollectionSummary(udhariEntries, periodRange);
+    const { creditGiven, collected } = creditSummary;
 
     const itemSales = new Map<string, any>();
     const categorySales = new Map<
@@ -1085,18 +975,6 @@ export function ReportsDashboard({
       current.reasons.add(reason);
       lossByProduct.set(name, current);
     };
-    expiredBatches.forEach((batch: any) => {
-      const quantity = safeNumber(
-        batch.quantityAvailable ?? batch.quantity_available,
-      );
-      addLoss(
-        batch.itemId ?? batch.item_id,
-        batch.itemName || batch.item_name,
-        quantity,
-        quantity * safeNumber(batch.costPerUnit ?? batch.cost_per_unit),
-        "expired",
-      );
-    });
     periodStockHistory.forEach((entry: any) => {
       if (entry.type !== "damage" && entry.type !== "expiry") return;
       const quantity = Math.abs(safeNumber(entry.quantityChanged));
@@ -1293,7 +1171,7 @@ export function ReportsDashboard({
       number,
       { customer: any; count: number; amount: number }
     >();
-    udhariEntries
+    periodCreditEntries
       .filter((entry: any) => entry.type === "credit")
       .forEach((entry: any) => {
         const customer = customers.find(
@@ -1345,7 +1223,8 @@ export function ReportsDashboard({
       agingBuckets,
       creditGiven,
       collected,
-      collectionRate: creditGiven > 0 ? (collected / creditGiven) * 100 : 0,
+      collectionRate: creditSummary.collectionRate,
+      openingCreditBalance: creditSummary.openingBalance,
       billRegister: [...periodSales].sort(
         (a: any, b: any) => safeNumber(b.timestamp) - safeNumber(a.timestamp),
       ),
@@ -1385,6 +1264,9 @@ export function ReportsDashboard({
       brandComparisons,
       topCustomers,
       frequentCreditCustomers,
+      lineDataIssueCount: periodSales.filter(
+        (sale: any) => saleLineVariance(sale).mismatched,
+      ).length,
       longPendingCustomers,
       transactionCount: periodSales.length,
     };
@@ -1423,7 +1305,7 @@ export function ReportsDashboard({
         paymentLabel(sale.paymentMethod, t, language),
         String(sale.creditCustomerName || ""),
         String(safeNumber(sale.subtotal)),
-        String(safeNumber(sale.totalProfit)),
+        String(saleFinancials(sale).profit),
       ]),
     ]);
   };
@@ -1490,6 +1372,21 @@ export function ReportsDashboard({
           onNavigate={onNavigate}
         />
       </div>
+
+      {report.lineDataIssueCount > 0 ? (
+        <div className="rounded-2xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <p>
+              {textFor(
+                language,
+                `${report.lineDataIssueCount} bill${report.lineDataIssueCount === 1 ? " has" : "s have"} incomplete item details. Bill-level sales and profit totals are accurate; product and category breakdowns exclude the missing detail.`,
+                `${report.lineDataIssueCount} बिलांमध्ये वस्तूंची माहिती अपूर्ण आहे. बिलनिहाय विक्री आणि नफ्याची एकूण रक्कम अचूक आहे; उपलब्ध नसलेली माहिती वस्तू आणि वर्गाच्या तपशीलात धरलेली नाही.`,
+              )}
+            </p>
+          </div>
+        </div>
+      ) : null}
 
       {section === "overview" && (
         <section className="grid gap-2.5 grid-cols-2 lg:grid-cols-4">
@@ -1807,7 +1704,11 @@ export function ReportsDashboard({
               <MetricCard
                 label={t.moneyIn}
                 value={money(report.moneyIn)}
-                note={t.moneyInNote}
+                note={textFor(
+                  language,
+                  "Cash + online + amount paid on partial bills",
+                  "रोख + ऑनलाइन + अंशतः भरलेली रक्कम",
+                )}
                 tone="green"
                 icon={Wallet}
               />

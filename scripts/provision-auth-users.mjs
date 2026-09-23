@@ -27,7 +27,13 @@ function toIdentity(value, profileId) {
   if (!/^\+[1-9]\d{7,14}$/.test(e164)) {
     throw new Error(`User ${profileId} needs a unique email or phone number in E.164 format`);
   }
-  return { phone: e164, phone_confirm: true, key: `phone:${e164}` };
+  // Phone/password Auth is optional in Supabase and may be disabled. Map the
+  // phone to the same private email identity used by the application login.
+  return {
+    email: `phone-${e164.slice(1)}@login.invalid`,
+    email_confirm: true,
+    key: `phone:${e164}`,
+  };
 }
 
 const pending = (users ?? []).filter((profile) => !profile.auth_user_id).map((profile) => {
@@ -51,8 +57,11 @@ for (const entry of pending) {
 
 let provisioned = 0;
 for (const { profile, identity, password } of pending) {
-  const { key: _key, ...authIdentity } = identity;
-  const { data: created, error: createError } = await supabase.auth.admin.createUser({ ...authIdentity, password });
+  const { data: created, error: createError } = await supabase.auth.admin.createUser({
+    email: identity.email,
+    email_confirm: identity.email_confirm,
+    password,
+  });
   if (createError || !created.user) throw createError || new Error(`Could not create auth user ${profile.id}`);
   const { error: updateError } = await supabase.from("users").update({ auth_user_id: created.user.id }).eq("id", profile.id);
   if (updateError) {

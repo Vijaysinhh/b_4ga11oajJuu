@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogFooter,
@@ -183,150 +184,36 @@ export default function SuperAdminPage() {
 
         toast({ title: "Success", description: "Shop updated!" });
       } else {
-        // Create shop
-        const { data: newShop, error: shopError } = await (supabase as any)
-          .from("shops")
-          .insert({
-            owner_name: formData.ownerName,
-            shop_name: formData.shopName,
-            address: formData.address,
-            phone_number: formData.phoneNumber,
-            password: formData.password,
-            is_paused: false,
-            subscription_end_date: endOfMonth(new Date()).toISOString(),
-            last_payment_date: now,
-            created_at: now,
-            updated_at: now,
-          })
-          .select("*")
-          .single();
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        if (!session?.access_token) {
+          throw new Error("Your super-admin session expired. Please log in again.");
+        }
 
-        if (shopError) {
-          console.error("Create shop error:", shopError);
+        const response = await fetch("/api/shops", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({ ...formData, includeStarterProducts }),
+        });
+        const result = await response.json();
+        if (!response.ok) {
           toast({
-            title: "Error",
-            description: `Failed to create shop: ${shopError.message}`,
+            title: "Could not create shop",
+            description: result.error || "Failed to create shop",
           });
           return;
         }
 
-        if (newShop) {
-          // Create owner user
-          const { error: userError } = await (supabase as any)
-            .from("users")
-            .insert({
-              shop_id: newShop.id,
-              username: formData.ownerName,
-              password: formData.password,
-              role: "owner",
-              created_at: now,
-              updated_at: now,
-            });
-
-          if (userError) {
-            console.error("Create user error:", userError);
-            toast({
-              title: "Error",
-              description: `Failed to create user: ${userError.message}`,
-            });
-            return;
-          }
-
-          // Create default categories
-          const defaultCategories = [
-            { name: "Grocery", name_marathi: "किराणा", color: "#3b82f6" },
-            { name: "Dairy & Milk", name_marathi: "दुग्ध", color: "#f59e0b" },
-            { name: "Beverages", name_marathi: "पेय पदార్థ", color: "#ef4444" },
-            {
-              name: "Snacks & Sweets",
-              name_marathi: "स्नॅक्स",
-              color: "#8b5cf6",
-            },
-            {
-              name: "Household Items",
-              name_marathi: "घरेलू",
-              color: "#06b6d4",
-            },
-            {
-              name: "Personal Care",
-              name_marathi: "व्यक्तिगत",
-              color: "#ec4899",
-            },
-          ];
-
-          const { error: categoryError } = await (supabase as any)
-            .from("categories")
-            .insert(
-              defaultCategories.map((cat) => ({
-                shop_id: newShop.id,
-                ...cat,
-                created_at: now,
-                updated_at: now,
-              })),
-            );
-
-          if (categoryError) {
-            console.error("Create categories error:", categoryError);
-            toast({
-              title: "Error",
-              description: `Failed to create categories: ${categoryError.message}`,
-            });
-            return;
-          }
-
-          // Create default units
-          const defaultUnits = [
-            { name: "Kilogram", name_marathi: "किलोग्राम", short_form: "kg" },
-            { name: "Gram", name_marathi: "ग्राम", short_form: "g" },
-            { name: "Liter", name_marathi: "लिटर", short_form: "L" },
-            { name: "Milliliter", name_marathi: "मिली लिटर", short_form: "ml" },
-            { name: "Piece", name_marathi: "तुकडे", short_form: "pcs" },
-            { name: "Box", name_marathi: "डिब्बा", short_form: "box" },
-          ];
-
-          const { error: unitError } = await (supabase as any)
-            .from("units")
-            .insert(
-              defaultUnits.map((unit) => ({
-                shop_id: newShop.id,
-                ...unit,
-                created_at: now,
-                updated_at: now,
-              })),
-            );
-
-          if (unitError) {
-            console.error("Create units error:", unitError);
-            toast({
-              title: "Error",
-              description: `Failed to create units: ${unitError.message}`,
-            });
-            return;
-          }
-
-          if (includeStarterProducts) {
-            const { error: starterCatalogError } = await (supabase as any).rpc(
-              "seed_shop_starter_catalog",
-              { p_shop_id: newShop.id },
-            );
-
-            if (starterCatalogError) {
-              console.error("Seed starter catalog error:", starterCatalogError);
-              toast({
-                title: "Error",
-                description: `Shop was created, but starter products could not be added: ${starterCatalogError.message}`,
-              });
-              return;
-            }
-          }
-
-          toast({
-            title: "Success",
-            description: includeStarterProducts
-              ? "Shop created with starter products, categories and units!"
-              : "Shop created with empty items, categories and units!",
-          });
-        }
+        toast({
+          title: "Success",
+          description: includeStarterProducts
+            ? "Shop and owner login created with starter products!"
+            : "Shop and owner login created!",
+        });
       }
 
       setIsDialogOpen(false);
@@ -334,7 +221,10 @@ export default function SuperAdminPage() {
       loadShops();
     } catch (e) {
       console.error("Unexpected error:", e);
-      toast({ title: "Error", description: "An unexpected error occurred" });
+      toast({
+        title: "Error",
+        description: e instanceof Error ? e.message : "An unexpected error occurred",
+      });
     } finally {
       setIsCreatingShop(false);
     }
@@ -858,6 +748,11 @@ export default function SuperAdminPage() {
             <DialogTitle>
               {editingShop ? "Edit Shop" : "Add New Shop"}
             </DialogTitle>
+            <DialogDescription>
+              {editingShop
+                ? "Update this shop and its owner details."
+                : "Create a shop and a secure login for its owner."}
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
@@ -972,6 +867,9 @@ export default function SuperAdminPage() {
         <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Billing & Subscription</DialogTitle>
+            <DialogDescription>
+              Manage this shop&apos;s payment QR and subscription status.
+            </DialogDescription>
           </DialogHeader>
           {billingShop && (
             <div className="space-y-4 py-2">

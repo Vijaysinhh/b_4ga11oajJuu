@@ -328,13 +328,58 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [currentUserId, fetchUserPermissions, supabase]);
 
+  const checkAuth = useCallback(async (): Promise<boolean> => {
+    try {
+      const { data: authData, error: authError } = await supabase.auth.getUser();
+      if (authError || !authData.user) {
+        setUser(null);
+        setCurrentShop(null);
+        localStorage.removeItem("auth_user");
+        return false;
+      }
+
+      const { data, error } = await (supabase as any)
+        .from("users")
+        .select("*")
+        .eq("auth_user_id", authData.user.id)
+        .single();
+      if (error || !data) throw error || new Error("Missing user profile");
+
+      const permissions = await fetchUserPermissions(data.id, data.shop_id, data.role);
+      const mappedUser = { ...mapUser(data), permissions };
+      setUser(mappedUser);
+      localStorage.setItem("auth_user", JSON.stringify(mappedUser));
+
+      if (data.shop_id) {
+        const { data: shop, error: shopError } = await (supabase as any)
+          .from("shops")
+          .select("*")
+          .eq("id", data.shop_id)
+          .single();
+        if (shopError) throw shopError;
+        setCurrentShop(shop ? mapShop(shop) : null);
+      } else {
+        setCurrentShop(null);
+      }
+      return true;
+    } catch (e) {
+      console.error("Unable to load authenticated profile:", e);
+      setUser(null);
+      setCurrentShop(null);
+      localStorage.removeItem("auth_user");
+      return false;
+    } finally {
+      setIsLoading(false);
+    }
+  }, [fetchUserPermissions, supabase]);
+
   useEffect(() => {
     void checkAuth();
     const { data } = supabase.auth.onAuthStateChange(() => {
       window.setTimeout(() => void checkAuth(), 0);
     });
     return () => data.subscription.unsubscribe();
-  }, [supabase]);
+  }, [checkAuth, supabase]);
 
   // Listen for realtime changes to user_roles and users for current user
   useEffect(() => {
@@ -400,49 +445,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, [refreshUser, user?.id]);
 
-  const checkAuth = async () => {
-    try {
-      const { data: authData, error: authError } = await supabase.auth.getUser();
-      if (authError || !authData.user) {
-        setUser(null);
-        setCurrentShop(null);
-        localStorage.removeItem("auth_user");
-        return;
-      }
-
-      const { data, error } = await (supabase as any)
-        .from("users")
-        .select("*")
-        .eq("auth_user_id", authData.user.id)
-        .single();
-      if (error || !data) throw error || new Error("Missing user profile");
-
-      const permissions = await fetchUserPermissions(data.id, data.shop_id, data.role);
-      const mappedUser = { ...mapUser(data), permissions };
-      setUser(mappedUser);
-      localStorage.setItem("auth_user", JSON.stringify(mappedUser));
-
-      if (data.shop_id) {
-        const { data: shop, error: shopError } = await (supabase as any)
-          .from("shops")
-          .select("*")
-          .eq("id", data.shop_id)
-          .single();
-        if (shopError) throw shopError;
-        setCurrentShop(shop ? mapShop(shop) : null);
-      } else {
-        setCurrentShop(null);
-      }
-    } catch (e) {
-      console.error("Unable to load authenticated profile:", e);
-      setUser(null);
-      setCurrentShop(null);
-      localStorage.removeItem("auth_user");
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   const login = useCallback(
     async (username: string, password: string) => {
       try {
@@ -451,14 +453,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           getAuthCredentials(username, password),
         );
         if (error) return { success: false, error: "Invalid login credentials" };
-        await checkAuth();
+        const profileLoaded = await checkAuth();
+        if (!profileLoaded) {
+          await supabase.auth.signOut();
+          return {
+            success: false,
+            error: "Login exists, but its shop profile is missing. Contact the administrator.",
+          };
+        }
         return { success: true };
       } catch (e) {
         console.error("Login error:", e);
         return { success: false, error: "An error occurred" };
       }
     },
-    [supabase],
+    [checkAuth, supabase],
   );
 
   const logout = useCallback(async () => {

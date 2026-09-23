@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { resolveAuthLoginIdentifier } from "@/lib/auth-config";
 
 function adminClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -24,14 +25,8 @@ async function requireOwner(request: NextRequest) {
 }
 
 function identity(username: string) {
-  const value = username.trim();
-  if (value.includes("@")) return { email: value.toLowerCase() };
-  const phone = value.replace(/[\s()-]/g, "");
-  const e164 = /^\d{10}$/.test(phone) ? `+91${phone}` : phone;
-  if (!/^\+[1-9]\d{7,14}$/.test(e164)) {
-    throw new Error("Staff login must be an email or an international phone number (for example +919876543210)");
-  }
-  return { phone: e164 };
+  const login = resolveAuthLoginIdentifier(username);
+  return { email: login.authEmail, email_confirm: true as const };
 }
 
 export async function POST(request: NextRequest) {
@@ -45,7 +40,7 @@ export async function POST(request: NextRequest) {
     const shopId = context.profile.shop_id;
     if (!shopId) return NextResponse.json({ error: "Owner has no shop" }, { status: 400 });
     const { data: created, error: authError } = await context.admin.auth.admin.createUser({
-      ...identity(username), password, email_confirm: true, phone_confirm: true,
+      ...identity(username), password,
     });
     if (authError || !created.user) throw authError || new Error("Could not create auth user");
     const { data: profile, error: profileError } = await context.admin

@@ -8,7 +8,13 @@ export async function proxy(request) {
 export async function handleAuthRedirect(request, label = "[Proxy]") {
   const pathname = request.nextUrl.pathname;
 
-  const publicRoutes = ["/login", "/login/superadmin", "/api/auth", "/offline"];
+  const publicRoutes = [
+    "/login",
+    "/login/superadmin",
+    "/api/auth",
+    "/api/shops",
+    "/offline",
+  ];
   const publicFiles = [
     "/sw.js",
     "/manifest.json",

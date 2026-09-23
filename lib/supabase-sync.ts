@@ -1,14 +1,12 @@
 'use client';
 
-import { createClient } from '@supabase/supabase-js';
+import { createClient } from './supabase';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey =
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
   process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
   '';
-const SUPABASE_REQUEST_TIMEOUT_MS = 30000;
-
 export const SUPABASE_UNAVAILABLE_MESSAGE =
   'Unable to reach Supabase. Check the project URL, project status, or network/DNS access.';
 export const DEMO_USER_ID = '00000000-0000-0000-0000-000000000001';
@@ -19,60 +17,10 @@ export const isSupabaseConfigured = Boolean(
     !supabaseAnonKey.includes('placeholder'),
 );
 
-function createSupabaseUnavailableResponse() {
-  return new Response(
-    JSON.stringify({
-      error: SUPABASE_UNAVAILABLE_MESSAGE,
-      error_description: SUPABASE_UNAVAILABLE_MESSAGE,
-      message: SUPABASE_UNAVAILABLE_MESSAGE,
-    }),
-    {
-      status: 503,
-      statusText: 'Service Unavailable',
-      headers: { 'Content-Type': 'application/json' },
-    },
-  );
-}
-
-const supabaseFetch: typeof fetch = async (input, init) => {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), SUPABASE_REQUEST_TIMEOUT_MS);
-  const originalSignal = init?.signal;
-  const abortFromOriginalSignal = () => controller.abort();
-
-  if (originalSignal) {
-    if (originalSignal.aborted) {
-      controller.abort();
-    } else {
-      originalSignal.addEventListener('abort', abortFromOriginalSignal, { once: true });
-    }
-  }
-
-  try {
-    return await fetch(input, {
-      ...init,
-      signal: controller.signal,
-    });
-  } catch {
-    return createSupabaseUnavailableResponse();
-  } finally {
-    clearTimeout(timeout);
-    originalSignal?.removeEventListener('abort', abortFromOriginalSignal);
-  }
-};
-
-export const supabase = createClient(
-  supabaseUrl || 'https://placeholder.supabase.co',
-  supabaseAnonKey || 'placeholder-anon-key',
-  {
-    global: { fetch: supabaseFetch },
-    auth: {
-      detectSessionInUrl: true,
-      persistSession: true,
-      autoRefreshToken: true,
-    },
-  },
-);
+// Legacy sync modules cover tables that are not all represented in the
+// generated Database type yet. Keep their shared client dynamic while still
+// reusing the single cookie-backed Auth client.
+export const supabase = createClient() as any;
 
 export function clearSupabaseAuthStorage() {
   if (typeof window === 'undefined') {

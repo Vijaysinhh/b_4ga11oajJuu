@@ -3,8 +3,8 @@
  * This simulates what happens in the auth-provider when a user logs in.
  */
 
-const targetPhone = "8605094584";
-const targetPassword = "pratap123";
+const targetPhone = "9876543210";
+const targetPassword = "example-password";
 
 // Simulate Supabase responses
 const mockShop = {

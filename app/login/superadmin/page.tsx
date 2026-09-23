@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/providers/auth-provider';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Lock, User, Store, Shield } from 'lucide-react';
+import { Lock, User, Shield } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 export default function SuperAdminLoginPage() {
@@ -86,11 +86,15 @@ export default function SuperAdminLoginPage() {
           <div className="space-y-4">
             <form onSubmit={handleLogin} className="space-y-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium">Email</label>
+                <label htmlFor="super-admin-email" className="text-sm font-medium">Email</label>
                 <div className="relative">
                   <User className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
                   <input
+                    id="super-admin-email"
                     type="email"
+                    name="email"
+                    autoComplete="username"
+                    suppressHydrationWarning
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="Enter super admin email"
@@ -99,11 +103,15 @@ export default function SuperAdminLoginPage() {
                 </div>
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium">Password</label>
+                <label htmlFor="super-admin-password" className="text-sm font-medium">Password</label>
                 <div className="relative">
                   <Lock className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
                   <input
+                    id="super-admin-password"
                     type="password"
+                    name="password"
+                    autoComplete="current-password"
+                    suppressHydrationWarning
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="Enter super admin password"
