@@ -14,6 +14,11 @@ import {
 } from "@/lib/sale-payment";
 import { summarizeSales } from "@/lib/dukan-insights";
 import {
+  calculateGrossMargin,
+  roundStockQuantity,
+  type StockMovementType,
+} from "@/lib/inventory-calculations";
+import {
   createOfflineId,
   executeWithOfflineDelete,
   executeWithOfflineUpsert,
@@ -27,6 +32,16 @@ import {
 type Category = Database["public"]["Tables"]["categories"]["Row"];
 type Unit = Database["public"]["Tables"]["units"]["Row"];
 type Item = Database["public"]["Tables"]["items"]["Row"];
+
+function isMissingInventoryMigration(error: unknown) {
+  const candidate = error as { code?: string; message?: string } | null;
+  const message = candidate?.message || String(error || "");
+  return (
+    candidate?.code === "42703" ||
+    candidate?.code === "PGRST202" ||
+    /archived_at|create_inventory_item|adjust_item_stock/i.test(message)
+  );
+}
 
 function getStoredShopId() {
   if (typeof window === "undefined") return undefined;
@@ -118,6 +133,7 @@ const mapItem = (row: any) => ({
   marginAmount: Number(row.margin_amount || 0),
   marginPercent: Number(row.margin_percent || 0),
   lowStockLimit: Number(row.low_stock_limit || 0),
+  archivedAt: row.archived_at ? new Date(row.archived_at).getTime() : null,
   createdAt: new Date(row.created_at).getTime(),
   updatedAt: new Date(row.updated_at).getTime(),
 });
@@ -358,20 +374,26 @@ export function useUnits(shopId?: number) {
 
 export function useItems(shopId?: number) {
   const [items, setItems] = useState<any[]>([]);
+  const [archivedItems, setArchivedItems] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isInventoryMigrationReady, setIsInventoryMigrationReady] =
+    useState(false);
   const supabase = createClient();
   const resolvedShopId = resolveShopId(shopId);
 
   const loadItems = useCallback(async () => {
     if (!resolvedShopId) {
       setItems([]);
+      setArchivedItems([]);
+      setIsInventoryMigrationReady(false);
       setIsLoading(false);
       return;
     }
 
     const cached = await readCachedCollection(resolvedShopId, "items");
     if (cached.length > 0) {
-      setItems(cached.map(mapItem));
+      setItems(cached.filter((row: any) => !row.archived_at).map(mapItem));
+      setArchivedItems(cached.filter((row: any) => row.archived_at).map(mapItem));
       setIsLoading(false);
     }
 
@@ -381,18 +403,47 @@ export function useItems(shopId?: number) {
     }
 
     try {
-      const { data, error } = await (supabase as any)
+      let archivedRows: any[] = [];
+      let { data, error } = await (supabase as any)
         .from("items")
         .select("*")
         .eq("shop_id", resolvedShopId)
+        .is("archived_at", null)
         .order("id");
+      if (error && isMissingInventoryMigration(error)) {
+        setIsInventoryMigrationReady(false);
+        setArchivedItems([]);
+        const fallbackResult = await (supabase as any)
+          .from("items")
+          .select("*")
+          .eq("shop_id", resolvedShopId)
+          .order("id");
+        data = fallbackResult.data;
+        error = fallbackResult.error;
+      } else if (!error) {
+        setIsInventoryMigrationReady(true);
+        const { data: archivedData, error: archivedError } = await (
+          supabase as any
+        )
+          .from("items")
+          .select("*")
+          .eq("shop_id", resolvedShopId)
+          .not("archived_at", "is", null)
+          .order("archived_at", { ascending: false });
+        if (archivedError) throw archivedError;
+        archivedRows = archivedData || [];
+        setArchivedItems(archivedRows.map(mapItem));
+      }
       if (error) throw error;
-      await writeCachedCollection(resolvedShopId, "items", data || []);
+      await writeCachedCollection(resolvedShopId, "items", [
+        ...(data || []),
+        ...archivedRows,
+      ]);
       setItems(data ? data.map(mapItem) : []);
     } catch (error) {
       const fallback = await readCachedCollection(resolvedShopId, "items");
       if (fallback.length > 0) {
-        setItems(fallback.map(mapItem));
+        setItems(fallback.filter((row: any) => !row.archived_at).map(mapItem));
       }
     } finally {
       setIsLoading(false);
@@ -420,19 +471,13 @@ export function useItems(shopId?: number) {
 
   const refreshItems = loadItems;
 
-  const calculateMargins = (buyPrice: number, sellPrice: number) => {
-    const marginAmount = sellPrice - buyPrice;
-    const marginPercent = buyPrice > 0 ? (marginAmount / buyPrice) * 100 : 0;
-    return { marginAmount, marginPercent };
-  };
-
   const addItem = async (item: any) => {
     const effectiveShopId = resolveShopId(shopId);
     if (!effectiveShopId) {
       throw new Error("Shop not selected");
     }
     const now = new Date().toISOString();
-    const { marginAmount, marginPercent } = calculateMargins(
+    const { marginAmount, marginPercent } = calculateGrossMargin(
       item.buyPrice,
       item.sellPrice,
     );
@@ -455,22 +500,95 @@ export function useItems(shopId?: number) {
       created_at: now,
       updated_at: now,
     };
-    const { data } = await executeWithOfflineUpsert({
+    const { data, queued } = await executeWithOfflineUpsert({
       shopId: effectiveShopId,
       table: "items",
       row: offlineRow,
       request: async () => {
-        const { id: _localId, ...insertRow } = offlineRow;
-        const { data: savedItem, error } = await (supabase as any)
-          .from("items")
-          .insert(insertRow)
-          .select("*")
-          .single();
+        const { data: rpcData, error } = await (supabase as any).rpc(
+          "create_inventory_item",
+          {
+            p_shop_id: effectiveShopId,
+            p_name: item.name || "",
+            p_name_marathi: item.nameMarathi || "",
+            p_brand: item.brand || "",
+            p_brand_marathi: item.brandMarathi || "",
+            p_category_id: item.categoryId || null,
+            p_unit_id: item.unitId || null,
+            p_quantity: roundStockQuantity(Number(item.quantity || 0)),
+            p_expiry_date: item.expiryDate || null,
+            p_buy_price: item.buyPrice,
+            p_sell_price: item.sellPrice,
+            p_margin_amount: marginAmount,
+            p_margin_percent: marginPercent,
+            p_low_stock_limit: item.lowStockLimit,
+          },
+        );
+        if (error && isMissingInventoryMigration(error)) {
+          const { id: _localId, ...insertRow } = offlineRow;
+          const { data: insertedItem, error: insertError } = await (
+            supabase as any
+          )
+            .from("items")
+            .insert(insertRow)
+            .select("*")
+            .single();
+          if (insertError) throw insertError;
+          if (insertedItem && Number(item.quantity || 0) > 0) {
+            const { error: historyError } = await (supabase as any)
+              .from("stock_history")
+              .insert({
+                shop_id: effectiveShopId,
+                item_id: insertedItem.id,
+                item_name: item.name || item.nameMarathi || "Item",
+                type: "purchase",
+                quantity_changed: roundStockQuantity(Number(item.quantity)),
+                quantity_before: 0,
+                quantity_after: roundStockQuantity(Number(item.quantity)),
+                reason: "Opening stock",
+                cost_per_unit: item.buyPrice,
+                reference: "item-created",
+                created_at: now,
+              });
+            if (historyError) throw historyError;
+          }
+          return insertedItem;
+        }
         if (error) throw error;
-        return savedItem;
+        return Array.isArray(rpcData) ? rpcData[0] : rpcData;
       },
     });
     const savedItem = data || offlineRow;
+    if (queued && Number(item.quantity || 0) > 0) {
+      const historyRow = {
+        id: createOfflineId(),
+        shop_id: effectiveShopId,
+        item_id: Number((savedItem as any).id),
+        item_name: item.name || item.nameMarathi || "Item",
+        type: "purchase",
+        quantity_changed: roundStockQuantity(Number(item.quantity)),
+        quantity_before: 0,
+        quantity_after: roundStockQuantity(Number(item.quantity)),
+        reason: "Opening stock",
+        cost_per_unit: item.buyPrice,
+        reference: "item-created",
+        created_at: now,
+      };
+      await executeWithOfflineUpsert({
+        shopId: effectiveShopId,
+        table: "stock_history",
+        row: historyRow,
+        request: async () => {
+          const { data: savedHistory, error } = await (supabase as any)
+            .from("stock_history")
+            .upsert(historyRow, { onConflict: "id" })
+            .select("*")
+            .single();
+          if (error) throw error;
+          return savedHistory;
+        },
+      });
+    }
     setItems((prev) => [
       ...prev.filter((existing) => existing.id !== savedItem.id),
       mapItem(savedItem),
@@ -486,6 +604,13 @@ export function useItems(shopId?: number) {
     }
     const now = new Date().toISOString();
     const existingItem = items.find((i) => i.id === id);
+    if (
+      updates.quantity !== undefined &&
+      roundStockQuantity(Number(updates.quantity)) !==
+        roundStockQuantity(Number(existingItem?.quantity || 0))
+    ) {
+      throw new Error("Use Adjust stock to change a product quantity.");
+    }
     let updateData: any = {
       ...updates,
       updated_at: now,
@@ -494,7 +619,7 @@ export function useItems(shopId?: number) {
     if (updates.buyPrice !== undefined || updates.sellPrice !== undefined) {
       const buyPrice = updates.buyPrice ?? existingItem?.buyPrice;
       const sellPrice = updates.sellPrice ?? existingItem?.sellPrice;
-      const { marginAmount, marginPercent } = calculateMargins(
+      const { marginAmount, marginPercent } = calculateGrossMargin(
         buyPrice,
         sellPrice,
       );
@@ -571,12 +696,261 @@ export function useItems(shopId?: number) {
     window.dispatchEvent(new Event("refresh-dukan-data"));
   };
 
+  const adjustStock = async (
+    id: number,
+    quantityChange: number,
+    movementType: StockMovementType,
+    reason: string,
+  ) => {
+    const effectiveShopId = resolveShopId(shopId);
+    if (!effectiveShopId) throw new Error("Shop not selected");
+    const existingItem = items.find((item) => item.id === id);
+    if (!existingItem) throw new Error("Item not found");
+
+    const change = roundStockQuantity(quantityChange);
+    const before = roundStockQuantity(Number(existingItem.quantity || 0));
+    const after = roundStockQuantity(before + change);
+    if (change === 0) throw new Error("Stock change must not be zero");
+    if (after < 0) throw new Error("Stock cannot become negative");
+
+    const now = new Date().toISOString();
+    const offlineRow = {
+      id,
+      shop_id: effectiveShopId,
+      name: existingItem.name,
+      name_marathi: existingItem.nameMarathi || null,
+      brand: existingItem.brand || null,
+      brand_marathi: existingItem.brandMarathi || null,
+      category_id: existingItem.categoryId || null,
+      unit_id: existingItem.unitId || null,
+      quantity: after,
+      expiry_date: existingItem.expiryDate || null,
+      buy_price: existingItem.buyPrice,
+      sell_price: existingItem.sellPrice,
+      margin_amount: existingItem.marginAmount || 0,
+      margin_percent: existingItem.marginPercent || 0,
+      low_stock_limit: existingItem.lowStockLimit || 0,
+      created_at: new Date(existingItem.createdAt).toISOString(),
+      updated_at: now,
+    };
+
+    const { data, queued } = await executeWithOfflineUpsert({
+      shopId: effectiveShopId,
+      table: "items",
+      row: offlineRow,
+      request: async () => {
+        const { data: rpcData, error } = await (supabase as any).rpc(
+          "adjust_item_stock",
+          {
+            p_item_id: id,
+            p_quantity_change: change,
+            p_movement_type: movementType,
+            p_reason: reason || null,
+          },
+        );
+        if (error && isMissingInventoryMigration(error)) {
+          const { data: updatedItem, error: updateError } = await (
+            supabase as any
+          )
+            .from("items")
+            .update({ quantity: after, updated_at: now })
+            .eq("id", id)
+            .eq("shop_id", effectiveShopId)
+            .eq("quantity", before)
+            .select("*")
+            .single();
+          if (updateError) throw updateError;
+
+          const { error: historyError } = await (supabase as any)
+            .from("stock_history")
+            .insert({
+              shop_id: effectiveShopId,
+              item_id: id,
+              item_name: existingItem.name || existingItem.nameMarathi || "Item",
+              type: movementType,
+              quantity_changed: change,
+              quantity_before: before,
+              quantity_after: after,
+              reason: reason || null,
+              cost_per_unit: existingItem.buyPrice,
+              reference: "manual-stock-adjustment",
+              created_at: now,
+            });
+          if (historyError) {
+            await (supabase as any)
+              .from("items")
+              .update({ quantity: before, updated_at: now })
+              .eq("id", id)
+              .eq("shop_id", effectiveShopId)
+              .eq("quantity", after);
+            throw historyError;
+          }
+          return updatedItem;
+        }
+        if (error) throw error;
+        return Array.isArray(rpcData) ? rpcData[0] : rpcData;
+      },
+    });
+
+    if (queued) {
+      const historyRow = {
+        id: createOfflineId(),
+        shop_id: effectiveShopId,
+        item_id: id,
+        item_name: existingItem.name || existingItem.nameMarathi || "Item",
+        type: movementType,
+        quantity_changed: change,
+        quantity_before: before,
+        quantity_after: after,
+        reason: reason || null,
+        cost_per_unit: existingItem.buyPrice,
+        reference: "manual-stock-adjustment",
+        created_at: now,
+      };
+      await executeWithOfflineUpsert({
+        shopId: effectiveShopId,
+        table: "stock_history",
+        row: historyRow,
+        request: async () => {
+          const { data: savedHistory, error } = await (supabase as any)
+            .from("stock_history")
+            .upsert(historyRow, { onConflict: "id" })
+            .select("*")
+            .single();
+          if (error) throw error;
+          return savedHistory;
+        },
+      });
+    }
+
+    const savedItem = mapItem(data || offlineRow);
+    setItems((current) =>
+      current.map((item) => (item.id === id ? savedItem : item)),
+    );
+    window.dispatchEvent(new Event("refresh-dukan-data"));
+    return savedItem;
+  };
+
+  const archiveItem = async (id: number) => {
+    const effectiveShopId = resolveShopId(shopId);
+    if (!effectiveShopId) throw new Error("Shop not selected");
+    const existingItem = items.find((item) => item.id === id);
+    if (!existingItem) throw new Error("Item not found");
+    if (roundStockQuantity(Number(existingItem.quantity || 0)) !== 0) {
+      throw new Error("Set this product's stock to zero before archiving it.");
+    }
+    const now = new Date().toISOString();
+    const row = {
+      id,
+      shop_id: effectiveShopId,
+      name: existingItem.name,
+      name_marathi: existingItem.nameMarathi || null,
+      brand: existingItem.brand || null,
+      brand_marathi: existingItem.brandMarathi || null,
+      category_id: existingItem.categoryId || null,
+      unit_id: existingItem.unitId || null,
+      quantity: existingItem.quantity,
+      expiry_date: existingItem.expiryDate || null,
+      buy_price: existingItem.buyPrice,
+      sell_price: existingItem.sellPrice,
+      margin_amount: existingItem.marginAmount || 0,
+      margin_percent: existingItem.marginPercent || 0,
+      low_stock_limit: existingItem.lowStockLimit || 0,
+      archived_at: now,
+      created_at: new Date(existingItem.createdAt).toISOString(),
+      updated_at: now,
+    };
+    const { data } = await executeWithOfflineUpsert({
+      shopId: effectiveShopId,
+      table: "items",
+      row,
+      request: async () => {
+        const { data: rpcData, error } = await (supabase as any).rpc(
+          "archive_inventory_item",
+          { p_item_id: id },
+        );
+        if (error && isMissingInventoryMigration(error)) {
+          throw new Error(
+            "Archive needs the new inventory database migration. Apply 20260924193439_inventory_accuracy.sql to the development database first.",
+          );
+        }
+        if (error) throw error;
+        return Array.isArray(rpcData) ? rpcData[0] : rpcData;
+      },
+    });
+    const archivedItem = mapItem(data || row);
+    setItems((current) => current.filter((item) => item.id !== id));
+    setArchivedItems((current) => [
+      archivedItem,
+      ...current.filter((item) => item.id !== id),
+    ]);
+    window.dispatchEvent(new Event("refresh-dukan-data"));
+  };
+
+  const restoreItem = async (id: number) => {
+    const effectiveShopId = resolveShopId(shopId);
+    if (!effectiveShopId) throw new Error("Shop not selected");
+    const existingItem = archivedItems.find((item) => item.id === id);
+    if (!existingItem) throw new Error("Archived item not found");
+    const now = new Date().toISOString();
+    const row = {
+      id,
+      shop_id: effectiveShopId,
+      name: existingItem.name,
+      name_marathi: existingItem.nameMarathi || null,
+      brand: existingItem.brand || null,
+      brand_marathi: existingItem.brandMarathi || null,
+      category_id: existingItem.categoryId || null,
+      unit_id: existingItem.unitId || null,
+      quantity: 0,
+      expiry_date: existingItem.expiryDate || null,
+      buy_price: existingItem.buyPrice,
+      sell_price: existingItem.sellPrice,
+      margin_amount: existingItem.marginAmount || 0,
+      margin_percent: existingItem.marginPercent || 0,
+      low_stock_limit: existingItem.lowStockLimit || 0,
+      archived_at: null,
+      created_at: new Date(existingItem.createdAt).toISOString(),
+      updated_at: now,
+    };
+    const { data } = await executeWithOfflineUpsert({
+      shopId: effectiveShopId,
+      table: "items",
+      row,
+      request: async () => {
+        const { data: rpcData, error } = await (supabase as any).rpc(
+          "restore_inventory_item",
+          { p_item_id: id },
+        );
+        if (error && isMissingInventoryMigration(error)) {
+          throw new Error(
+            "Restore needs the inventory database migration to be applied first.",
+          );
+        }
+        if (error) throw error;
+        return Array.isArray(rpcData) ? rpcData[0] : rpcData;
+      },
+    });
+    const restoredItem = mapItem(data || row);
+    setArchivedItems((current) => current.filter((item) => item.id !== id));
+    setItems((current) => [
+      ...current.filter((item) => item.id !== id),
+      restoredItem,
+    ]);
+    window.dispatchEvent(new Event("refresh-dukan-data"));
+  };
+
   return {
     items,
+    archivedItems,
     isLoading,
     addItem,
     updateItem,
     deleteItem,
+    adjustStock,
+    archiveItem,
+    restoreItem,
+    isInventoryMigrationReady,
     refresh: refreshItems,
   };
 }

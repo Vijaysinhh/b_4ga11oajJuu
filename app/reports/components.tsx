@@ -463,6 +463,7 @@ function PeriodSelector({
             id="rp-month"
             type="month"
             value={selectedMonth}
+            max={dateKey(new Date()).slice(0, 7)}
             onChange={(e) =>
               onNavigate({ period: "specificMonth", month: e.target.value })
             }
@@ -482,6 +483,7 @@ function PeriodSelector({
             id="rp-date"
             type="date"
             value={selectedDate}
+            max={dateKey(new Date())}
             onChange={(e) => onNavigate({ period: "today", date: e.target.value })}
             className="h-9 text-sm sm:max-w-[220px]"
           />
@@ -532,7 +534,8 @@ function PaymentPie({
   credit: number;
   labels: { cash: string; online: string; partial: string; credit: string };
 }) {
-  const total = Math.max(cash + online + partial + credit, 1);
+  const totalAmount = cash + online + partial + credit;
+  const total = Math.max(totalAmount, 1);
   const cashDeg = (cash / total) * 360;
   const onlineDeg = cashDeg + (online / total) * 360;
   const partialDeg = onlineDeg + (partial / total) * 360;
@@ -541,7 +544,10 @@ function PaymentPie({
       <div
         className="h-24 w-24 sm:h-28 sm:w-28 shrink-0 rounded-full border"
         style={{
-          background: `conic-gradient(#16a34a 0deg ${cashDeg}deg, #2563eb ${cashDeg}deg ${onlineDeg}deg, #a855f7 ${onlineDeg}deg ${partialDeg}deg, #f97316 ${partialDeg}deg 360deg)`,
+          background:
+            totalAmount > 0
+              ? `conic-gradient(#16a34a 0deg ${cashDeg}deg, #2563eb ${cashDeg}deg ${onlineDeg}deg, #a855f7 ${onlineDeg}deg ${partialDeg}deg, #f97316 ${partialDeg}deg 360deg)`
+              : "hsl(var(--muted))",
         }}
       />
       <div className="grid flex-1 w-full gap-1.5 text-xs sm:text-sm">
@@ -671,10 +677,6 @@ export function ReportsDashboard({
     );
     const revenue = periodSales.reduce(
       (sum: number, sale: any) => sum + saleFinancials(sale).revenue,
-      0,
-    );
-    const cost = periodSales.reduce(
-      (sum: number, sale: any) => sum + saleFinancials(sale).cost,
       0,
     );
     const profit = periodSales.reduce(
@@ -1004,10 +1006,8 @@ export function ReportsDashboard({
         };
         current.quantity += safeNumber(line.quantity);
         current.revenue += safeNumber(line.totalPrice);
-        current.profit += safeNumber(
-          line.profit ??
-            safeNumber(line.totalPrice) - safeNumber(line.totalCost),
-        );
+        current.profit +=
+          safeNumber(line.totalPrice) - safeNumber(line.totalCost);
         itemSales.set(key, current);
         const category = categoryLookup.get(Number(item?.categoryId));
         const categoryName =
@@ -1019,10 +1019,8 @@ export function ReportsDashboard({
           quantity: 0,
         };
         categoryCurrent.revenue += safeNumber(line.totalPrice);
-        categoryCurrent.profit += safeNumber(
-          line.profit ??
-            safeNumber(line.totalPrice) - safeNumber(line.totalCost),
-        );
+        categoryCurrent.profit +=
+          safeNumber(line.totalPrice) - safeNumber(line.totalCost);
         categoryCurrent.quantity += safeNumber(line.quantity);
         categorySales.set(categoryName, categoryCurrent);
       });
@@ -1058,7 +1056,7 @@ export function ReportsDashboard({
       });
     });
     const todayKey = dateKey(new Date());
-    const slowStock = items
+    const allSlowStock = items
       .filter((item: any) => safeNumber(item.quantity) > 0)
       .map((item: any) => {
         const lastSold = itemLastSold.get(Number(item.id));
@@ -1085,12 +1083,12 @@ export function ReportsDashboard({
       .filter(
         (item: any) => item.daysSinceSale === null || item.daysSinceSale >= 30,
       )
-      .sort((a: any, b: any) => b.stockValue - a.stockValue)
-      .slice(0, 8);
-    const stockAtRiskValue = slowStock.reduce(
+      .sort((a: any, b: any) => b.stockValue - a.stockValue);
+    const stockAtRiskValue = allSlowStock.reduce(
       (sum: number, item: any) => sum + item.stockValue,
       0,
     );
+    const slowStock = allSlowStock.slice(0, 8);
 
     const itemLookup = new Map(
       items.map((item: any) => [Number(item.id), item]),
@@ -1137,10 +1135,8 @@ export function ReportsDashboard({
         const brandData = group.brands.get(brand);
         if (!brandData) return;
         brandData.revenue += safeNumber(line.totalPrice);
-        brandData.profit += safeNumber(
-          line.profit ??
-            safeNumber(line.totalPrice) - safeNumber(line.totalCost),
-        );
+        brandData.profit +=
+          safeNumber(line.totalPrice) - safeNumber(line.totalCost);
         brandData.quantity += safeNumber(line.quantity);
         brandData.margin =
           brandData.revenue > 0
@@ -2104,12 +2100,12 @@ export function ReportsDashboard({
                             <td
                               className={cn(
                                 "py-2 text-right font-medium tabular-nums",
-                                safeNumber(sale.totalProfit) >= 0
+                                saleFinancials(sale).profit >= 0
                                   ? "text-emerald-700"
                                   : "text-red-700",
                               )}
                             >
-                              {money(sale.totalProfit)}
+                              {money(saleFinancials(sale).profit)}
                             </td>
                           </tr>
                         ))}
@@ -2156,12 +2152,12 @@ export function ReportsDashboard({
                               <div
                                 className={cn(
                                   "text-sm font-semibold tabular-nums",
-                                  safeNumber(sale.totalProfit) >= 0
+                                  saleFinancials(sale).profit >= 0
                                     ? "text-emerald-700"
                                     : "text-red-700",
                                 )}
                               >
-                                {money(sale.totalProfit)}
+                                {money(saleFinancials(sale).profit)}
                               </div>
                             </div>
                           </div>

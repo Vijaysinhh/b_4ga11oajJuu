@@ -11,6 +11,7 @@
     "test:voice": "node --test scripts/test-voice-sale.cjs",
     "test:sale": "node --test scripts/test-sale-quantity.cjs",
     "test:reports": "node --test scripts/test-report-calculations.cjs",
+    "test:inventory": "node --test scripts/test-inventory-calculations.cjs",
     "test:auth-flow": "node scripts/test-shop-auth-flow.mjs",
     "auth:provision": "node scripts/provision-auth-users.mjs"
   },

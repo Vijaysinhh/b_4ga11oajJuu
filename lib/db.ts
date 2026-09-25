@@ -25,8 +25,9 @@ export interface Item {
   buyPrice: number; // Buy price per unit
   sellPrice: number; // Sell price per unit
   marginAmount?: number; // Auto-calculated: sellPrice - buyPrice
-  marginPercent?: number; // Auto-calculated: (marginAmount / buyPrice) * 100
+  marginPercent?: number; // Gross margin: (marginAmount / sellPrice) * 100
   lowStockLimit: number; // User-defined limit
+  archivedAt?: number | null;
   createdAt: number;
   updatedAt: number;
 }

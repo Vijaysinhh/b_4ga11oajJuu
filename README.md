@@ -69,8 +69,9 @@ npm run start
 [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/your-repo/dukan)
 
 1. Connect your GitHub repository to Vercel
-2. Add your environment variables (`NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`)
-3. Deploy!
+2. Add `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` for browser access.
+3. Add the server-only `SUPABASE_SECRET_KEY` for super-admin operations such as creating shops and owner accounts. Legacy projects can use `SUPABASE_SERVICE_ROLE_KEY` instead. Never prefix either server key with `NEXT_PUBLIC_`.
+4. Redeploy after adding or changing environment variables.
 
 ### Other Hosting Options
 

@@ -6,15 +6,26 @@ import {
 } from "@/lib/auth-config";
 
 function adminClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key =
+    process.env.SUPABASE_SECRET_KEY ||
+    process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) {
-    throw new Error("Supabase server credentials are not configured");
+    throw new ServerConfigurationError(
+      "Production setup is incomplete. Add SUPABASE_SECRET_KEY (or the legacy SUPABASE_SERVICE_ROLE_KEY) to the server environment, then redeploy.",
+    );
   }
 
   return createClient(url, key, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
+}
+
+class ServerConfigurationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ServerConfigurationError";
+  }
 }
 
 function isDuplicateIdentityError(error: { code?: string; message?: string }) {
@@ -273,7 +284,7 @@ export async function POST(request: NextRequest) {
     console.error("[api/shops] create failed", error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Could not create shop" },
-      { status: 400 },
+      { status: error instanceof ServerConfigurationError ? 503 : 400 },
     );
   }
 }

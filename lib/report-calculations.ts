@@ -56,9 +56,10 @@ export function getReportDateRange(
     const [year, month] = selectedMonth.split("-").map(Number);
     start = new Date(year, month - 1, 1);
     end = endOfDay(new Date(year, month, 0));
-    const todayEnd = endOfDay(now);
-    if (end > todayEnd) end = todayEnd;
   }
+
+  const todayEnd = endOfDay(now);
+  if (end > todayEnd) end = todayEnd;
 
   return { start, end };
 }
@@ -115,13 +116,20 @@ export interface ReportSaleLike {
 export function saleFinancials(sale: ReportSaleLike) {
   const revenue = reportNumber(sale.subtotal);
   const cost = reportNumber(sale.totalCost);
-  const storedProfit = Number(sale.totalProfit);
-  const profit = Number.isFinite(storedProfit) ? storedProfit : revenue - cost;
+  const profit = revenue - cost;
   return { revenue, cost, profit };
 }
 
 export function saleLineVariance(sale: ReportSaleLike) {
-  if (!sale.items?.length) return { hasLineData: false, revenue: 0, cost: 0, mismatched: false };
+  if (!sale.items?.length) {
+    const header = saleFinancials(sale);
+    return {
+      hasLineData: false,
+      revenue: 0,
+      cost: 0,
+      mismatched: Math.abs(header.revenue) > 0.01 || Math.abs(header.cost) > 0.01,
+    };
+  }
   const revenue = sale.items.reduce((sum, line) => sum + reportNumber(line.totalPrice), 0);
   const cost = sale.items.reduce(
     (sum, line) =>
@@ -156,10 +164,7 @@ export function salePaymentSplit(sale: ReportSaleLike): ReportPaymentSplit {
   const hasStoredSplit = storedPaid > 0 || storedDue > 0;
   const defaultsToUnpaid = ["partial", "udhar", "udhari"].includes(method);
   const paid = Math.min(hasStoredSplit ? storedPaid : defaultsToUnpaid ? 0 : total, total);
-  const due = Math.min(
-    hasStoredSplit ? storedDue : defaultsToUnpaid ? total : 0,
-    Math.max(total - paid, 0),
-  );
+  const due = Math.max(total - paid, 0);
 
   if (method === "partial") {
     return { cash: 0, online: 0, partial: paid, credit: due, moneyIn: paid };

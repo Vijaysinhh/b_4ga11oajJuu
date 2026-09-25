@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { useLanguage } from "@/providers/language-provider";
 import {
@@ -42,12 +42,16 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Trash2, Edit2, Plus, Minus, Package, Copy, ChevronDown, ChevronRight } from "lucide-react";
+import { Archive, ArchiveRestore, Edit2, Plus, Minus, Package, Copy, ChevronDown, ChevronRight, SlidersHorizontal, Search, ListFilter } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { StockAdjustmentDialog } from "@/components/stock-adjustment-dialog";
+import { EXPIRY_WARNING_DAYS, type StockMovementType } from "@/lib/inventory-calculations";
 import {
   formatMoney,
+  formatNumber,
   formatPercent,
   formatWholeNumber,
+  parseNumberInput,
   parseWholeNumberInput,
 } from "@/lib/number-format";
 
@@ -111,11 +115,11 @@ export function ItemsManagement() {
         profitPerItem: "Profit per item", profitMargin: "Profit margin", expiry: "Expiry",
         noExpiry: "No expiry", addExpiry: "Add expiry date", today: "Today",
         lowStockLimit: "Low stock alert limit", noAlert: "0 means no alert",
-        stockValue: "Stock value", done: "Done", saveFirst: "Save the item first to manage price variants.",
+        stockValue: "Stock value at cost", done: "Done", saveFirst: "Save the item first to manage price variants.",
         update: "Update Item", cancel: "Cancel",
       };
   const { currentShopId } = useAuth();
-  const { items, addItem, updateItem, deleteItem } =
+  const { items, archivedItems, addItem, updateItem, adjustStock, archiveItem, restoreItem, isInventoryMigrationReady } =
     useSupabaseItems(currentShopId);
   const { categories } = useSupabaseCategories(currentShopId);
   const { units } = useSupabaseUnits(currentShopId);
@@ -160,11 +164,11 @@ export function ItemsManagement() {
   const [selectedStockStatus, setSelectedStockStatus] = useState<string | null>(
     null,
   ); // null = All, 'lowStock', 'inStock', 'outOfStock'
-  const [stockView, setStockView] = useState<"inStock" | "restock">("inStock");
-  const [adjustingItemIds, setAdjustingItemIds] = useState<Set<number>>(new Set());
-  const [optimisticQuantities, setOptimisticQuantities] = useState<Map<number, number>>(new Map());
-  const pendingQuantityUpdates = useRef(new Map<number, Promise<void>>());
-  const pendingQuantityTargets = useRef(new Map<number, number>());
+  const [stockView, setStockView] = useState<"inStock" | "restock" | "expiry">("inStock");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [isArchiveOpen, setIsArchiveOpen] = useState(false);
+  const [stockAdjustmentItem, setStockAdjustmentItem] = useState<(typeof items)[number] | null>(null);
   const [sortBy, setSortBy] = useState<string>("name-asc"); // 'name-asc', 'qty-asc', 'qty-desc', 'expiry-asc', 'margin-desc'
   const [activeTab, setActiveTab] = useState("basic");
   const [showProductDetails, setShowProductDetails] = useState(true);
@@ -294,18 +298,24 @@ export function ItemsManagement() {
         selectedBrand === null ||
         (item.brand || item.brandMarathi || "").trim().toLocaleLowerCase() === selectedBrand;
 
+      const normalizedSearch = searchQuery.trim().toLocaleLowerCase();
+      const matchesSearch =
+        normalizedSearch.length === 0 ||
+        [item.name, item.nameMarathi, item.brand, item.brandMarathi]
+          .filter(Boolean)
+          .some((value) => String(value).toLocaleLowerCase().includes(normalizedSearch));
+
+      const expiryObj = item.expiryDate ? new Date(item.expiryDate) : null;
+      const expiryStart = expiryObj ? new Date(expiryObj) : null;
+      if (expiryStart) expiryStart.setHours(0, 0, 0, 0);
+      const isExpired = expiryStart ? expiryStart < today : false;
+      const isExpiring = expiryStart
+        ? expiryStart <= new Date(today.getTime() + EXPIRY_WARNING_DAYS * 24 * 60 * 60 * 1000)
+        : false;
+
       // Expiry status filter
       let matchesExpiry = true;
       if (selectedExpiryStatus) {
-        const expiryObj = item.expiryDate ? new Date(item.expiryDate) : null;
-        const expiryStart = expiryObj ? new Date(expiryObj) : null;
-        if (expiryStart) expiryStart.setHours(0, 0, 0, 0);
-
-        const isExpired = expiryStart ? expiryStart < today : false;
-        const isExpiring = expiryStart
-          ? expiryStart <= new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000)
-          : false;
-
         if (selectedExpiryStatus === "expired") matchesExpiry = isExpired;
         else if (selectedExpiryStatus === "expiring")
           matchesExpiry = isExpiring && !isExpired;
@@ -333,27 +343,36 @@ export function ItemsManagement() {
       const quantity = Number(item.quantity || 0);
       const lowStockLimit = Number(item.lowStockLimit || 0);
       const needsRestocking = quantity === 0 || (lowStockLimit > 0 && quantity <= lowStockLimit);
-      const matchesStockView = stockView === "restock" ? needsRestocking : !needsRestocking;
+      const hasExpiryAttention = isExpired || (isExpiring && !isExpired);
+      const matchesStockView =
+        stockView === "expiry"
+          ? hasExpiryAttention
+          : stockView === "restock"
+            ? needsRestocking && !hasExpiryAttention
+            : !needsRestocking && !hasExpiryAttention;
 
-      return matchesCategory && matchesBrand && matchesExpiry && matchesStock && matchesStockView;
+      return matchesCategory && matchesBrand && matchesSearch && matchesExpiry && matchesStock && matchesStockView;
     });
 
     // Sorting
     result.sort((a, b) => {
       // In the normal In stock view, surface expiry risk before the regular
       // alphabetical list. A user-selected sort still takes precedence.
-      if (stockView === "inStock" && sortBy === "name-asc") {
+      if (stockView === "expiry" && sortBy === "name-asc") {
         const expiryPriority = (item: (typeof result)[number]) => {
           if (!item.expiryDate) return 2;
           const expiry = new Date(item.expiryDate);
           if (Number.isNaN(expiry.getTime())) return 2;
           expiry.setHours(0, 0, 0, 0);
           if (expiry < today) return 0;
-          if (expiry <= new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000)) return 1;
+          if (expiry <= new Date(today.getTime() + EXPIRY_WARNING_DAYS * 24 * 60 * 60 * 1000)) return 1;
           return 2;
         };
         const urgencyDifference = expiryPriority(a) - expiryPriority(b);
         if (urgencyDifference !== 0) return urgencyDifference;
+        const expiryA = a.expiryDate ? new Date(a.expiryDate).getTime() : Infinity;
+        const expiryB = b.expiryDate ? new Date(b.expiryDate).getTime() : Infinity;
+        if (expiryA !== expiryB) return expiryA - expiryB;
       }
       switch (sortBy) {
         case "name-asc": {
@@ -376,12 +395,12 @@ export function ItemsManagement() {
         }
         case "margin-desc": {
           const marginA =
-            a.buyPrice > 0
-              ? ((a.sellPrice - a.buyPrice) / a.buyPrice) * 100
+            a.sellPrice > 0
+              ? ((a.sellPrice - a.buyPrice) / a.sellPrice) * 100
               : 0;
           const marginB =
-            b.buyPrice > 0
-              ? ((b.sellPrice - b.buyPrice) / b.buyPrice) * 100
+            b.sellPrice > 0
+              ? ((b.sellPrice - b.buyPrice) / b.sellPrice) * 100
               : 0;
           return marginB - marginA;
         }
@@ -395,6 +414,7 @@ export function ItemsManagement() {
     items,
     selectedCategoryId,
     selectedBrand,
+    searchQuery,
     selectedExpiryStatus,
     selectedStockStatus,
     stockView,
@@ -434,8 +454,42 @@ export function ItemsManagement() {
       const diffDays = Math.ceil(
         (expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24),
       );
-      return diffDays > 0 && diffDays <= 7;
+      return diffDays >= 0 && diffDays <= EXPIRY_WARNING_DAYS;
     }).length;
+  }, [items]);
+
+  const expiredCount = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return items.filter((item) => {
+      if (!item.expiryDate) return false;
+      const expiry = new Date(item.expiryDate);
+      expiry.setHours(0, 0, 0, 0);
+      return expiry < today;
+    }).length;
+  }, [items]);
+
+  const inventoryTabCounts = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const warningEnd = new Date(
+      today.getTime() + EXPIRY_WARNING_DAYS * 24 * 60 * 60 * 1000,
+    );
+    let restock = 0;
+    let expiry = 0;
+    let inStock = 0;
+    for (const item of items) {
+      const quantity = Number(item.quantity || 0);
+      const lowLimit = Number(item.lowStockLimit || 0);
+      const stockRisk = quantity === 0 || (lowLimit > 0 && quantity <= lowLimit);
+      const expiryDate = item.expiryDate ? new Date(item.expiryDate) : null;
+      if (expiryDate) expiryDate.setHours(0, 0, 0, 0);
+      const expiryRisk = Boolean(expiryDate && expiryDate <= warningEnd);
+      if (expiryRisk) expiry += 1;
+      else if (stockRisk) restock += 1;
+      else inStock += 1;
+    }
+    return { inStock, restock, expiry };
   }, [items]);
 
   const groupedItems = useMemo(() => {
@@ -474,9 +528,9 @@ export function ItemsManagement() {
     | { kind: "item"; item: (typeof filteredItems)[number]; groupKey?: string };
 
   const renderList: RenderEntry[] = useMemo(() => {
-    // The In stock tab is intentionally a single ordered list: its expiry
+    // The regular views are intentionally a single ordered list: expiry
     // priority and alphabetical order must not be interrupted by brand groups.
-    if (stockView === "inStock") {
+    if (stockView !== "restock") {
       return filteredItems.map((item) => ({ kind: "item" as const, item }));
     }
 
@@ -559,6 +613,7 @@ export function ItemsManagement() {
       setSelectedExpiryStatus(null);
       setSortBy("qty-asc");
     } else if (filter === "expired" || filter === "expiring") {
+      setStockView("expiry");
       setSelectedExpiryStatus(filter);
       setSelectedStockStatus(null);
       setSortBy("expiry-asc");
@@ -692,7 +747,6 @@ export function ItemsManagement() {
           brandMarathi: formData.brandMarathi,
           categoryId: formData.categoryId,
           unitId: formData.unitId,
-          quantity: formData.quantity,
           expiryDate: expiryDateIso,
           buyPrice: formData.buyPrice,
           sellPrice: formData.sellPrice,
@@ -759,17 +813,18 @@ export function ItemsManagement() {
   const handleDelete = async () => {
     if (deleteId) {
       try {
-        await deleteItem(deleteId);
+        await archiveItem(deleteId);
         setDeleteId(null);
         setSelectedItems((prev) => {
           const newSet = new Set(prev);
           newSet.delete(deleteId);
           return newSet;
         });
-        toast.success("Item deleted successfully");
+        toast.success("Item archived. Past sales and stock history were preserved.");
       } catch (error) {
-        console.error("[v0] Error deleting item:", error);
-        toast.error("Error deleting item");
+        const message = error instanceof Error ? error.message : "Could not archive item";
+        console.warn("[Stock] Archive unavailable:", message);
+        toast.error(message);
       }
     }
   };
@@ -780,13 +835,14 @@ export function ItemsManagement() {
     try {
       const itemsToDelete = Array.from(selectedItems);
       for (const id of itemsToDelete) {
-        await deleteItem(id);
+        await archiveItem(id);
       }
       setSelectedItems(new Set());
-      toast.success(`Deleted ${itemsToDelete.length} item(s)`);
+      toast.success(`Archived ${itemsToDelete.length} item(s)`);
     } catch (error) {
-      console.error("[v0] Error batch deleting items:", error);
-      toast.error("Error deleting items");
+      const message = error instanceof Error ? error.message : "Could not archive items";
+      console.warn("[Stock] Bulk archive unavailable:", message);
+      toast.error(message);
     }
   };
 
@@ -819,50 +875,42 @@ export function ItemsManagement() {
     setSortBy("name-asc");
   };
 
-  const selectStockView = (view: "inStock" | "restock") => {
-    setStockView(view);
-    // Dashboard deep links can arrive with a low-stock filter. The tabs are
-    // already the stock filter, so remove it before changing views.
-    setSelectedStockStatus(null);
+  const handleRestore = async (id: number) => {
+    try {
+      await restoreItem(id);
+      toast.success("Product restored to active stock.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not restore product";
+      console.warn("[Stock] Restore unavailable:", message);
+      toast.error(message);
+    }
   };
 
-  const adjustStockQuickly = async (item: (typeof items)[number], change: number) => {
-    if (!item.id) return;
-    const currentQuantity = pendingQuantityTargets.current.get(item.id) ?? Number(item.quantity || 0);
-    const quantity = Math.max(0, currentQuantity + change);
-    if (quantity === currentQuantity) return;
-    pendingQuantityTargets.current.set(item.id, quantity);
-    setOptimisticQuantities((previous) => new Map(previous).set(item.id!, quantity));
-    setAdjustingItemIds((previous) => new Set(previous).add(item.id!));
-    const previousRequest = pendingQuantityUpdates.current.get(item.id) || Promise.resolve();
-    let request: Promise<void>;
-    request = previousRequest
-      .then(() => updateItem(item.id!, { quantity }))
-      .catch((error) => {
-        console.error("[Stock] Quick quantity update failed:", error);
-        toast.error(language === "mr" ? "स्टॉक बदलता आला नाही" : "Could not update stock");
-        setOptimisticQuantities((previous) => {
-          const next = new Map(previous);
-          next.delete(item.id!);
-          return next;
-        });
-      })
-      .finally(() => {
-        if (pendingQuantityUpdates.current.get(item.id!) !== request) return;
-        pendingQuantityUpdates.current.delete(item.id!);
-        pendingQuantityTargets.current.delete(item.id!);
-        setAdjustingItemIds((previous) => {
-          const next = new Set(previous);
-          next.delete(item.id!);
-          return next;
-        });
-        setOptimisticQuantities((previous) => {
-          const next = new Map(previous);
-          next.delete(item.id!);
-          return next;
-        });
-      });
-    pendingQuantityUpdates.current.set(item.id, request);
+  const selectStockView = (view: "inStock" | "restock" | "expiry") => {
+    setStockView(view);
+    // Tabs own stock and expiry status; advanced filters stay focused on
+    // category, brand, and sorting.
+    setSelectedStockStatus(null);
+    setSelectedExpiryStatus(null);
+  };
+
+  const handleStockAdjustment = async (input: {
+    change: number;
+    movementType: StockMovementType;
+    reason: string;
+  }) => {
+    if (!stockAdjustmentItem?.id) return;
+    await adjustStock(
+      stockAdjustmentItem.id,
+      input.change,
+      input.movementType,
+      input.reason,
+    );
+    toast.success("Stock updated and recorded in history.");
+  };
+
+  const openStockAdjustment = (item: (typeof items)[number]) => {
+    setStockAdjustmentItem(item);
   };
 
   const getCategoryName = (id: number) => {
@@ -906,16 +954,30 @@ export function ItemsManagement() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 pb-24 pt-2 sm:pb-10 sm:pt-4">
-      <div className="rounded-3xl border border-border/70 bg-card p-5 shadow-sm">
-        <h1 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
-          {t("items")}
-        </h1>
-        <p className="mt-1 text-sm leading-6 text-muted-foreground">
-          {items.length} products in your shop
-        </p>
+      <div className="flex items-end justify-between gap-3 px-1">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-950 sm:text-3xl">
+            {t("items")}
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {items.length} active products
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="gap-1.5 text-muted-foreground"
+          onClick={() => setIsArchiveOpen(true)}
+          disabled={!isInventoryMigrationReady}
+          title={!isInventoryMigrationReady ? "Inventory database update required" : "View archived products"}
+        >
+          <ArchiveRestore className="h-4 w-4" />
+          Archived {archivedItems.length > 0 ? `(${archivedItems.length})` : ""}
+        </Button>
       </div>
 
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-3 gap-2 sm:gap-3">
         <div className="rounded-2xl border bg-card p-3 shadow-sm">
           <p className="text-xs font-medium leading-5 text-muted-foreground">{stockCopy.stockValue}</p>
           <p className="mt-1 truncate text-lg font-semibold tabular-nums text-primary">
@@ -923,41 +985,50 @@ export function ItemsManagement() {
           </p>
         </div>
         <div className="rounded-2xl border bg-card p-3 shadow-sm">
-          <p className="text-xs font-medium leading-5 text-muted-foreground">{language === "mr" ? "कमी स्टॉक" : "Low stock"}</p>
+          <p className="text-xs font-medium leading-5 text-muted-foreground">{language === "mr" ? "पुन्हा मागवा" : "Restock"}</p>
           <p className="mt-1 text-xl font-semibold tabular-nums text-orange-700">
-            {lowStockCount}
+            {inventoryTabCounts.restock}
           </p>
         </div>
         <div className="rounded-2xl border bg-card p-3 shadow-sm">
-          <p className="text-xs font-medium leading-5 text-muted-foreground">{language === "mr" ? "स्टॉक संपला" : "Out of stock"}</p>
+          <p className="text-xs font-medium leading-5 text-muted-foreground">{language === "mr" ? "कालबाह्यता" : "Expiry attention"}</p>
           <p className="mt-1 text-xl font-semibold tabular-nums text-red-700">
-            {outOfStockCount}
+            {inventoryTabCounts.expiry}
+          </p>
+        </div>
+        <div className="hidden">
+          <p className="text-xs font-medium leading-5 text-muted-foreground">Expiring in {EXPIRY_WARNING_DAYS} days</p>
+          <p className="mt-1 text-xl font-semibold tabular-nums text-amber-700">
+            {expiringSoonCount}
+          </p>
+        </div>
+        <div className="hidden">
+          <p className="text-xs font-medium leading-5 text-muted-foreground">Expired</p>
+          <p className="mt-1 text-xl font-semibold tabular-nums text-red-800">
+            {expiredCount}
           </p>
         </div>
       </div>
 
-      <section className="rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50 to-white p-4 shadow-sm">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <p className="text-base font-semibold tracking-tight text-indigo-950">
-              {language === "mr" ? "स्टॉक दृश्य" : "Stock view"}
-            </p>
-            <p className="mt-0.5 text-xs leading-5 text-indigo-700">
-              {stockView === "restock" ? "Low and empty-stock products in one place" : "Products with healthy available stock"}
-            </p>
-          </div>
-          <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-bold ${stockView === "restock" ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"}`}>
-            {stockView === "restock" ? outOfStockCount + lowStockCount : items.length - (outOfStockCount + lowStockCount)} items
-          </span>
+      {!isInventoryMigrationReady && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          Stock database setup is pending. Add, edit, and stock adjustments still work, but product archiving will be available after the inventory migration is applied.
         </div>
-        <div className="mt-3 grid grid-cols-2 gap-2 rounded-xl bg-white/70 p-1.5">
-          <button type="button" onClick={() => selectStockView("inStock")} className={`rounded-lg px-3 py-2.5 text-left transition ${stockView === "inStock" ? "bg-emerald-600 text-white shadow-sm" : "text-slate-600 hover:bg-emerald-50"}`}>
-            <span className="block text-sm font-bold">In stock</span>
-            <span className={`block text-[11px] ${stockView === "inStock" ? "text-emerald-100" : "text-muted-foreground"}`}>Available products</span>
+      )}
+
+      <section className="sticky top-2 z-20 rounded-2xl border border-slate-200/80 bg-white/90 p-1.5 shadow-sm backdrop-blur-xl">
+        <div className="grid grid-cols-3 gap-1.5">
+          <button type="button" onClick={() => selectStockView("inStock")} className={`rounded-xl px-2 py-2.5 text-center transition-all duration-200 ${stockView === "inStock" ? "bg-slate-900 text-white shadow-sm" : "text-slate-600 hover:bg-slate-100"}`}>
+            <span className="block text-sm font-semibold">In stock</span>
+            <span className={`text-[11px] ${stockView === "inStock" ? "text-slate-300" : "text-muted-foreground"}`}>{inventoryTabCounts.inStock}</span>
           </button>
-          <button type="button" onClick={() => selectStockView("restock")} className={`rounded-lg px-3 py-2.5 text-left transition ${stockView === "restock" ? "bg-amber-500 text-white shadow-sm" : "text-slate-600 hover:bg-amber-50"}`}>
-            <span className="flex items-center justify-between gap-2 text-sm font-bold">Restock <span className={`rounded-full px-1.5 py-0.5 text-[10px] ${stockView === "restock" ? "bg-white/20" : "bg-amber-100 text-amber-800"}`}>{outOfStockCount + lowStockCount}</span></span>
-            <span className={`block text-[11px] ${stockView === "restock" ? "text-amber-50" : "text-muted-foreground"}`}>Low or out of stock</span>
+          <button type="button" onClick={() => selectStockView("restock")} className={`rounded-xl px-2 py-2.5 text-center transition-all duration-200 ${stockView === "restock" ? "bg-amber-500 text-white shadow-sm" : "text-slate-600 hover:bg-amber-50"}`}>
+            <span className="block text-sm font-semibold">Restock</span>
+            <span className={`text-[11px] ${stockView === "restock" ? "text-amber-50" : "text-muted-foreground"}`}>{inventoryTabCounts.restock}</span>
+          </button>
+          <button type="button" onClick={() => selectStockView("expiry")} className={`rounded-xl px-2 py-2.5 text-center transition-all duration-200 ${stockView === "expiry" ? "bg-rose-600 text-white shadow-sm" : "text-slate-600 hover:bg-rose-50"}`}>
+            <span className="block text-sm font-semibold">Expiry</span>
+            <span className={`text-[11px] ${stockView === "expiry" ? "text-rose-100" : "text-muted-foreground"}`}>{inventoryTabCounts.expiry}</span>
           </button>
         </div>
       </section>
@@ -1163,12 +1234,31 @@ export function ItemsManagement() {
                         >
                           <Minus className="h-5 w-5" />
                         </Button>
-                        <span key={formData.quantity} className="rounded-xl bg-white px-4 py-2 text-2xl font-bold tabular-nums text-indigo-800 shadow-sm animate-in zoom-in-95 duration-150">
-                          {formatWholeNumber(formData.quantity)}{" "}
-                          <span className="text-sm font-medium text-muted-foreground">
-                            {getUnitName(formData.unitId)}
-                          </span>
-                        </span>
+                        {editingId ? (
+                          <div className="px-3 text-center">
+                            <p className="text-2xl font-bold tabular-nums text-indigo-800">
+                              {formatNumber(formData.quantity)} {getUnitName(formData.unitId)}
+                            </p>
+                            <p className="text-[11px] text-muted-foreground">Use Adjust stock after saving product details</p>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2 rounded-xl bg-white px-3 py-2 shadow-sm">
+                            <Input
+                              inputMode="decimal"
+                              value={formData.quantity || ""}
+                              onChange={(event) => {
+                                setFormData((value) => ({
+                                  ...value,
+                                  quantity: parseNumberInput(event.target.value),
+                                }));
+                                clearFieldError("quantity");
+                              }}
+                              className="h-9 w-24 text-center text-lg font-bold"
+                              placeholder="0"
+                            />
+                            <span className="text-sm font-medium text-muted-foreground">{getUnitName(formData.unitId)}</span>
+                          </div>
+                        )}
                         <Button
                           type="button"
                           variant="ghost"
@@ -1352,7 +1442,7 @@ export function ItemsManagement() {
                             onChange={(event) =>
                               setFormData({
                                 ...formData,
-                                lowStockLimit: parseWholeNumberInput(
+                                  lowStockLimit: parseNumberInput(
                                   event.target.value,
                                 ),
                               })
@@ -1748,7 +1838,7 @@ export function ItemsManagement() {
                             onChange={(e) => {
                               setFormData({
                                 ...formData,
-                                lowStockLimit: parseWholeNumberInput(
+                                lowStockLimit: parseNumberInput(
                                   e.target.value,
                                 ),
                               });
@@ -1895,6 +1985,97 @@ export function ItemsManagement() {
       </div>
 
       <div className="space-y-3">
+        <div className="flex gap-2">
+          <label className="relative min-w-0 flex-1">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder="Search products or brands"
+              className="h-11 rounded-xl bg-card pl-9 shadow-sm"
+              aria-label="Search products or brands"
+            />
+          </label>
+          <Dialog open={isFilterOpen} onOpenChange={setIsFilterOpen}>
+            <DialogTrigger asChild>
+              <Button type="button" variant="outline" className="relative h-11 gap-2 rounded-xl bg-card px-3 shadow-sm">
+                <ListFilter className="h-4 w-4" />
+                <span className="hidden sm:inline">Filter</span>
+                {(selectedCategoryId !== null || selectedBrand !== null || sortBy !== "name-asc") && (
+                  <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground">
+                    {Number(selectedCategoryId !== null) + Number(selectedBrand !== null) + Number(sortBy !== "name-asc")}
+                  </span>
+                )}
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-md rounded-3xl">
+              <DialogHeader>
+                <DialogTitle>Filter stock</DialogTitle>
+                <DialogDescription>Focus the current tab by category or brand, then choose its order.</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-2">
+                <label className="block space-y-2 text-sm font-medium">
+                  Category
+                  <Select
+                    value={selectedCategoryId === null ? "all" : String(selectedCategoryId)}
+                    onValueChange={(value) => setSelectedCategoryId(value === "all" ? null : Number(value))}
+                  >
+                    <SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All categories</SelectItem>
+                      {categories.map((category) => (
+                        <SelectItem key={category.id} value={String(category.id)}>
+                          {language === "mr" ? categoryMarathiLabels[category.name] || category.nameMarathi || category.name : category.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </label>
+                <label className="block space-y-2 text-sm font-medium">
+                  Brand
+                  <Select value={selectedBrand || "all"} onValueChange={(value) => setSelectedBrand(value === "all" ? null : value)}>
+                    <SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All brands</SelectItem>
+                      {brandOptions.map((brand) => <SelectItem key={brand.value} value={brand.value}>{brand.label}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </label>
+                <label className="block space-y-2 text-sm font-medium">
+                  Sort by
+                  <Select value={sortBy} onValueChange={setSortBy}>
+                    <SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="name-asc">Name (A-Z)</SelectItem>
+                      <SelectItem value="qty-asc">Quantity (low to high)</SelectItem>
+                      <SelectItem value="qty-desc">Quantity (high to low)</SelectItem>
+                      <SelectItem value="expiry-asc">Expiry (soonest first)</SelectItem>
+                      <SelectItem value="margin-desc">Profit margin (high to low)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </label>
+              </div>
+              <DialogFooter className="gap-2">
+                <Button type="button" variant="outline" onClick={clearFilters}>Clear</Button>
+                <Button type="button" onClick={() => setIsFilterOpen(false)}>Show products</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </div>
+
+        {stockView === "restock" && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            <strong>{outOfStockCount}</strong> out of stock · <strong>{lowStockCount}</strong> running low
+          </div>
+        )}
+        {stockView === "expiry" && (
+          <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-900">
+            <strong>{expiredCount}</strong> expired · <strong>{expiringSoonCount}</strong> expiring within {EXPIRY_WARNING_DAYS} days
+          </div>
+        )}
+      </div>
+
+      <div className="hidden">
         <div className="flex gap-2 overflow-x-auto rounded-2xl border bg-card p-2 pb-2 shadow-sm">
           <button
             type="button"
@@ -2072,8 +2253,8 @@ export function ItemsManagement() {
                 ? "Deselect All"
                 : "Select All"}
             </Button>
-            <Button onClick={handleBatchDelete} variant="destructive" size="sm">
-              Delete Selected
+            <Button onClick={handleBatchDelete} variant="outline" size="sm">
+              Archive Selected
             </Button>
           </div>
         </div>
@@ -2141,7 +2322,7 @@ export function ItemsManagement() {
               return null;
             }
             const item = entry.item;
-            const displayedQuantity = optimisticQuantities.get(item.id || 0) ?? item.quantity;
+            const displayedQuantity = item.quantity;
             const itemPriceTiers = priceTiersByItemId.get(item.id || 0) || [];
             const isSelected = selectedItems.has(item.id || 0);
             const todayStart = new Date();
@@ -2156,7 +2337,7 @@ export function ItemsManagement() {
                 ? "expired"
                 : expiryStart &&
                     expiryStart.getTime() <=
-                      todayStart.getTime() + 7 * 24 * 60 * 60 * 1000
+                      todayStart.getTime() + EXPIRY_WARNING_DAYS * 24 * 60 * 60 * 1000
                   ? "expiring"
                   : null;
             const primaryItemName =
@@ -2234,15 +2415,9 @@ export function ItemsManagement() {
                 key={item.id}
                 className={`flex gap-2 items-start ${isSelected ? "opacity-75" : ""}`}
               >
-                <input
-                  type="checkbox"
-                  checked={isSelected}
-                  onChange={() => toggleItemSelection(item.id)}
-                  className="w-4 h-4 cursor-pointer mt-4"
-                />
                 <Card
                   id={`stock-item-${item.id}`}
-                  className={`group flex-1 overflow-hidden rounded-2xl border-slate-200/80 bg-gradient-to-br from-card via-card to-slate-50/70 shadow-[0_2px_10px_rgba(15,23,42,0.035)] transition-[transform,box-shadow,border-color,background-color] duration-200 ease-out will-change-transform hover:-translate-y-0.5 hover:border-indigo-200 hover:shadow-[0_12px_26px_rgba(79,70,229,0.10)] active:translate-y-0 [content-visibility:auto] [contain-intrinsic-size:auto_230px] ${
+                  className={`group flex-1 animate-in fade-in slide-in-from-bottom-2 overflow-hidden rounded-2xl border-slate-200/80 bg-gradient-to-br from-card via-card to-slate-50/70 shadow-[0_2px_10px_rgba(15,23,42,0.035)] transition-[transform,box-shadow,border-color,background-color] duration-300 ease-out will-change-transform hover:-translate-y-0.5 hover:border-indigo-200 hover:shadow-[0_12px_26px_rgba(79,70,229,0.10)] active:translate-y-0 [content-visibility:auto] [contain-intrinsic-size:auto_230px] ${
                     isSelected ? "border-blue-300 bg-blue-50 shadow-[0_10px_24px_rgba(37,99,235,0.12)]" : ""
                   } ${
                     focusedItemId === item.id
@@ -2322,9 +2497,9 @@ export function ItemsManagement() {
                         </div>
                         <div className="text-right">
                           <p className="rounded-lg bg-indigo-50 px-2 py-1 text-base font-semibold tabular-nums text-indigo-700">
-                            <span className="inline-block animate-in zoom-in-95 duration-150">{formatWholeNumber(displayedQuantity)}</span> {itemUnitName}
+                            <span className="inline-block animate-in zoom-in-95 duration-150">{formatNumber(displayedQuantity)}</span> {itemUnitName}
                           </p>
-                          <div className="mt-1 flex items-center justify-end gap-1">
+                          <div className="hidden">
                             <Button
                               type="button"
                               variant="outline"
@@ -2332,7 +2507,7 @@ export function ItemsManagement() {
                               className="h-8 w-8 rounded-xl border-slate-200 bg-white shadow-sm transition-all duration-150 hover:-translate-y-px hover:border-slate-300 hover:bg-slate-50 hover:shadow active:scale-90"
                               aria-label={language === "mr" ? "एक प्रमाण कमी करा" : "Decrease stock by one"}
                               disabled={displayedQuantity <= 0}
-                              onClick={() => adjustStockQuickly(item, -1)}
+                              onClick={() => openStockAdjustment(item)}
                             >
                               <Minus className="h-3.5 w-3.5" />
                             </Button>
@@ -2342,11 +2517,21 @@ export function ItemsManagement() {
                               size="icon"
                               className="h-8 w-8 rounded-xl border-primary/25 bg-primary text-primary-foreground shadow-[0_3px_8px_rgba(79,70,229,0.25)] transition-all duration-150 hover:-translate-y-px hover:bg-primary/90 hover:shadow-[0_6px_14px_rgba(79,70,229,0.30)] active:scale-90"
                               aria-label={language === "mr" ? "एक प्रमाण जोडा" : "Add one to stock"}
-                              onClick={() => adjustStockQuickly(item, 1)}
+                              onClick={() => openStockAdjustment(item)}
                             >
                               <Plus className="h-3.5 w-3.5" />
                             </Button>
                           </div>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="mt-1 h-8 gap-1 rounded-xl border-primary/25 bg-white text-xs text-primary"
+                            onClick={() => openStockAdjustment(item)}
+                          >
+                            <SlidersHorizontal className="h-3.5 w-3.5" />
+                            Adjust
+                          </Button>
                           {isLowStock && (
                             <p
                               className={`mt-1 text-xs font-semibold leading-5 ${
@@ -2361,8 +2546,14 @@ export function ItemsManagement() {
                         </div>
                       </div>
 
+                      <details className="group/details rounded-xl border border-slate-100 bg-slate-50/60">
+                        <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2 text-xs font-semibold text-slate-600 transition-colors hover:text-slate-900 [&::-webkit-details-marker]:hidden">
+                          Product details
+                          <ChevronDown className="h-4 w-4 transition-transform group-open/details:rotate-180" />
+                        </summary>
+                        <div className="space-y-3 border-t border-slate-100 p-3">
                       {/* Default Prices */}
-                      <div className="grid grid-cols-3 gap-2 rounded-xl border border-slate-100 bg-slate-50/70 p-2.5 text-xs">
+                      <div className="grid grid-cols-3 gap-2 text-xs">
                         <div className="min-w-0">
                           <span className="text-muted-foreground">
                             {t("buy")}:
@@ -2426,6 +2617,8 @@ export function ItemsManagement() {
                           </span>
                         </p>
                       </div>
+                        </div>
+                      </details>
 
                       {/* Action Buttons */}
                       <div className="flex gap-2 border-t border-slate-100 pt-3">
@@ -2455,26 +2648,34 @@ export function ItemsManagement() {
                         >
                           <AlertDialogTrigger asChild>
                             <Button
-                              variant="destructive"
+                              variant="outline"
                               size="sm"
                               onClick={() => setDeleteId(item.id || null)}
+                              disabled={!isInventoryMigrationReady || Number(item.quantity) !== 0}
+                              title={
+                                !isInventoryMigrationReady
+                                  ? "Inventory database update required"
+                                  : Number(item.quantity) !== 0
+                                    ? "Set stock to zero before archiving"
+                                    : "Archive product"
+                              }
                               className="h-9 flex-1 gap-1 rounded-xl text-xs shadow-sm transition-all duration-150 hover:-translate-y-px hover:shadow active:scale-[0.97]"
                             >
-                              <Trash2 className="w-3 h-3" />
-                              {t("delete")}
+                              <Archive className="w-3 h-3" />
+                              Archive
                             </Button>
                           </AlertDialogTrigger>
                           <AlertDialogContent>
                             <AlertDialogHeader>
                               <AlertDialogTitle>
-                                {t("confirm_delete")}
+                                Archive this product?
                               </AlertDialogTitle>
                               <AlertDialogDescription>
-                                Are you sure you want to delete &quot;
+                                Archive &quot;
                                 {language === "mr" && item.nameMarathi
                                   ? item.nameMarathi
                                   : item.name}
-                                &quot;? This action cannot be undone.
+                                &quot;? It will disappear from stock, but its past sales and stock history will remain.
                               </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter className="gap-2">
@@ -2482,7 +2683,7 @@ export function ItemsManagement() {
                                 {t("cancel")}
                               </AlertDialogCancel>
                               <AlertDialogAction onClick={handleDelete}>
-                                {t("delete")}
+                                Archive
                               </AlertDialogAction>
                             </AlertDialogFooter>
                           </AlertDialogContent>
@@ -2496,6 +2697,65 @@ export function ItemsManagement() {
           })}
         </div>
       )}
+      <Dialog open={isArchiveOpen} onOpenChange={setIsArchiveOpen}>
+        <DialogContent className="max-w-lg rounded-3xl">
+          <DialogHeader>
+            <DialogTitle>Archived products</DialogTitle>
+            <DialogDescription>
+              Archived products are hidden from active stock and selling screens. Their past sales and stock history stay safe, and you can restore them here.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[55vh] space-y-2 overflow-y-auto pr-1">
+            {archivedItems.length === 0 ? (
+              <div className="rounded-2xl border border-dashed px-4 py-10 text-center">
+                <ArchiveRestore className="mx-auto h-8 w-8 text-muted-foreground/60" />
+                <p className="mt-3 text-sm font-medium">No archived products</p>
+                <p className="mt-1 text-xs text-muted-foreground">Products you archive will appear here.</p>
+              </div>
+            ) : (
+              archivedItems.map((item) => (
+                <div key={item.id} className="flex items-center justify-between gap-3 rounded-2xl border bg-card p-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold">{language === "mr" ? item.nameMarathi || item.name : item.name || item.nameMarathi}</p>
+                    <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                      {item.brand || item.brandMarathi || getCategoryName(item.categoryId)}
+                      {item.archivedAt ? ` · Archived ${new Date(item.archivedAt).toLocaleDateString("en-IN")}` : ""}
+                    </p>
+                  </div>
+                  <Button type="button" variant="outline" size="sm" className="shrink-0 gap-1.5 rounded-xl" onClick={() => handleRestore(item.id)}>
+                    <ArchiveRestore className="h-3.5 w-3.5" />
+                    Restore
+                  </Button>
+                </div>
+              ))
+            )}
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setIsArchiveOpen(false)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <StockAdjustmentDialog
+        key={stockAdjustmentItem?.id ?? "closed"}
+        item={
+          stockAdjustmentItem?.id
+            ? {
+                id: stockAdjustmentItem.id,
+                name:
+                  (language === "mr"
+                    ? stockAdjustmentItem.nameMarathi || stockAdjustmentItem.name
+                    : stockAdjustmentItem.name || stockAdjustmentItem.nameMarathi) || "Product",
+                quantity: Number(stockAdjustmentItem.quantity || 0),
+              }
+            : null
+        }
+        unitName={stockAdjustmentItem ? getUnitName(stockAdjustmentItem.unitId) : ""}
+        open={Boolean(stockAdjustmentItem)}
+        onOpenChange={(open) => {
+          if (!open) setStockAdjustmentItem(null);
+        }}
+        onSubmit={handleStockAdjustment}
+      />
     </div>
   );
 }

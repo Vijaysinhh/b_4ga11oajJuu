@@ -202,7 +202,10 @@ export default function SuperAdminPage() {
         const result = await response.json();
         if (!response.ok) {
           toast({
-            title: "Could not create shop",
+            title:
+              response.status === 503
+                ? "Production setup required"
+                : "Could not create shop",
             description: result.error || "Failed to create shop",
           });
           return;
@@ -743,8 +746,8 @@ export default function SuperAdminPage() {
       </div>
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
+        <DialogContent className="flex max-h-[calc(100dvh-1rem)] flex-col gap-0 overflow-hidden p-0 sm:max-h-[90vh] sm:max-w-md">
+          <DialogHeader className="shrink-0 border-b px-6 pb-4 pt-6 pr-12">
             <DialogTitle>
               {editingShop ? "Edit Shop" : "Add New Shop"}
             </DialogTitle>
@@ -754,7 +757,7 @@ export default function SuperAdminPage() {
                 : "Create a shop and a secure login for its owner."}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-4 overscroll-contain">
             <div className="space-y-2">
               <label className="text-sm font-medium">Shop Name</label>
               <Input
@@ -839,7 +842,7 @@ export default function SuperAdminPage() {
               </div>
             )}
           </div>
-          <DialogFooter className="flex flex-col sm:flex-row gap-2">
+          <DialogFooter className="shrink-0 border-t bg-background px-6 py-4 sm:flex-row">
             <Button
               variant="outline"
               onClick={() => setIsDialogOpen(false)}

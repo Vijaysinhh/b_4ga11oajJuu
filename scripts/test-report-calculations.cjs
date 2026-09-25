@@ -22,8 +22,16 @@ const {
   getPreviousReportDateRange,
   getReportDateRange,
   reportDayCount,
+  saleFinancials,
   saleLineVariance,
 } = load("report-calculations");
+
+test("profit is always derived from sales minus cost", () => {
+  assert.deepEqual(
+    saleFinancials({ subtotal: 100, totalCost: 65, totalProfit: 999 }),
+    { revenue: 100, cost: 65, profit: 35 },
+  );
+});
 
 test("report ranges include only the chosen dates and exclude future sales", () => {
   const range = getReportDateRange("month", "2026-09-24", "", new Date(2026, 8, 24));
@@ -148,5 +156,9 @@ test("incomplete bill item details are detected without replacing bill totals", 
       items: [{ totalPrice: 100, totalCost: 70, quantity: 1 }],
     }).mismatched,
     false,
+  );
+  assert.equal(
+    saleLineVariance({ subtotal: 100, totalCost: 70, items: [] }).mismatched,
+    true,
   );
 });

@@ -161,6 +161,7 @@ export interface Database {
           margin_amount: number | null;
           margin_percent: number | null;
           low_stock_limit: number;
+          archived_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -182,6 +183,7 @@ export interface Database {
           margin_amount?: number | null;
           margin_percent?: number | null;
           low_stock_limit?: number;
+          archived_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -203,6 +205,7 @@ export interface Database {
           margin_amount?: number | null;
           margin_percent?: number | null;
           low_stock_limit?: number;
+          archived_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };

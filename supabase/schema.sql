@@ -68,12 +68,22 @@ CREATE TABLE IF NOT EXISTS items (
     margin_amount NUMERIC,
     margin_percent NUMERIC,
     low_stock_limit NUMERIC DEFAULT 0,
+    archived_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 ALTER TABLE items
 ADD COLUMN IF NOT EXISTS expiry_date TIMESTAMP WITH TIME ZONE;
+
+ALTER TABLE items
+ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP WITH TIME ZONE;
+
+ALTER TABLE items
+DROP CONSTRAINT IF EXISTS items_archived_requires_zero_stock;
+ALTER TABLE items
+ADD CONSTRAINT items_archived_requires_zero_stock
+CHECK (archived_at IS NULL OR quantity = 0);
 
 -- 6. Price Tiers
 CREATE TABLE IF NOT EXISTS price_tiers (
